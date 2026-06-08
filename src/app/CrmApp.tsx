@@ -1,0 +1,349 @@
+import { useState, useEffect, useCallback } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
+import AppSidebar from './components/AppSidebar';
+import AppHeader from './components/AppHeader';
+import EntityListPage from './pages/EntityListPage';
+import RecordFormPage from './pages/RecordFormPage';
+import type { AppEntity, AppModule } from './types';
+import { ENTITY_LOGICAL_NAME } from './types';
+import LoginPage from '../LoginPage';
+import { PermissionProvider } from './context/PermissionContext';
+import { NotificationProvider } from './context/NotificationContext';
+import { ToastProvider } from './context/ToastContext';
+import { trackRecentItem } from './services/recentPinsService';
+import type { QuickCreateType } from './components/QuickCreateButton';
+import QuickCreateModal from './components/form/QuickCreateModal';
+import { saveRecord } from './services/recordService';
+import GlobalSearch from './components/GlobalSearch';
+import { fetchCreationControlRules, isCreationBlocked } from './services/lifecycleRuleEngine';
+import type { DigitalRule } from '../types/digitalRule';
+
+type AppView =
+  | { type: 'list' }
+  | { type: 'record'; id: string }
+  | { type: 'new' }
+  | { type: 'filtered-list'; filters: import('./services/listService').ActiveFilter[]; contextLabel: string; parentFilter?: { fkColumn: string; parentId: string; parentLabel: string; parentEntity: string } };
+
+interface CrmAppProps {
+  initialEntity?: AppEntity;
+  initialModule?: AppModule;
+  initialRecordId?: string;
+}
+
+export default function CrmApp({ initialEntity, initialModule, initialRecordId }: CrmAppProps = {}) {
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
+  const [activeModule, setActiveModule] = useState<AppModule>(initialModule ?? 'sales');
+  const [activeEntity, setActiveEntity] = useState<AppEntity>(initialEntity ?? 'accounts');
+  const [search, setSearch] = useState('');
+  const [view, setView] = useState<AppView>(
+    initialRecordId ? { type: 'record', id: initialRecordId } : { type: 'list' }
+  );
+  const [recentRefreshKey, setRecentRefreshKey] = useState(0);
+  const [quickCreateType, setQuickCreateType] = useState<QuickCreateType | null>(null);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [creationRules, setCreationRules] = useState<DigitalRule[]>([]);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (data.session) {
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        const s = refreshed.session ?? data.session;
+        setSession(s);
+        loadAdminFlag(s.user.id);
+      } else {
+        setSession(null);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+      if (s) loadAdminFlag(s.user.id);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (session) {
+      fetchCreationControlRules().then(setCreationRules).catch(() => {});
+    }
+  }, [session]);
+
+  const loadAdminFlag = async (userId: string) => {
+    const { data } = await supabase
+      .from('crm_user')
+      .select('is_system_admin')
+      .eq('user_id', userId)
+      .maybeSingle();
+    setIsSystemAdmin(data?.is_system_admin ?? false);
+  };
+
+  const handleGlobalSearchNavigate = useCallback((entity: AppEntity, module: AppModule, id: string) => {
+    setGlobalSearchOpen(false);
+    setActiveModule(module);
+    setActiveEntity(entity);
+    setSearch('');
+    setView({ type: 'record', id });
+  }, []);
+
+  const handleNotificationNavigate = useCallback((module: AppModule, entity: AppEntity, id: string) => {
+    setActiveModule(module);
+    setActiveEntity(entity);
+    setSearch('');
+    setView({ type: 'record', id });
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setGlobalSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  if (session === undefined) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy-900)' }}>
+        <div className="w-5 h-5 border-2 border-[var(--navy-accent)] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginPage onLogin={() => {}} />;
+  }
+
+  const handleNavigate = (module: AppModule, entity: AppEntity) => {
+    setActiveModule(module);
+    setActiveEntity(entity);
+    setSearch('');
+    setView({ type: 'list' });
+  };
+
+  const handleOpenRecord = (id: string, label?: string) => {
+    setView({ type: 'record', id });
+    if (label) {
+      trackRecentItem(session.user.id, activeEntity, activeModule, id, label).then(() => {
+        setRecentRefreshKey((k) => k + 1);
+      });
+    }
+  };
+
+  const entityLogical = ENTITY_LOGICAL_NAME[activeEntity] ?? activeEntity;
+  const creationCheck = isCreationBlocked(creationRules, entityLogical);
+
+  const handleNewRecord = () => {
+    if (creationCheck.blocked) return;
+    setView({ type: 'new' });
+  };
+  const handleBack = () => setView({ type: 'list' });
+
+  const handleViewAll = (entitySlug: string, fkColumn: string, parentId: string, contextLabel: string) => {
+    const entityMap: Record<string, AppEntity> = {
+      contacts: 'contacts', opportunities: 'opportunities', tickets: 'tickets',
+      accounts: 'accounts', leads: 'leads',
+    };
+    const moduleMap: Record<AppEntity, AppModule> = {
+      accounts: 'sales', contacts: 'sales', leads: 'sales',
+      opportunities: 'sales', tickets: 'support',
+    };
+    const ent = entityMap[entitySlug];
+    if (!ent) return;
+    setActiveEntity(ent);
+    setActiveModule(moduleMap[ent]);
+    setSearch('');
+    setView({
+      type: 'filtered-list',
+      filters: [{ id: `parent_${fkColumn}`, field: fkColumn, label: fkColumn, operator: 'eq', value: parentId }],
+      contextLabel,
+      parentFilter: { fkColumn, parentId, parentLabel: contextLabel, parentEntity: activeEntity },
+    });
+  };
+
+  const handleSidebarNavigateToRecord = (module: AppModule, entity: AppEntity, recordId: string) => {
+    setActiveModule(module);
+    setActiveEntity(entity);
+    setSearch('');
+    setView({ type: 'record', id: recordId });
+  };
+
+  const handleNavigateAssignedToMe = (module: AppModule, entity: AppEntity) => {
+    setActiveModule(module);
+    setActiveEntity(entity);
+    setSearch('');
+    setView({
+      type: 'filtered-list',
+      filters: [{ id: 'assigned_to_me', field: 'owner_id', label: 'Owner', operator: 'eq', value: session.user.id }],
+      contextLabel: 'Assigned to Me',
+    });
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      await supabase.auth.signOut({ scope: 'local' });
+    }
+  };
+
+  const QUICK_CREATE_CONFIG: Record<QuickCreateType, {
+    entity: AppEntity;
+    module: AppModule;
+    title: string;
+    fields: import('./components/form/QuickCreateModal').QuickCreateField[];
+    pk: string;
+    nameField: string;
+  }> = {
+    lead: {
+      entity: 'leads', module: 'sales', title: 'New Lead', pk: 'lead_id', nameField: 'full_name',
+      fields: [
+        { key: 'full_name',    label: 'Full Name',    type: 'text',     required: true,  placeholder: 'Jane Smith' },
+        { key: 'company_name', label: 'Company',      type: 'text',     required: false, placeholder: 'Acme Corp' },
+        { key: 'job_title',    label: 'Job Title',    type: 'text',     required: false, placeholder: 'Sales Manager' },
+        { key: 'email',        label: 'Email',        type: 'email',    required: false, placeholder: 'jane@acme.com' },
+        { key: 'phone',        label: 'Phone',        type: 'phone',    required: false, placeholder: '+1 555 000 0000' },
+        { key: 'lead_source',  label: 'Lead Source',  type: 'select',   required: false,
+          options: ['Web','Referral','Cold Call','Email Campaign','Social Media','Trade Show','Partner','Other'].map(v => ({ value: v.toLowerCase().replace(/ /g,'_'), label: v })) },
+        { key: 'description',  label: 'Description',  type: 'textarea', required: false, placeholder: 'Additional notes about this lead...' },
+      ],
+    },
+    opportunity: {
+      entity: 'opportunities', module: 'sales', title: 'New Opportunity', pk: 'opportunity_id', nameField: 'name',
+      fields: [
+        { key: 'name',             label: 'Opportunity Name', type: 'text',   required: true,  placeholder: 'Deal name' },
+        { key: 'estimated_value',  label: 'Est. Value ($)',   type: 'text',   required: false, placeholder: '10000' },
+        { key: 'stage',            label: 'Stage',            type: 'select', required: false,
+          options: ['Qualification','Proposal','Negotiation','Closed Won','Closed Lost'].map(v => ({ value: v.toLowerCase().replace(/ /g,'_'), label: v })) },
+        { key: 'close_date',       label: 'Close Date',       type: 'text',   required: false, placeholder: 'YYYY-MM-DD' },
+      ],
+    },
+    ticket: {
+      entity: 'tickets', module: 'support', title: 'New Ticket', pk: 'case_id', nameField: 'title',
+      fields: [
+        { key: 'title',       label: 'Title',    type: 'text',     required: true,  placeholder: 'Briefly describe the issue' },
+        { key: 'description', label: 'Details',  type: 'textarea', required: false, placeholder: 'More context...' },
+        { key: 'priority',    label: 'Priority', type: 'select',   required: false,
+          options: ['Low','Medium','High','Critical'].map(v => ({ value: v.toLowerCase(), label: v })) },
+      ],
+    },
+  };
+
+  const handleQuickCreate = async (values: Record<string, unknown>) => {
+    if (!quickCreateType || !session) return;
+    const cfg = QUICK_CREATE_CONFIG[quickCreateType];
+    const qcLogical = ENTITY_LOGICAL_NAME[cfg.entity] ?? cfg.entity;
+    if (isCreationBlocked(creationRules, qcLogical).blocked) {
+      setQuickCreateType(null);
+      return;
+    }
+    const record = await saveRecord(cfg.entity, null, values, session.user.id);
+    const id = record[cfg.pk] as string;
+    const label = (record[cfg.nameField] as string) ?? 'Record';
+    await trackRecentItem(session.user.id, cfg.entity, cfg.module, id, label);
+    setRecentRefreshKey((k) => k + 1);
+    setActiveModule(cfg.module);
+    setActiveEntity(cfg.entity);
+    setSearch('');
+    setView({ type: 'record', id });
+    setQuickCreateType(null);
+  };
+
+  return (
+    <PermissionProvider userId={session.user.id}>
+    <ToastProvider>
+    <NotificationProvider userId={session.user.id}>
+    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
+      <AppSidebar
+        activeModule={activeModule}
+        activeEntity={activeEntity}
+        onNavigate={handleNavigate}
+        onNavigateToRecord={handleSidebarNavigateToRecord}
+        onNavigateAssignedToMe={handleNavigateAssignedToMe}
+        userEmail={session.user.email}
+        onSignOut={handleSignOut}
+        userId={session.user.id}
+        recentRefreshKey={recentRefreshKey}
+        isSystemAdmin={isSystemAdmin}
+      />
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {(view.type === 'list' || view.type === 'filtered-list') && (
+          <>
+            <AppHeader
+              module={activeModule}
+              entity={activeEntity}
+              search={search}
+              onSearchChange={setSearch}
+              onGlobalSearch={() => setGlobalSearchOpen(true)}
+              onNotificationNavigate={handleNotificationNavigate}
+            />
+            <EntityListPage
+              module={activeModule}
+              entity={activeEntity}
+              search={search}
+              onSearchChange={setSearch}
+              onNewRecord={handleNewRecord}
+              onOpenRecord={(id, label) => handleOpenRecord(id, label)}
+              userId={session.user.id}
+              initialFilters={view.type === 'filtered-list' ? view.filters : undefined}
+              filterContextLabel={view.type === 'filtered-list' ? view.contextLabel : undefined}
+              parentFilter={view.type === 'filtered-list' ? view.parentFilter : undefined}
+              onClearParentFilter={() => setView({ type: 'list' })}
+              creationBlocked={creationCheck.blocked}
+              creationBlockedMessage={creationCheck.message}
+            />
+          </>
+        )}
+
+        {(view.type === 'record' || view.type === 'new') && (
+          <RecordFormPage
+            module={activeModule}
+            entity={activeEntity}
+            recordId={view.type === 'record' ? view.id : null}
+            onBack={handleBack}
+            onNavigate={(ent, id) => {
+              setActiveEntity(ent);
+              setView({ type: 'record', id });
+            }}
+            userId={session.user.id}
+            onRecordLoaded={(id, label) => {
+              trackRecentItem(session.user.id, activeEntity, activeModule, id, label).then(() => {
+                setRecentRefreshKey((k) => k + 1);
+              });
+            }}
+            onViewAll={handleViewAll}
+            onNewRecord={handleNewRecord}
+            creationBlocked={creationCheck.blocked}
+            creationBlockedMessage={creationCheck.message}
+            creationControlRules={creationRules}
+          />
+        )}
+      </div>
+    </div>
+
+    {globalSearchOpen && (
+      <GlobalSearch
+        userId={session.user.id}
+        onNavigate={handleGlobalSearchNavigate}
+        onClose={() => setGlobalSearchOpen(false)}
+      />
+    )}
+
+    {quickCreateType && (
+      <QuickCreateModal
+        key={quickCreateType}
+        title={QUICK_CREATE_CONFIG[quickCreateType].title}
+        fields={QUICK_CREATE_CONFIG[quickCreateType].fields}
+        onSave={handleQuickCreate}
+        onClose={() => setQuickCreateType(null)}
+      />
+    )}
+    </NotificationProvider>
+    </ToastProvider>
+    </PermissionProvider>
+  );
+}

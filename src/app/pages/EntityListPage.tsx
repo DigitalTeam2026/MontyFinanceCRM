@@ -1,0 +1,1608 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  ChevronUp,
+  ChevronDown,
+  SlidersHorizontal,
+  Inbox,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  Columns3,
+  Download,
+  Upload,
+  UserCheck,
+  Filter,
+  X,
+  Search,
+  Plus,
+  Lock,
+  Loader2,
+  Share2,
+} from 'lucide-react';
+import type { AppEntity, AppModule } from '../types';
+import { ENTITY_LOGICAL_NAME, ENTITY_DEFINITION_ID } from '../types';
+import { supabase } from '../../lib/supabase';
+import type { ActiveFilter, ListRow, RelatedColumnSpec } from '../services/listService';
+import { fetchEntityList, ENTITY_COLUMNS, updateRowFields, fetchCrmUsers } from '../services/listService';
+import { evaluateRowHighlight, getEntityRules } from '../services/rowHighlightService';
+import FilterPanel from '../components/FilterPanel';
+import StatusBadge from '../components/StatusBadge';
+import InlineRowActions from '../components/InlineRowActions';
+import ColumnCustomizer, { type ColumnState } from '../components/ColumnCustomizer';
+import ViewSelector from '../components/ViewSelector';
+import SaveViewModal from '../components/SaveViewModal';
+import ShareViewModal from '../components/ShareViewModal';
+import ShareRecordModal from '../components/ShareRecordModal';
+import BulkActionsBar from '../components/BulkActionsBar';
+import { usePermissions } from '../context/PermissionContext';
+import { useToast, toFriendlyError } from '../context/ToastContext';
+import type { ViewDefinition } from '../../types/view';
+import { fetchViewColumns, updateViewColumns } from '../../services/viewService';
+import ColumnFilterDropdown from '../components/ColumnFilterDropdown';
+import { resolveGridValues } from '../services/gridResolver';
+import ImportFromExcelModal from '../components/ImportFromExcelModal';
+import { fetchSharedRecordIds } from '../services/recordShareService';
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
+
+function formatDate(val: unknown): string {
+  if (!val || typeof val !== 'string') return '—';
+  return new Date(val).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function formatCurrency(val: unknown, currencyCode?: string | null): string {
+  if (val == null || val === '') return '—';
+  const num = Number(val);
+  if (isNaN(num)) return '—';
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: currencyCode ?? 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
+}
+
+const INLINE_EDITABLE_COLS: Partial<Record<AppEntity, string[]>> = {
+  accounts:      ['account_name', 'industry', 'phone', 'website'],
+  contacts:      ['email', 'mobile_phone', 'job_title'],
+  leads:         ['email', 'company_name'],
+  opportunities: ['estimated_value', 'estimated_close_date'],
+  tickets:       [],
+};
+
+const HIGHLIGHT_DOT_COLORS: Record<string, string> = {
+  red:     'bg-red-500',
+  rose:    'bg-rose-500',
+  amber:   'bg-amber-500',
+  orange:  'bg-orange-500',
+  green:   'bg-green-500',
+  emerald: 'bg-emerald-500',
+  teal:    'bg-teal-500',
+  sky:     'bg-sky-500',
+  blue:    'bg-blue-500',
+};
+
+function HighlightLegend({ entity }: { entity: AppEntity }) {
+  const rules = getEntityRules(entity);
+  if (rules.length === 0) return null;
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-1.5 overflow-x-auto shrink-0"
+      style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--divider)' }}
+    >
+      <span className="text-[10px] font-semibold text-[var(--ink-400)] uppercase tracking-wide shrink-0">Highlights</span>
+      {rules.map((r) => (
+        <span key={r.id} className="flex items-center gap-1 shrink-0">
+          <span className={`w-2 h-2 rounded-full ${HIGHLIGHT_DOT_COLORS[r.color] ?? 'bg-[var(--ink-300)]'}`} />
+          <span className="text-[10px] text-[var(--ink-500)]">{r.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+interface ParentFilterContext {
+  fkColumn: string;
+  parentId: string;
+  parentLabel: string;
+  parentEntity: string;
+}
+
+interface EntityListPageProps {
+  module: AppModule;
+  entity: AppEntity;
+  search: string;
+  onSearchChange?: (value: string) => void;
+  onNewRecord?: () => void;
+  onOpenRecord?: (id: string, label?: string) => void;
+  userId?: string;
+  initialFilters?: ActiveFilter[];
+  filterContextLabel?: string;
+  parentFilter?: ParentFilterContext;
+  onClearParentFilter?: () => void;
+  creationBlocked?: boolean;
+  creationBlockedMessage?: string | null;
+}
+
+function columnSnapshot(cols: ColumnState[]): string {
+  // Preserve order — reordering columns is a meaningful change that should enable Save.
+  return JSON.stringify(
+    cols
+      .filter((c) => c.visible)
+      .map((c) => ({ key: c.key, labelOverride: c.labelOverride ?? null, width: c.width ?? null }))
+  );
+}
+
+/** Map DB field_type.name values to the filter-compatible type strings used by ColumnFilterDropdown */
+function normalizeFieldType(dbTypeName: string | undefined | null): string | undefined {
+  if (!dbTypeName) return undefined;
+  const t = dbTypeName.toLowerCase();
+  if (t === 'lookup' || t === 'owner') return 'lookup';
+  if (t === 'twooptions' || t === 'boolean' || t === 'two_options') return 'boolean';
+  if (t === 'optionset' || t === 'option_set' || t === 'choice' || t === 'status' || t === 'picklist') return 'badge';
+  if (t === 'multi_choice') return 'multi_badge';
+  if (t === 'datetime' || t === 'date') return 'date';
+  if (t === 'currency' || t === 'decimal' || t === 'integer' || t === 'number' || t === 'whole_number') return 'currency';
+  if (t === 'phone') return 'phone';
+  if (t === 'email' || t === 'url' || t === 'text' || t === 'textarea' || t === 'string') return 'text';
+  return 'text';
+}
+
+function buildColumnState(entity: AppEntity): ColumnState[] {
+  return (ENTITY_COLUMNS[entity] ?? []).map((c) => ({
+    key: c.key,
+    label: c.label,
+    visible: true,
+    sortable: c.sortable,
+    type: c.type,
+    field_definition_id: c.field_definition_id ?? null,
+    field_physical_column: c.field_physical_column,
+    lookup_table: c.lookup_table,
+    lookup_label_field: c.lookup_label_field,
+    option_set_name: c.option_set_name,
+  }));
+}
+
+export default function EntityListPage({ entity, search, onSearchChange, onNewRecord, onOpenRecord, userId, initialFilters, filterContextLabel, parentFilter, onClearParentFilter, creationBlocked, creationBlockedMessage }: EntityListPageProps) {
+  const { getEntityPrivilege, isActionAllowed, accessContext, permissions, ready: permissionsReady } = usePermissions();
+  const { showError, showSuccess } = useToast();
+  const entityName = ENTITY_LOGICAL_NAME[entity] ?? entity;
+  const staticEntityDefId = ENTITY_DEFINITION_ID[entity] ?? null;
+  const [resolvedEntityDefId, setResolvedEntityDefId] = useState<string | null>(staticEntityDefId);
+
+  useEffect(() => {
+    if (staticEntityDefId) { setResolvedEntityDefId(staticEntityDefId); return; }
+    setResolvedEntityDefId(null);
+    let cancelled = false;
+    supabase
+      .from('entity_definition')
+      .select('entity_definition_id')
+      .eq('logical_name', entityName)
+      .maybeSingle()
+      .then(({ data }) => { if (!cancelled) setResolvedEntityDefId(data?.entity_definition_id ?? null); });
+    return () => { cancelled = true; };
+  }, [entityName, staticEntityDefId]);
+
+  const entityDefinitionId = resolvedEntityDefId;
+  const priv = getEntityPrivilege(entityName);
+  const canRead = priv.can_read;
+  const canCreate = priv.can_create && !creationBlocked;
+  const canWrite = priv.can_write;
+  const canDelete = priv.can_delete;
+  const canBulkDelete = priv.can_delete && isActionAllowed(entityName, 'bulk_delete');
+  const canAssign = priv.can_assign;
+  const canBulkAssign = priv.can_assign && isActionAllowed(entityName, 'bulk_assign');
+  const canBulkEdit = priv.can_write && isActionAllowed(entityName, 'bulk_edit');
+  const canShare = priv.can_share;
+  const canActivate = isActionAllowed(entityName, 'activate');
+  const canDeactivate = isActionAllowed(entityName, 'deactivate');
+  const canExportCsv = priv.can_read && isActionAllowed(entityName, 'export_to_csv');
+  const canExportExcel = priv.can_read && isActionAllowed(entityName, 'export_to_excel');
+  const canImport = (priv.can_create || priv.can_write) && isActionAllowed(entityName, 'import_from_excel');
+  // Read access level — undefined means no restriction (system admin or org-level)
+  const readAccessLevel = (!permissions.isSystemAdmin && priv.can_read) ? priv.read_access_level : undefined;
+
+  const [rows, setRows] = useState<ListRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(25);
+  const [sortKey, setSortKey] = useState<string>('created_at');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [filters, setFilters] = useState<ActiveFilter[]>(initialFilters ?? []);
+  const [showFilters, setShowFilters] = useState(false);
+  const [activeParentFilter, setActiveParentFilter] = useState<ParentFilterContext | undefined>(parentFilter);
+
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<Record<string, string>>({});
+  const [savingRowId, setSavingRowId] = useState<string | null>(null);
+
+  const [crmUsers, setCrmUsers] = useState<{ id: string; email: string }[]>([]);
+  const [columnStates, setColumnStates] = useState<ColumnState[]>(() => buildColumnState(entity));
+  const [showColCustomizer, setShowColCustomizer] = useState(false);
+  const colBtnRef = useRef<HTMLDivElement>(null);
+
+  // View management
+  const [viewsReady, setViewsReady] = useState(false);
+  const [activeView, setActiveView] = useState<ViewDefinition | null>(null);
+  const [savedColumnSnapshot, setSavedColumnSnapshot] = useState<string>('');
+  const [savingViewColumns, setSavingViewColumns] = useState(false);
+  const [showSaveViewModal, setShowSaveViewModal] = useState(false);
+  const [shareTarget, setShareTarget] = useState<ViewDefinition | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [shareRecordTarget, setShareRecordTarget] = useState<{ id: string; label: string } | null>(null);
+  const [shareBulkIds, setShareBulkIds] = useState<string[] | null>(null);
+
+  const toolbarRef = useRef<HTMLDivElement>(null);
+
+  // Column header menu state (Dynamics-style: Sort A-Z / Sort Z-A / Filter by)
+  const [colMenuKey, setColMenuKey] = useState<string | null>(null);
+  const [colMenuAnchor, setColMenuAnchor] = useState<HTMLElement | null>(null);
+  const colMenuRef = useRef<HTMLDivElement>(null);
+
+  // Column filter dropdown state
+  const [colFilterKey, setColFilterKey] = useState<string | null>(null);
+  const [colFilterAnchor, setColFilterAnchor] = useState<HTMLElement | null>(null);
+  const colFilterRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
+  const prevEntity = useRef(entity);
+  const editableCols = INLINE_EDITABLE_COLS[entity] ?? [];
+  const visibleColumns = columnStates.filter((c) => c.visible);
+  // Stable string of visible column keys — triggers reload when columns change
+  const relatedColKeys = visibleColumns
+    .map((c) => c.key)
+    .join(',');
+
+  const fetchGeneration = useRef(0);
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  // Ref populated before the save/load callbacks so they always read latest state
+  const columnStatesRef = useRef<ColumnState[]>([]);
+
+  const load = useCallback(async () => {
+    const gen = ++fetchGeneration.current;
+    setLoading(true);
+    setError(null);
+    try {
+      // Build RelatedColumnSpec from visible related columns (cross-entity via relationship_definition_id)
+      const LABEL_FALLBACKS: Record<string, string[]> = {
+        lead: ['topic', 'company_name', 'email'],
+        contact: ['email', 'business_phone'],
+      };
+      const relatedColumns: RelatedColumnSpec[] = columnStatesRef.current
+        .filter((c) => c.visible && c.relationship_definition_id && c.field_definition_id)
+        .map((c) => ({
+          colKey: c.key,
+          relatedTable: c.related_table_name ?? '',
+          fkColumn: c.fk_physical_column ?? '',
+          fieldPhysicalColumn: c.field_physical_column ?? '',
+          fallbackFields: LABEL_FALLBACKS[c.related_table_name ?? ''],
+        }))
+        .filter((s) => s.relatedTable && s.fkColumn && s.fieldPhysicalColumn);
+
+      // Build a map from logical column key → physical DB column so non-lookup columns resolve
+      const columnKeyMap: Record<string, string> = {};
+      for (const c of columnStatesRef.current) {
+        if (!c.visible) continue;
+        if (c.relationship_definition_id) continue;
+        if (c.lookup_table && c.lookup_label_field) continue;
+        const phys = c.field_physical_column;
+        if (phys && phys !== c.key) columnKeyMap[c.key] = phys;
+      }
+
+      // Always fetch shared record IDs so records shared with the current user
+      // are visible regardless of their normal read access scope.
+      let sharedRecordIds: Set<string> | undefined;
+      if (accessContext?.userId) {
+        const { readIds } = await fetchSharedRecordIds(accessContext.userId, entityName);
+        if (readIds.size > 0) sharedRecordIds = readIds;
+      }
+
+      const result = await fetchEntityList(entity, {
+        search: debouncedSearch,
+        sortKey,
+        sortDir,
+        page,
+        pageSize,
+        filters,
+        relatedColumns,
+        columnKeyMap,
+        readAccessLevel,
+        accessContext: readAccessLevel ? accessContext : undefined,
+        sharedRecordIds,
+      });
+      if (gen !== fetchGeneration.current) return;
+      const resolved = await resolveGridValues(result.rows, columnStatesRef.current);
+      if (gen !== fetchGeneration.current) return;
+      setRows(resolved);
+      setTotal(result.total);
+    } catch (e) {
+      if (gen !== fetchGeneration.current) return;
+      console.error(`[EntityListPage] load error for ${entity}:`, e);
+      setError('Unable to load records. Please try again.');
+    } finally {
+      if (gen === fetchGeneration.current) setLoading(false);
+    }
+  }, [entity, debouncedSearch, sortKey, sortDir, page, pageSize, filters, relatedColKeys, readAccessLevel, accessContext]);
+
+  useEffect(() => {
+    fetchCrmUsers().then(setCrmUsers);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'n' && e.key !== 'N') return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if ((e.target as HTMLElement).isContentEditable) return;
+      if (!canCreate) return;
+      onNewRecord?.();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [canCreate, onNewRecord]);
+
+  // Close column header menu on outside click
+  useEffect(() => {
+    if (!colMenuKey) return;
+    const handler = (e: MouseEvent) => {
+      if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node) &&
+          colMenuAnchor && !colMenuAnchor.contains(e.target as Node)) {
+        setColMenuKey(null);
+        setColMenuAnchor(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [colMenuKey, colMenuAnchor]);
+
+  useEffect(() => {
+    if (prevEntity.current !== entity) {
+      prevEntity.current = entity;
+      setPage(1);
+      setSortKey('created_at');
+      setSortDir('desc');
+      setSelected(new Set());
+      setFilters(initialFilters ?? []);
+      setEditingRowId(null);
+      setColumnStates(buildColumnState(entity));
+      setSavedColumnSnapshot('');
+      setShowColCustomizer(false);
+      setActiveView(null);
+      setViewsReady(false);
+      setActiveParentFilter(parentFilter);
+    }
+    if (!viewsReady || !permissionsReady) return;
+    load();
+  }, [entity, debouncedSearch, sortKey, sortDir, page, pageSize, filters, relatedColKeys, load, viewsReady, permissionsReady]);
+
+  /** Apply a saved view's columns, filters, and sort to the current grid state */
+  const applyView = useCallback(async (view: ViewDefinition) => {
+    // Build view filters
+    const viewFilters: ActiveFilter[] = (view.filter_json?.conditions ?? []).map((c, idx) => ({
+      id: c.id ?? `view-cond-${idx}`,
+      field: c.field_logical_name,
+      label: c.field_display_name,
+      operator: c.operator as ActiveFilter['operator'],
+      value: Array.isArray(c.value) ? c.value.join(',') : (c.value ?? ''),
+    }));
+
+    // Preserve parent FK filter when applying a view
+    setFilters((prev) => {
+      const parentFilters = prev.filter((f) => f.id.startsWith('parent_'));
+      return [...parentFilters, ...viewFilters];
+    });
+    // Apply sort from view
+    if (view.sort_json?.length) {
+      const first = view.sort_json[0];
+      const logicalToPhysical: Record<string, string> = { statecode: 'state_code', statusreason: 'status_reason' };
+      setSortKey(logicalToPhysical[first.field_logical_name] ?? first.field_logical_name);
+      setSortDir(first.direction);
+    }
+
+    // Apply columns
+    try {
+      const cols = await fetchViewColumns(view.view_id);
+      const defaultCols = ENTITY_COLUMNS[entity] ?? [];
+      // Look up defaults by field_definition_id so we can resolve the correct row data key
+      const defaultColByFieldId = new Map(defaultCols.map((c) => [c.field_definition_id, c]));
+
+      let states: ColumnState[];
+      if (cols.length === 0) {
+        states = buildColumnState(entity);
+      } else {
+        states = cols
+          .filter((c) => !c.is_hidden && c.field_logical_name)
+          .map((c) => {
+            const isRelated = !!c.relationship_definition_id;
+            const def = defaultColByFieldId.get(c.field_definition_id as string | undefined);
+            let key = isRelated
+              ? `rel:${c.relationship_definition_id}:${c.field_logical_name}`
+              : (def?.key ?? c.field_physical_column ?? c.field_logical_name!);
+            const relLabel = isRelated && c.related_entity_display_name
+              ? `${c.related_entity_display_name}: ${c.field_display_name ?? c.field_logical_name}`
+              : null;
+            // Normalize DB field_type_name to the filter-compatible type string
+            const resolvedLookupTable = c.lookup_table ?? def?.lookup_table;
+            const resolvedLookupLabel = c.lookup_label_field ?? def?.lookup_label_field;
+            let resolvedType = normalizeFieldType(c.field_type_name) ?? def?.type;
+            // Preserve 'owner' render type for crm_user lookup columns so the avatar renders correctly
+            if (resolvedType === 'lookup' && resolvedLookupTable === 'crm_user') resolvedType = 'owner';
+            // Owner columns: fetchUniversal stores the resolved email at 'owner_email', not the raw FK
+            if (resolvedType === 'owner' && (key === 'owner_id' || key === 'ownerid')) key = 'owner_email';
+            return {
+              key,
+              label: relLabel ?? def?.label ?? c.field_display_name ?? c.field_logical_name!,
+              visible: true,
+              sortable: isRelated ? false : (c.is_sortable ?? def?.sortable ?? false),
+              type: resolvedType,
+              field_definition_id: c.field_definition_id,
+              relationship_definition_id: c.relationship_definition_id ?? null,
+              related_entity_display_name: c.related_entity_display_name,
+              related_table_name: c.related_table_name,
+              fk_physical_column: c.fk_physical_column,
+              field_physical_column: c.field_physical_column,
+              // Carry lookup & option-set metadata so column filter works
+              lookup_table: resolvedLookupTable,
+              lookup_label_field: resolvedLookupLabel,
+              option_set_name: c.option_set_name,
+              inline_choices: c.inline_choices,
+              labelOverride: c.label_override ?? undefined,
+              width: c.width,
+            } as ColumnState;
+          });
+
+        // Append hidden defaults not present in view columns
+        for (const def of defaultCols) {
+          if (!states.find((s) => s.key === def.key)) {
+            states.push({
+              key: def.key,
+              label: def.label,
+              visible: false,
+              sortable: def.sortable,
+              type: def.type,
+              field_definition_id: def.field_definition_id ?? null,
+              field_physical_column: def.field_physical_column,
+            });
+          }
+        }
+
+        // Deduplicate by key — keep first occurrence (view-defined order takes precedence)
+        const seen = new Set<string>();
+        states = states.filter((s) => {
+          if (seen.has(s.key)) return false;
+          seen.add(s.key);
+          return true;
+        });
+      }
+
+      setColumnStates(states);
+      setSavedColumnSnapshot(columnSnapshot(states));
+      // Update ref immediately so the next load() call sees the new related columns
+      columnStatesRef.current = states;
+      setPage(1);
+    } catch {
+      // Non-fatal — fall back to default columns
+    }
+  }, [entity]);
+
+  // columnsModified: true only when viewing a non-system view, a snapshot exists,
+  // and the current column layout differs from what was last saved/loaded.
+  const columnsModified = !!activeView && !activeView.is_system
+    && savedColumnSnapshot !== ''
+    && columnSnapshot(columnStates) !== savedColumnSnapshot;
+
+  // Refs so save/switch callbacks always see the latest values without stale closures
+  const columnsModifiedRef = useRef(false);
+  const activeViewRef = useRef<ViewDefinition | null>(null);
+  columnsModifiedRef.current = columnsModified;
+  activeViewRef.current = activeView;
+  columnStatesRef.current = columnStates;
+
+  const handleSaveViewColumns = useCallback(async () => {
+    const view = activeViewRef.current;
+    if (!view) return;
+    setSavingViewColumns(true);
+    try {
+      const cols = columnStatesRef.current
+        .filter((c) => c.visible && c.field_definition_id)
+        .map((c, i) => ({
+          field_definition_id: c.field_definition_id!,
+          label_override: c.labelOverride ?? null,
+          width: c.width ?? null,
+          is_sortable: c.sortable ?? false,
+          display_order: i,
+          relationship_definition_id: c.relationship_definition_id ?? null,
+        }));
+      await updateViewColumns(view.view_id, cols);
+      setSavedColumnSnapshot(columnSnapshot(columnStatesRef.current));
+      showSuccess('View columns saved.');
+    } catch (e) {
+      showError(toFriendlyError(e, 'Unable to save view columns.'));
+    } finally {
+      setSavingViewColumns(false);
+    }
+  }, [showSuccess, showError]);
+
+  /** Switch to a view — prompts to save unsaved column changes first */
+  const handleViewChange = useCallback(async (view: ViewDefinition | null) => {
+    if (columnsModifiedRef.current) {
+      const save = window.confirm(
+        `You have unsaved column changes in "${activeViewRef.current?.name}".\n\nOK to save then switch, Cancel to discard and switch.`
+      );
+      if (save) await handleSaveViewColumns();
+    }
+    setActiveView(view);
+    setSavedColumnSnapshot('');
+    if (!view) {
+      setColumnStates(buildColumnState(entity));
+      setFilters((prev) => prev.filter((f) => f.id.startsWith('parent_')));
+      setSortKey('created_at');
+      setSortDir('desc');
+      setPage(1);
+      return;
+    }
+    await applyView(view);
+  }, [entity, applyView, handleSaveViewColumns]);
+
+  /** Called once on initial load for the default view — no unsaved-changes check */
+  const handleDefaultViewLoaded = useCallback(async (view: ViewDefinition) => {
+    setActiveView(view);
+    setSavedColumnSnapshot('');
+    await applyView(view);
+  }, [applyView]);
+
+  const handleViewsResolved = useCallback(() => {
+    setViewsReady(true);
+  }, []);
+
+  const handleSort = (key: string) => {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+    setPage(1);
+  };
+
+  const openColMenu = (e: React.MouseEvent, colKey: string) => {
+    e.stopPropagation();
+    if (colMenuKey === colKey) { setColMenuKey(null); setColMenuAnchor(null); return; }
+    setColMenuKey(colKey);
+    setColMenuAnchor(e.currentTarget as HTMLElement);
+    // Close filter if open
+    setColFilterKey(null);
+    setColFilterAnchor(null);
+  };
+
+  const openColFilter = (e: React.MouseEvent, colKey: string) => {
+    e.stopPropagation();
+    if (colFilterKey === colKey) { setColFilterKey(null); setColFilterAnchor(null); return; }
+    setColFilterKey(colKey);
+    setColFilterAnchor(e.currentTarget as HTMLElement);
+  };
+
+  const applyColFilter = (colKey: string, filter: ActiveFilter | null) => {
+    setFilters((prev) => {
+      const without = prev.filter((f) => f.id !== `col-filter-${colKey}` && !f.id.startsWith(`col-${colKey}-`));
+      if (!filter) return without;
+      return [...without, { ...filter, id: `col-filter-${colKey}` }];
+    });
+    setPage(1);
+    setColFilterKey(null);
+    setColFilterAnchor(null);
+  };
+
+  const getColFilter = (colKey: string): ActiveFilter | null =>
+    filters.find((f) => f.id === `col-filter-${colKey}` || f.id.startsWith(`col-${colKey}-`)) ?? null;
+
+  const handlePageSizeChange = (newSize: PageSizeOption) => {
+    setPageSize(newSize);
+    setPage(1);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selected.size === rows.length) setSelected(new Set());
+    else setSelected(new Set(rows.map((r) => r.id)));
+  };
+
+  const allSelected = rows.length > 0 && selected.size === rows.length;
+  const someSelected = selected.size > 0 && !allSelected;
+  const totalPages = Math.ceil(total / pageSize);
+
+  const startEdit = (row: ListRow) => {
+    const draft: Record<string, string> = {};
+    for (const col of editableCols) {
+      draft[col] = String(row[col] ?? '');
+    }
+    setEditDraft(draft);
+    setEditingRowId(row.id);
+  };
+
+  const cancelEdit = () => {
+    setEditingRowId(null);
+    setEditDraft({});
+  };
+
+  const saveEdit = async (rowId: string) => {
+    if (!userId) return;
+    setSavingRowId(rowId);
+    try {
+      const fields: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(editDraft)) {
+        fields[k] = v === '' ? null : v;
+      }
+      await updateRowFields(entity, rowId, fields, userId);
+      setRows((prev) =>
+        prev.map((r) => (r.id === rowId ? { ...r, ...fields } : r))
+      );
+      setEditingRowId(null);
+      setEditDraft({});
+    } catch (e) {
+      showError(toFriendlyError(e, 'Unable to save changes. Please try again.'));
+    } finally {
+      setSavingRowId(null);
+    }
+  };
+
+  const handleChangeStatus = async (rowId: string, status: string) => {
+    if (!userId) return;
+    try {
+      await updateRowFields(entity, rowId, { state_code: status }, userId);
+      setRows((prev) =>
+        prev.map((r) => (r.id === rowId ? { ...r, state_code: status } : r))
+      );
+    } catch (e) {
+      showError(toFriendlyError(e, 'Unable to update status. Please try again.'));
+    }
+  };
+
+  const handleAssign = async (rowId: string, assignUserId: string, assignUserEmail?: string) => {
+    if (!userId) return;
+    try {
+      await updateRowFields(entity, rowId, { owner_id: assignUserId }, userId);
+      setRows((prev) =>
+        prev.map((r) => (r.id === rowId ? { ...r, owner_id: assignUserId, owner_email: assignUserEmail ?? r.owner_email } : r))
+      );
+      showSuccess('Record reassigned successfully.');
+    } catch (e) {
+      showError(toFriendlyError(e, 'Unable to reassign the record. Please try again.'));
+    }
+  };
+
+  const renderCell = (row: ListRow, col: ColumnState) => {
+    const colKey = col.key;
+    const colType = col.type;
+    const isEditing = editingRowId === row.id;
+    const isEditable = editableCols.includes(colKey);
+
+    if (isEditing && isEditable) {
+      return (
+        <input
+          type={colType === 'currency' ? 'number' : 'text'}
+          value={editDraft[colKey] ?? ''}
+          onChange={(e) => setEditDraft((d) => ({ ...d, [colKey]: e.target.value }))}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full px-1.5 py-0.5 text-[12px] border border-[var(--navy-accent)] rounded bg-white focus:outline-none focus:ring-1 focus:ring-[var(--navy-accent)] text-[var(--ink-900)]"
+          autoFocus={editableCols[0] === colKey}
+        />
+      );
+    }
+
+    const val = row[colKey];
+
+    // Null / empty
+    if (val === null || val === undefined || val === '') {
+      return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
+    }
+
+    // Skip rendering Supabase nested objects
+    if (typeof val === 'object' && !Array.isArray(val)) {
+      return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
+    }
+
+    // UUID detection: hide raw UUIDs for FK columns that weren't resolved
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const strVal = String(val);
+    if (UUID_RE.test(strVal) && colType !== 'link') {
+      return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
+    }
+
+    // --- Type-specific rendering ---
+
+    if (colType === 'date') {
+      return <span className="text-[var(--ink-500)] text-[12px]">{formatDate(val)}</span>;
+    }
+
+    if (colType === 'phone') {
+      return (
+        <a
+          href={`tel:${strVal.replace(/\s/g, '')}`}
+          onClick={(e) => e.stopPropagation()}
+          className="text-[var(--link)] hover:underline text-[12px]"
+        >
+          {strVal}
+        </a>
+      );
+    }
+
+    if (colType === 'currency') {
+      return <span className="text-[var(--ink-700)] text-[12px] font-medium">{formatCurrency(val, row.currency_code as string | null)}</span>;
+    }
+
+    if (colType === 'badge') {
+      return <StatusBadge value={strVal} />;
+    }
+
+    if (colType === 'multi_badge') {
+      if (!strVal || strVal === '—') return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
+      const parts = strVal.split(',').map((s) => s.trim()).filter(Boolean);
+      if (parts.length === 0) return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
+      return (
+        <span className="inline-flex flex-wrap gap-1">
+          {parts.map((p, i) => (
+            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
+              {p}
+            </span>
+          ))}
+        </span>
+      );
+    }
+
+    if (colType === 'link') {
+      return (
+        <span
+          className="text-[var(--link)] cursor-pointer font-medium text-[12px] hover:underline"
+          onClick={(e) => { e.stopPropagation(); onOpenRecord?.(row.id, strVal); }}
+        >
+          {strVal || '—'}
+        </span>
+      );
+    }
+
+    if (colType === 'owner') {
+      const emailStr = String(row[colKey] ?? '');
+      if (!emailStr || emailStr === '—' || /^[0-9a-f]{8}-/i.test(emailStr)) return <span className="text-[var(--ink-300)] text-[11px]">—</span>;
+      const initials = emailStr.split('@')[0].slice(0, 2).toUpperCase();
+      const shortName = emailStr.split('@')[0];
+      const AVATAR_COLORS = ['#2b6cb0', '#0d9488', '#b45309', '#7c3aed', '#dc2626', '#059669'];
+      const colorIndex = emailStr.charCodeAt(0) % AVATAR_COLORS.length;
+      return (
+        <span className="flex items-center gap-1.5">
+          <span
+            className="w-5 h-5 rounded-full text-[9.5px] font-bold text-white flex items-center justify-center shrink-0 uppercase"
+            style={{ background: AVATAR_COLORS[colorIndex] }}
+          >
+            {initials}
+          </span>
+          <span className="text-[12px] text-[var(--ink-600)] truncate max-w-[100px]">{shortName}</span>
+        </span>
+      );
+    }
+
+    if (colType === 'lookup') {
+      return <span className="text-[var(--ink-600)] text-[12px]">{strVal}</span>;
+    }
+
+    if (colType === 'boolean') {
+      const isTrue = val === true || val === 'true' || val === '1' || val === 1;
+      const isFalse = val === false || val === 'false' || val === '0' || val === 0;
+      if (!isTrue && !isFalse) return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
+      return (
+        <span className={`text-[12px] font-medium ${isTrue ? 'text-emerald-600' : 'text-[var(--ink-400)]'}`}>
+          {isTrue ? 'Yes' : 'No'}
+        </span>
+      );
+    }
+
+    // Auto-detect: if column key ends with _id and value is a UUID, show dash
+    if (colKey.endsWith('_id') && UUID_RE.test(strVal)) {
+      return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
+    }
+
+    // Auto-detect: date-like strings (ISO 8601)
+    if (!colType && typeof val === 'string' && /^\d{4}-\d{2}-\d{2}(T|\s)/.test(val)) {
+      return <span className="text-[var(--ink-500)] text-[12px]">{formatDate(val)}</span>;
+    }
+
+    // Auto-detect: numeric with decimal for untyped columns
+    if (!colType && typeof val === 'number') {
+      return <span className="text-[var(--ink-700)] text-[12px] font-medium tabular-nums">{val.toLocaleString()}</span>;
+    }
+
+    // Default text rendering
+    return <span className="text-[var(--ink-600)] text-[12px]">{strVal}</span>;
+  };
+
+  if (!permissionsReady) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 size={20} className="text-blue-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!canRead) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 gap-4 p-8">
+        <div className="w-14 h-14 rounded-full bg-red-50 border border-red-200 flex items-center justify-center">
+          <Lock size={24} className="text-red-400" />
+        </div>
+        <div className="text-center">
+          <h2 className="text-[16px] font-semibold text-slate-700 mb-1">Access Denied</h2>
+          <p className="text-[13px] text-slate-500 max-w-sm">You do not have permission to view these records. Contact your administrator to request access.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
+        {/* --- Command bar (40px, white, bottom border) --- */}
+        <div
+          className="h-[40px] flex items-center gap-1 px-4 shrink-0 bg-white"
+          style={{ borderBottom: '1px solid var(--border)' }}
+          ref={toolbarRef}
+        >
+          {selected.size > 0 ? (
+            /* Contextual command bar when rows selected */
+            <div className="flex items-center gap-1 flex-1" style={{ background: '#f4f8fd' }}>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold text-[var(--navy-accent)] bg-[#e5efff]">
+                {selected.size} selected
+                <button onClick={() => setSelected(new Set())} className="ml-0.5 hover:text-[var(--ink-700)]">
+                  <X size={11} />
+                </button>
+              </span>
+              <CmdSep />
+              <BulkActionsBar
+                entity={entity}
+                entityDefinitionId={entityDefinitionId}
+                selected={selected}
+                rows={rows}
+                columns={visibleColumns}
+                users={crmUsers}
+                userId={userId}
+                canWrite={canWrite}
+                canDelete={selected.size > 1 ? canBulkDelete : canDelete}
+                canAssign={selected.size > 1 ? canBulkAssign : canAssign}
+                canExport={canExportExcel}
+                canBulkEdit={selected.size > 1 ? canBulkEdit : canWrite}
+                canActivate={canActivate}
+                canDeactivate={canDeactivate}
+                canShare={canShare}
+                onShare={(id) => {
+                  const ids = Array.from(selected);
+                  if (ids.length > 1) {
+                    setShareBulkIds(ids);
+                  } else {
+                    const row = rows.find((r) => r.id === id);
+                    const allCols = ENTITY_COLUMNS[entity] ?? [];
+                    const linkCol = allCols.find((c) => c.type === 'link');
+                    const label = linkCol && row ? String(row[linkCol.key] ?? '') : id;
+                    setShareRecordTarget({ id, label });
+                  }
+                }}
+                onClear={() => setSelected(new Set())}
+                onComplete={load}
+              />
+            </div>
+          ) : (
+            /* Default command bar */
+            <>
+              {canCreate && onNewRecord && (
+                <button
+                  onClick={onNewRecord}
+                  className="flex items-center gap-1.5 px-3 h-[28px] rounded text-[12px] font-semibold text-white transition-colors shrink-0"
+                  style={{ background: 'var(--navy-accent)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(0.9)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.filter = ''; }}
+                >
+                  <Plus size={13} />
+                  <span>New</span>
+                </button>
+              )}
+              {canCreate && onNewRecord && <CmdSep />}
+              <CmdBtn onClick={load}>
+                <RefreshCw size={14} className="text-[var(--navy-accent)]" />
+                <span>Refresh</span>
+              </CmdBtn>
+              <CmdSep />
+              <CmdBtn onClick={() => setShowFilters((v) => !v)} active={showFilters || filters.length > 0}>
+                <SlidersHorizontal size={14} className="text-[var(--navy-accent)]" />
+                <span>Filters</span>
+                {filters.length > 0 && (
+                  <span className="text-[9px] bg-[var(--navy-accent)] text-white w-4 h-4 rounded-full flex items-center justify-center font-bold leading-none">
+                    {filters.length}
+                  </span>
+                )}
+              </CmdBtn>
+              {userId && (() => {
+                const myFilter = filters.find((f) => f.field === 'owner_id' && f.value === userId);
+                return (
+                  <CmdBtn
+                    onClick={() => {
+                      if (myFilter) {
+                        setFilters((prev) => prev.filter((f) => f.id !== myFilter.id));
+                      } else {
+                        setFilters((prev) => [
+                          ...prev.filter((f) => f.field !== 'owner_id'),
+                          { id: `assigned_me_${Date.now()}`, field: 'owner_id', label: 'Owner', operator: 'eq', value: userId },
+                        ]);
+                      }
+                      setPage(1);
+                    }}
+                    active={!!myFilter}
+                  >
+                    <UserCheck size={14} className="text-[var(--navy-accent)]" />
+                    <span>Mine</span>
+                  </CmdBtn>
+                );
+              })()}
+              <CmdSep />
+              <div ref={colBtnRef} className="relative">
+                <CmdBtn onClick={() => setShowColCustomizer((v) => !v)} active={showColCustomizer}>
+                  <Columns3 size={14} className="text-[var(--navy-accent)]" />
+                  <span>Edit columns</span>
+                  {columnsModified && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="Unsaved column changes" />
+                  )}
+                </CmdBtn>
+                {showColCustomizer && (
+                  <ColumnCustomizer
+                    columns={columnStates}
+                    defaultColumns={ENTITY_COLUMNS[entity] ?? []}
+                    entityDefinitionId={entityDefinitionId}
+                    activeViewName={activeView?.name ?? null}
+                    isSystemView={activeView?.is_system ?? false}
+                    hasUnsavedChanges={columnsModified}
+                    savingView={savingViewColumns}
+                    onChange={setColumnStates}
+                    onClose={() => setShowColCustomizer(false)}
+                    onSaveView={handleSaveViewColumns}
+                  />
+                )}
+              </div>
+              {canImport && (
+                <CmdBtn onClick={() => setShowImportModal(true)}>
+                  <Upload size={14} className="text-[var(--navy-accent)]" />
+                  <span>Import from Excel</span>
+                </CmdBtn>
+              )}
+              {canExportExcel && (
+                <CmdBtn onClick={() => {
+                  if (rows.length === 0) return;
+                  const cols = visibleColumns;
+                  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                  const esc = (v: string) => (v.includes(',') || v.includes('"') || v.includes('\n')) ? `"${v.replace(/"/g, '""')}"` : v;
+                  const headers = cols.map((c) => esc(c.labelOverride || c.label));
+                  const csvRows = rows.map((row) =>
+                    cols.map((col) => {
+                      const val = row[col.key];
+                      if (val == null || val === '') return '';
+                      if (typeof val === 'object' && !Array.isArray(val)) return '';
+                      const s = String(val);
+                      if (UUID_RE.test(s)) return '';
+                      if (col.type === 'date') { try { return esc(new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })); } catch { return esc(s); } }
+                      if (col.type === 'currency') { const n = Number(val); if (!isNaN(n)) { try { return esc(new Intl.NumberFormat(undefined, { style: 'currency', currency: (row.currency_code as string) ?? 'USD', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n)); } catch { return esc(String(n)); } } return ''; }
+                      if (col.type === 'boolean') return (val === true || val === 'true' || val === '1' || val === 1) ? 'Yes' : (val === false || val === 'false' || val === '0' || val === 0) ? 'No' : '';
+                      if (col.type === 'owner') return /^[0-9a-f]{8}-/i.test(s) ? '' : esc(s.split('@')[0]);
+                      return esc(s);
+                    }).join(',')
+                  );
+                  const blob = new Blob([[headers.join(','), ...csvRows].join('\n')], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${entity}-export-${new Date().toISOString().slice(0, 10)}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}>
+                  <Download size={14} className="text-[var(--navy-accent)]" />
+                  <span>Export to Excel</span>
+                </CmdBtn>
+              )}
+              <div className="flex-1" />
+              {loading ? (
+                <span className="text-[11px] text-[var(--ink-400)] animate-pulse">Loading...</span>
+              ) : (
+                <span className="text-[11px] text-[var(--ink-400)]">{total.toLocaleString()} record{total !== 1 ? 's' : ''}</span>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* --- View row (white, bottom border) --- */}
+        <div
+          className="flex items-center gap-3 px-4 py-2 bg-white shrink-0"
+          style={{ borderBottom: '1px solid var(--border)' }}
+        >
+          <ViewSelector
+            entityDefinitionId={entityDefinitionId}
+            activeViewId={activeView?.view_id ?? null}
+            currentUserId={userId}
+            onViewChange={handleViewChange}
+            onDefaultViewLoaded={handleDefaultViewLoaded}
+            onViewsResolved={handleViewsResolved}
+            onSaveAsNew={() => setShowSaveViewModal(true)}
+            onShareView={(v) => setShareTarget(v)}
+          />
+          <div className="flex-1" />
+          <CmdBtn onClick={() => setShowColCustomizer((v) => !v)}>
+            <Columns3 size={14} className="text-[var(--navy-accent)]" />
+            <span>Edit columns</span>
+          </CmdBtn>
+          <CmdBtn onClick={() => setShowFilters((v) => !v)}>
+            <Filter size={14} className="text-[var(--navy-accent)]" />
+            <span>Edit filters</span>
+          </CmdBtn>
+          <div className="relative w-[240px]">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--ink-300)]" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => onSearchChange?.(e.target.value)}
+              placeholder="Filter by keyword"
+              className="w-full h-[28px] pl-8 pr-8 text-[12px] bg-[var(--ink-50)] border rounded text-[var(--ink-700)] placeholder-[var(--ink-400)] focus:outline-none focus:ring-1 focus:ring-[var(--navy-accent)]"
+              style={{ borderColor: 'var(--border)' }}
+            />
+            {search && (
+              <button
+                onClick={() => onSearchChange?.('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-400)] hover:text-[var(--ink-600)]"
+              >
+                <X size={11} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {getEntityRules(entity).length > 0 && (
+          <HighlightLegend entity={entity} />
+        )}
+
+        {activeParentFilter && (
+          <div
+            className="flex items-center gap-2 px-4 py-2"
+            style={{ background: '#e5efff', borderBottom: '1px solid #c3d7f0' }}
+          >
+            <span className="text-[11px] text-[#1d4079]">
+              Showing <span className="font-semibold">{entity}</span> for <span className="font-semibold">{activeParentFilter.parentLabel}</span>
+            </span>
+            <button
+              onClick={() => {
+                const parentFilterId = `parent_${activeParentFilter.fkColumn}`;
+                setFilters((prev) => prev.filter((f) => f.id !== parentFilterId));
+                setActiveParentFilter(undefined);
+                setPage(1);
+                if (onClearParentFilter) onClearParentFilter();
+              }}
+              className="ml-1 text-[10px] text-[var(--link)] hover:underline font-medium"
+            >
+              Clear filter
+            </button>
+          </div>
+        )}
+
+        {/* --- Data grid --- */}
+        <div className="flex-1 overflow-auto bg-white">
+          {error ? (
+            <div className="flex flex-col items-center justify-center h-full text-center px-6">
+              <p className="text-[13px] text-red-500 font-medium">{error}</p>
+              <button onClick={load} className="mt-3 text-[12px] text-[var(--link)] hover:underline">
+                Try again
+              </button>
+            </div>
+          ) : (
+            <table className="w-full text-sm border-separate border-spacing-0">
+              <thead className="sticky top-0 z-10">
+                <tr>
+                  <th className="w-10 px-3 py-2 bg-[#fafbfc]" style={{ borderBottom: '1px solid var(--divider)' }}>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                      onChange={toggleAll}
+                      className="crm-checkbox"
+                    />
+                  </th>
+                  {visibleColumns.map((col) => {
+                    const colHasFilter = !!getColFilter(col.key);
+                    const colMenuOpen = colMenuKey === col.key;
+                    return (
+                      <th
+                        key={col.key}
+                        style={col.width ? { width: col.width, borderBottom: '1px solid var(--divider)' } : { borderBottom: '1px solid var(--divider)' }}
+                        className="bg-[#fafbfc] text-left whitespace-nowrap select-none relative group/th"
+                      >
+                        <button
+                          onClick={(e) => openColMenu(e, col.key)}
+                          className={`w-full flex items-center gap-1.5 px-3 py-2 text-left transition-colors ${
+                            colMenuOpen || colHasFilter
+                              ? 'bg-[var(--ink-50)]'
+                              : 'hover:bg-[var(--ink-50)]'
+                          }`}
+                        >
+                          <span className={`text-[11.5px] font-semibold truncate ${
+                            colHasFilter ? 'text-[var(--navy-accent)]' : 'text-[var(--navy-accent)]'
+                          }`}>
+                            {col.labelOverride || col.label}
+                          </span>
+                          {col.relationship_definition_id && (
+                            <span className="inline-flex items-center px-1 py-0.5 rounded text-[9px] font-medium bg-[var(--ink-50)] text-[var(--ink-400)] leading-none shrink-0" style={{ border: '1px solid var(--border)' }}>
+                              {col.related_entity_display_name ?? 'Rel'}
+                            </span>
+                          )}
+                          <span className="ml-auto flex items-center gap-0.5 shrink-0">
+                            {col.sortable && sortKey === (col.field_physical_column ?? col.key) && (
+                              sortDir === 'asc'
+                                ? <ChevronUp size={12} className="text-[var(--navy-accent)]" />
+                                : <ChevronDown size={12} className="text-[var(--navy-accent)]" />
+                            )}
+                            {colHasFilter && (
+                              <Filter size={10} className="text-[var(--navy-accent)]" />
+                            )}
+                            <ChevronDown size={11} className={`transition-transform ${colMenuOpen ? 'rotate-180 text-[var(--navy-accent)]' : 'text-[var(--ink-300)]'}`} />
+                          </span>
+                        </button>
+                      </th>
+                    );
+                  })}
+                  <th className="w-36 px-3 py-2 bg-[#fafbfc]" style={{ borderBottom: '1px solid var(--divider)' }} />
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  Array.from({ length: pageSize < 10 ? pageSize : 10 }).map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="px-3 py-2" style={{ borderBottom: '1px solid var(--divider)' }}>
+                        <div className="w-3.5 h-3.5 rounded" style={{ background: 'var(--ink-100)' }} />
+                      </td>
+                      {visibleColumns.map((col) => (
+                        <td key={col.key} className="px-3 py-2" style={{ borderBottom: '1px solid var(--divider)' }}>
+                          <div className={`h-3 rounded ${col.type === 'badge' ? 'w-16' : col.type === 'currency' ? 'w-20' : col.type === 'date' ? 'w-24' : 'w-32'}`} style={{ opacity: 1 - i * 0.07, background: 'var(--ink-100)' }} />
+                        </td>
+                      ))}
+                      <td className="px-3 py-2" style={{ borderBottom: '1px solid var(--divider)' }} />
+                    </tr>
+                  ))
+                ) : rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={visibleColumns.length + 2}>
+                      <div className="flex flex-col items-center justify-center py-24 text-[var(--ink-400)]">
+                        <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4" style={{ background: 'var(--ink-50)' }}>
+                          <Inbox size={22} className="text-[var(--ink-300)]" />
+                        </div>
+                        <p className="text-[14px] font-medium text-[var(--ink-600)] mb-1">No records found</p>
+                        <p className="text-[12px] text-[var(--ink-400)]">
+                          {filters.length > 0 || debouncedSearch
+                            ? 'Try adjusting your filters or search terms.'
+                            : 'Get started by creating a new record.'}
+                        </p>
+                        {(filters.length > 0 || debouncedSearch) ? (
+                          <button onClick={() => setFilters([])} className="mt-3 text-[12px] text-[var(--link)] hover:underline">
+                            Clear filters
+                          </button>
+                        ) : (
+                          <button onClick={onNewRecord} className="mt-3 text-[12px] text-[var(--link)] hover:underline font-medium">
+                            Create first record
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  rows.map((row) => {
+                    const isSelected = selected.has(row.id);
+                    const isEditingThis = editingRowId === row.id;
+                    const isSaving = savingRowId === row.id;
+                    const highlight = !isEditingThis && !isSelected ? evaluateRowHighlight(entity, row) : null;
+
+                    return (
+                      <tr
+                        key={row.id}
+                        onMouseEnter={() => setHoveredRow(row.id)}
+                        onMouseLeave={() => setHoveredRow(null)}
+                        onClick={() => {
+                          if (!isEditingThis) {
+                            const allCols = ENTITY_COLUMNS[entity] ?? [];
+                            const linkCol = allCols.find((c) => c.type === 'link');
+                            const label = linkCol ? String(row[linkCol.key] ?? '') : undefined;
+                            onOpenRecord?.(row.id, label);
+                          }
+                        }}
+                        style={{ height: 34 }}
+                        className={`group transition-colors duration-100 cursor-pointer ${
+                          isEditingThis
+                            ? 'bg-blue-50'
+                            : isSelected
+                            ? 'bg-[#ddeeff]'
+                            : highlight
+                            ? `bg-white hover:bg-[#ebf1fa] ${highlight.leftBorderClass}`
+                            : 'bg-white hover:bg-[#ebf1fa]'
+                        } ${isSaving ? 'opacity-60' : ''}`}
+                      >
+                        <td
+                          className="px-3"
+                          style={{
+                            borderBottom: '1px solid var(--divider)',
+                            borderLeft: isSelected ? '3px solid var(--navy-accent)' : '3px solid transparent',
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(row.id)}
+                            className="crm-checkbox"
+                          />
+                        </td>
+                        {visibleColumns.map((col) => (
+                          <td
+                            key={col.key}
+                            className={`px-3 whitespace-nowrap ${isEditingThis ? 'py-1' : 'py-1'}`}
+                            style={{ borderBottom: '1px solid var(--divider)', padding: '6px 10px' }}
+                            onClick={isEditingThis ? (e) => e.stopPropagation() : undefined}
+                          >
+                            {renderCell(row, col)}
+                          </td>
+                        ))}
+                        <td
+                          className="px-3 text-right"
+                          style={{ borderBottom: '1px solid var(--divider)', minWidth: 80 }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-end gap-2">
+                            {highlight && !isEditingThis && (
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-100 ${highlight.badgeClass}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${highlight.badgeDotClass}`} />
+                                {highlight.rule.label}
+                              </span>
+                            )}
+                            {isEditingThis && (
+                              <InlineRowActions
+                                rowId={row.id}
+                                entity={entity}
+                                canWrite={canWrite}
+                                isEditing={isEditingThis}
+                                onEdit={() => startEdit(row)}
+                                onSave={() => saveEdit(row.id)}
+                                onCancel={cancelEdit}
+                                onChangeStatus={(status) => handleChangeStatus(row.id, status)}
+                                onAssign={(uid, email) => handleAssign(row.id, uid, email)}
+                                assignUsers={crmUsers}
+                              />
+                            )}
+                            {!isEditingThis && canShare && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const allCols = ENTITY_COLUMNS[entity] ?? [];
+                                  const linkCol = allCols.find((c) => c.type === 'link');
+                                  const label = linkCol ? String(row[linkCol.key] ?? '') : row.id;
+                                  setShareRecordTarget({ id: row.id, label });
+                                }}
+                                title="Share record"
+                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition opacity-0 group-hover:opacity-100 duration-100"
+                              >
+                                <Share2 size={11} />
+                                Share
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* --- Alphabet bar (30px) --- */}
+        <AlphabetBar />
+
+        {/* --- Pagination footer (36px) --- */}
+        <div
+          className="h-[36px] px-4 flex items-center justify-between shrink-0 bg-white"
+          style={{ borderTop: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center gap-3">
+            {selected.size > 0 && (
+              <span className="text-[11px] text-[var(--navy-accent)] font-semibold">{selected.size} selected</span>
+            )}
+            {selected.size > 0 && <span className="text-[var(--ink-200)]">|</span>}
+            <span className="text-[11px] text-[var(--ink-500)] tabular-nums">
+              {loading
+                ? <span className="inline-block w-28 h-3 rounded animate-pulse align-middle" style={{ background: 'var(--ink-100)' }} />
+                : total === 0
+                ? 'No records'
+                : `Showing ${((page - 1) * pageSize + 1).toLocaleString()}–${Math.min(page * pageSize, total).toLocaleString()} of ${total.toLocaleString()}`}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-[var(--ink-400)]">Rows per page</span>
+              <select
+                value={pageSize}
+                onChange={(e) => handlePageSizeChange(Number(e.target.value) as PageSizeOption)}
+                className="h-[24px] px-1 text-[11px] border rounded bg-white text-[var(--ink-700)] focus:outline-none"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                {PAGE_SIZE_OPTIONS.map((sz) => (
+                  <option key={sz} value={sz}>{sz}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-0.5">
+              <PgBtn disabled={page <= 1 || loading} onClick={() => setPage(1)} title="First page">
+                <ChevronLeft size={9} className="mr-[-3px]" /><ChevronLeft size={9} />
+              </PgBtn>
+              <PgBtn disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>
+                <ChevronLeft size={12} />
+              </PgBtn>
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                const p = totalPages <= 5 ? i + 1 : page <= 3 ? i + 1 : page >= totalPages - 2 ? totalPages - 4 + i : page - 2 + i;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    disabled={loading}
+                    className={`w-6 h-6 text-[11px] rounded transition font-medium ${
+                      p === page
+                        ? 'bg-[var(--navy-accent)] text-white'
+                        : 'text-[var(--ink-600)] hover:bg-[var(--ink-50)]'
+                    }`}
+                    style={p !== page ? { border: '1px solid var(--border)' } : undefined}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              <PgBtn disabled={page >= totalPages || loading} onClick={() => setPage((p) => p + 1)}>
+                <ChevronRight size={12} />
+              </PgBtn>
+              <PgBtn disabled={page >= totalPages || loading} onClick={() => setPage(totalPages)} title="Last page">
+                <ChevronRight size={9} className="mr-[-3px]" /><ChevronRight size={9} />
+              </PgBtn>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {showFilters && (
+        <FilterPanel
+          entity={entity}
+          filters={filters}
+          onFiltersChange={(f) => { setFilters(f); setPage(1); }}
+          onClose={() => setShowFilters(false)}
+          userId={userId}
+          entityDefinitionId={entityDefinitionId}
+        />
+      )}
+
+      {showSaveViewModal && entityDefinitionId && (
+        <SaveViewModal
+          entityDefinitionId={entityDefinitionId}
+          columnStates={columnStates}
+          filters={filters}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSaved={(viewId, viewName) => {
+            setShowSaveViewModal(false);
+            showSuccess(`View "${viewName}" saved.`);
+            // ViewSelector will reload automatically on next open
+          }}
+          onClose={() => setShowSaveViewModal(false)}
+        />
+      )}
+
+      {shareTarget && (
+        <ShareViewModal
+          view={shareTarget}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
+
+      {shareBulkIds && (
+        <ShareRecordModal
+          entity={entity}
+          recordIds={shareBulkIds}
+          onClose={() => setShareBulkIds(null)}
+        />
+      )}
+
+      {shareRecordTarget && (
+        <ShareRecordModal
+          entity={entity}
+          recordId={shareRecordTarget.id}
+          recordLabel={shareRecordTarget.label}
+          onClose={() => setShareRecordTarget(null)}
+        />
+      )}
+
+      {showImportModal && (
+        <ImportFromExcelModal
+          entity={entity}
+          entityLabel={entityName.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+          viewName={activeView?.name ?? 'Default View'}
+          viewColumns={columnStates}
+          userId={userId ?? ''}
+          onClose={() => setShowImportModal(false)}
+          onImportComplete={() => { load(); showSuccess('Import completed. Grid refreshed.'); }}
+        />
+      )}
+
+      {/* Dynamics-style column header menu */}
+      {colMenuKey && colMenuAnchor && (() => {
+        const col = visibleColumns.find((c) => c.key === colMenuKey);
+        if (!col) return null;
+        const rect = colMenuAnchor.getBoundingClientRect();
+        const menuTop = rect.bottom + window.scrollY;
+        let menuLeft = rect.left + window.scrollX;
+        const menuWidth = 200;
+        if (menuLeft + menuWidth > window.innerWidth - 8) menuLeft = window.innerWidth - menuWidth - 8;
+        const colHasFilter = !!getColFilter(col.key);
+        return (
+          <div
+            ref={colMenuRef}
+            className="fixed z-[9998] bg-white border border-[#c8c8c8] shadow-xl py-1 min-w-[200px]"
+            style={{ top: menuTop, left: menuLeft, width: menuWidth }}
+          >
+            {col.sortable && (
+              <>
+                <button
+                  onClick={() => {
+                    const sk = col.field_physical_column ?? col.key;
+                    setSortKey(sk);
+                    setSortDir('asc');
+                    setPage(1);
+                    setColMenuKey(null);
+                    setColMenuAnchor(null);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#201f1e] hover:bg-[#f3f2f1] transition-colors text-left ${
+                    sortKey === (col.field_physical_column ?? col.key) && sortDir === 'asc' ? 'bg-[#edebe9] font-semibold' : ''
+                  }`}
+                >
+                  <ChevronUp size={14} className="text-[#605e5c]" />
+                  Sort A to Z
+                </button>
+                <button
+                  onClick={() => {
+                    const sk = col.field_physical_column ?? col.key;
+                    setSortKey(sk);
+                    setSortDir('desc');
+                    setPage(1);
+                    setColMenuKey(null);
+                    setColMenuAnchor(null);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#201f1e] hover:bg-[#f3f2f1] transition-colors text-left ${
+                    sortKey === (col.field_physical_column ?? col.key) && sortDir === 'desc' ? 'bg-[#edebe9] font-semibold' : ''
+                  }`}
+                >
+                  <ChevronDown size={14} className="text-[#605e5c]" />
+                  Sort Z to A
+                </button>
+                <div className="my-1 border-t border-[#edebe9]" />
+              </>
+            )}
+            <button
+              onClick={(e) => {
+                setColMenuKey(null);
+                setColMenuAnchor(null);
+                // Open filter anchored to the th button
+                const thBtn = colMenuAnchor;
+                setColFilterKey(col.key);
+                setColFilterAnchor(thBtn);
+              }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#201f1e] hover:bg-[#f3f2f1] transition-colors text-left"
+            >
+              <Filter size={13} className={colHasFilter ? 'text-[#0078d4]' : 'text-[#605e5c]'} />
+              Filter by
+            </button>
+            {colHasFilter && (
+              <button
+                onClick={() => {
+                  applyColFilter(col.key, null);
+                  setColMenuKey(null);
+                  setColMenuAnchor(null);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#d13438] hover:bg-[#fde7e9] transition-colors text-left"
+              >
+                <X size={13} className="text-[#d13438]" />
+                Clear filter
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
+      {colFilterKey && colFilterAnchor && (() => {
+        const col = visibleColumns.find((c) => c.key === colFilterKey);
+        if (!col) return null;
+        return (
+          <ColumnFilterDropdown
+            column={col}
+            currentFilter={getColFilter(colFilterKey)}
+            anchorEl={colFilterAnchor}
+            entityDefinitionId={entityDefinitionId}
+            entityTable={entityName}
+            onApply={(filter) => applyColFilter(colFilterKey, filter)}
+            onClose={() => { setColFilterKey(null); setColFilterAnchor(null); }}
+          />
+        );
+      })()}
+    </div>
+  );
+}
+
+/* ---------- Sub-components ---------- */
+
+function CmdBtn({ children, onClick, active }: { children: React.ReactNode; onClick?: () => void; active?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium rounded-sm transition-colors ${
+        active
+          ? 'text-[var(--navy-accent)] bg-[var(--ink-50)]'
+          : 'text-[var(--ink-600)] hover:bg-[var(--ink-50)]'
+      }`}
+      style={{ border: 'none' }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CmdSep() {
+  return <div className="w-px h-[18px] mx-0.5" style={{ background: 'var(--border)' }} />;
+}
+
+function PgBtn({ children, disabled, onClick, title }: { children: React.ReactNode; disabled: boolean; onClick: () => void; title?: string }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      className="w-6 h-6 flex items-center justify-center text-[var(--ink-500)] rounded transition disabled:opacity-30 hover:bg-[var(--ink-50)]"
+      style={{ border: '1px solid var(--border)' }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function AlphabetBar() {
+  const letters = ['All', '#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
+  return (
+    <div
+      className="h-[30px] flex items-center justify-center gap-0 px-2 shrink-0 bg-white"
+      style={{ borderTop: '1px solid var(--divider)' }}
+    >
+      {letters.map((l) => (
+        <button
+          key={l}
+          className="flex-1 max-w-[28px] h-full flex items-center justify-center text-[11px] font-medium text-[var(--ink-500)] hover:text-[var(--navy-accent)] hover:bg-[var(--ink-50)] transition-colors"
+        >
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+}
