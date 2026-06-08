@@ -53,14 +53,19 @@ export default function ImportFromExcelModal({
       const cols = await resolveImportColumns(entity, viewColumns);
       const refData = await fetchReferenceData(cols, entity);
       const wb = generateTemplate(entityLabel, viewName, cols, refData);
-      const filename = `${entityLabel.replace(/\s+/g, '_')}_Import_Template.xlsx`;
-      downloadWorkbook(wb, filename);
+      downloadWorkbook(wb, `${entityLabel.replace(/\s+/g, '_')}_Import_Template.xlsx`);
     } catch (err: any) {
       setError(err.message ?? 'Failed to generate template');
     } finally {
       setLoading(false);
     }
   }, [entity, entityLabel, viewName, viewColumns]);
+
+  const handleModeChange = (newMode: ImportMode) => {
+    setMode(newMode);
+    // Default update mode to GUID-based matching
+    setMatchColumn(newMode === 'update' ? '__pk__' : null);
+  };
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -105,9 +110,7 @@ export default function ImportFromExcelModal({
       const res = await executeImport(entity, preview, columns, mode, matchColumn, userId);
       setResult(res);
       setStep('result');
-      if (res.created > 0 || res.updated > 0) {
-        onImportComplete();
-      }
+      if (res.created > 0 || res.updated > 0) onImportComplete();
     } catch (err: any) {
       setError(err.message ?? 'Import failed');
       setStep('preview');
@@ -120,12 +123,16 @@ export default function ImportFromExcelModal({
   const matchableCols = importableColumns.filter((c) =>
     ['text', 'textarea', 'string', 'email', 'phone', 'url'].includes(c.fieldType)
   );
+  const isPkMatch = mode === 'update' && matchColumn === '__pk__';
 
   const pagedPreview = preview.slice(
     previewPage * PREVIEW_PAGE_SIZE,
     (previewPage + 1) * PREVIEW_PAGE_SIZE,
   );
   const totalPreviewPages = Math.ceil(preview.length / PREVIEW_PAGE_SIZE);
+
+  // File upload enabled when: create mode, or update mode with a match column selected
+  const fileDisabled = loading || (mode === 'update' && !matchColumn);
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
@@ -143,7 +150,7 @@ export default function ImportFromExcelModal({
           style={{ borderBottom: '1px solid var(--border)' }}
         >
           <div className="flex items-center gap-2.5">
-            {(step === 'preview') && (
+            {step === 'preview' && (
               <button
                 onClick={() => { setStep('options'); setPreview([]); }}
                 className="p-1 rounded hover:bg-[var(--ink-50)] text-[var(--ink-500)]"
@@ -172,15 +179,15 @@ export default function ImportFromExcelModal({
 
           {/* Step: Options */}
           {step === 'options' && (
-            <div className="space-y-5">
-              {/* Download Template */}
+            <div className="space-y-4">
+              {/* Download Template section */}
               <div className="border rounded-lg p-4" style={{ borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-2 mb-2">
                   <Download size={15} className="text-emerald-600" />
                   <span className="text-[13px] font-semibold text-[var(--ink-800)]">Download Template</span>
                 </div>
                 <p className="text-[12px] text-[var(--ink-500)] mb-3">
-                  Generate an Excel template based on the current view "{viewName}" with column headers, dropdowns, and reference data.
+                  Download an empty Excel template pre-formatted for this entity. Fill it in and upload below.
                 </p>
                 <button
                   onClick={handleDownloadTemplate}
@@ -193,7 +200,7 @@ export default function ImportFromExcelModal({
                 </button>
               </div>
 
-              {/* Upload */}
+              {/* Upload section */}
               <div className="border rounded-lg p-4" style={{ borderColor: 'var(--border)' }}>
                 <div className="flex items-center gap-2 mb-2">
                   <Upload size={15} className="text-blue-600" />
@@ -205,16 +212,17 @@ export default function ImportFromExcelModal({
 
                 {/* Import Mode */}
                 <div className="mb-3">
-                  <label className="text-[11px] font-semibold text-[var(--ink-600)] uppercase tracking-wide mb-1.5 block">Import Mode</label>
+                  <label className="text-[11px] font-semibold text-[var(--ink-600)] uppercase tracking-wide mb-1.5 block">
+                    Import Mode
+                  </label>
                   <div className="flex gap-2">
                     {[
                       { value: 'create' as ImportMode, label: 'Create new records' },
                       { value: 'update' as ImportMode, label: 'Update existing' },
-                      { value: 'upsert' as ImportMode, label: 'Create & update' },
                     ].map((opt) => (
                       <button
                         key={opt.value}
-                        onClick={() => setMode(opt.value)}
+                        onClick={() => handleModeChange(opt.value)}
                         className={`px-3 py-1.5 text-[11px] font-medium rounded border transition-colors ${
                           mode === opt.value
                             ? 'bg-[var(--navy-accent)] text-white border-[var(--navy-accent)]'
@@ -228,8 +236,8 @@ export default function ImportFromExcelModal({
                   </div>
                 </div>
 
-                {/* Match Column (for update/upsert) */}
-                {(mode === 'update' || mode === 'upsert') && (
+                {/* Match Column (update mode) */}
+                {mode === 'update' && (
                   <div className="mb-3">
                     <label className="text-[11px] font-semibold text-[var(--ink-600)] uppercase tracking-wide mb-1.5 block">
                       Match records by
@@ -243,38 +251,49 @@ export default function ImportFromExcelModal({
                         style={{ borderColor: 'var(--border)' }}
                       >
                         <option value="">Select a column...</option>
+                        <option value="__pk__">{entityLabel} ID (from exported file)</option>
                         {matchableCols.map((c) => (
                           <option key={c.key} value={c.key}>{c.label}</option>
                         ))}
                       </select>
                       <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-400)] pointer-events-none" />
                     </div>
+                    {isPkMatch && (
+                      <p className="text-[11px] text-emerald-700 mt-1.5 flex items-center gap-1">
+                        <CheckCircle2 size={11} />
+                        Records will be matched by their unique ID — use the exported file.
+                      </p>
+                    )}
                   </div>
                 )}
 
-                <label className="flex items-center gap-2 px-3 py-2 border-2 border-dashed rounded-lg cursor-pointer
-                  hover:border-blue-400 hover:bg-blue-50/40 transition-colors"
+                <label
+                  className={`flex items-center gap-2 px-3 py-2 border-2 border-dashed rounded-lg transition-colors ${
+                    fileDisabled
+                      ? 'opacity-50 cursor-not-allowed'
+                      : 'cursor-pointer hover:border-blue-400 hover:bg-blue-50/40'
+                  }`}
                   style={{ borderColor: 'var(--border)' }}
                 >
                   <Upload size={16} className="text-[var(--ink-400)]" />
-                  <span className="text-[12px] text-[var(--ink-500)]">Choose .xlsx file or drag & drop</span>
+                  <span className="text-[12px] text-[var(--ink-500)]">Choose .xlsx file or drag &amp; drop</span>
                   <input
                     ref={fileRef}
                     type="file"
                     accept=".xlsx,.xls,.csv"
                     onChange={handleFileSelect}
                     className="hidden"
-                    disabled={loading || ((mode === 'update' || mode === 'upsert') && !matchColumn)}
+                    disabled={fileDisabled}
                   />
                 </label>
-                {(mode === 'update' || mode === 'upsert') && !matchColumn && (
+                {mode === 'update' && !matchColumn && (
                   <p className="text-[11px] text-amber-600 mt-1.5">Select a match column before uploading.</p>
                 )}
               </div>
             </div>
           )}
 
-          {/* Step: Uploading / Processing */}
+          {/* Step: Uploading */}
           {step === 'uploading' && (
             <div className="flex flex-col items-center justify-center py-12">
               <Loader2 size={32} className="animate-spin text-[var(--navy-accent)] mb-3" />
@@ -286,7 +305,6 @@ export default function ImportFromExcelModal({
           {/* Step: Preview */}
           {step === 'preview' && (
             <div>
-              {/* Summary */}
               <div className="flex items-center gap-4 mb-4">
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--ink-50)]">
                   <span className="text-[11px] font-semibold text-[var(--ink-600)]">Total: {preview.length}</span>
@@ -303,11 +321,10 @@ export default function ImportFromExcelModal({
                 )}
                 <div className="flex-1" />
                 <span className="text-[11px] text-[var(--ink-400)]">
-                  Mode: {mode === 'create' ? 'Create new' : mode === 'update' ? 'Update only' : 'Create & Update'}
+                  Mode: {mode === 'create' ? 'Create new' : 'Update existing'}
                 </span>
               </div>
 
-              {/* Preview Table */}
               <div className="border rounded-lg overflow-hidden mb-3" style={{ borderColor: 'var(--border)' }}>
                 <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
                   <table className="w-full text-[11px]">
@@ -315,6 +332,11 @@ export default function ImportFromExcelModal({
                       <tr style={{ background: 'var(--ink-50)' }}>
                         <th className="px-2 py-2 text-left font-semibold text-[var(--ink-600)] sticky top-0 bg-[var(--ink-50)] z-10 w-10">#</th>
                         <th className="px-2 py-2 text-left font-semibold text-[var(--ink-600)] sticky top-0 bg-[var(--ink-50)] z-10 w-16">Status</th>
+                        {isPkMatch && (
+                          <th className="px-2 py-2 text-left font-semibold text-[var(--ink-600)] sticky top-0 bg-[var(--ink-50)] z-10 whitespace-nowrap">
+                            {entityLabel} ID
+                          </th>
+                        )}
                         {importableColumns.map((col) => (
                           <th
                             key={col.key}
@@ -345,6 +367,11 @@ export default function ImportFromExcelModal({
                               </span>
                             )}
                           </td>
+                          {isPkMatch && (
+                            <td className="px-2 py-1.5 font-mono text-[10px] text-[var(--ink-400)] max-w-[120px] truncate">
+                              {String(row.data['__pk__'] ?? '—')}
+                            </td>
+                          )}
                           {importableColumns.map((col) => {
                             const val = row.data[col.key];
                             const hasError = row.errors.some((e) => e.column === col.label);
@@ -375,7 +402,6 @@ export default function ImportFromExcelModal({
                 </div>
               </div>
 
-              {/* Pagination */}
               {totalPreviewPages > 1 && (
                 <div className="flex items-center justify-center gap-2 mb-3">
                   <button
@@ -456,7 +482,7 @@ export default function ImportFromExcelModal({
           {step === 'preview' && (
             <>
               <span className="text-[11px] text-[var(--ink-400)] mr-auto">
-                {validCount} of {preview.length} rows will be imported
+                {validCount} of {preview.length} rows will be {mode === 'create' ? 'created' : 'updated'}
               </span>
               <button
                 onClick={() => { setStep('options'); setPreview([]); }}
@@ -472,7 +498,7 @@ export default function ImportFromExcelModal({
                   bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
               >
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                Import {validCount} Record{validCount !== 1 ? 's' : ''}
+                {mode === 'create' ? `Import ${validCount} Record${validCount !== 1 ? 's' : ''}` : `Update ${validCount} Record${validCount !== 1 ? 's' : ''}`}
               </button>
             </>
           )}

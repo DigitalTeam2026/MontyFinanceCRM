@@ -16,9 +16,11 @@ import {
   Plus,
   Share2,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import type { AppEntity } from '../types';
 import type { ListRow } from '../services/listService';
 import { bulkUpdateRows } from '../services/listService';
+import { downloadWorkbook } from '../services/importEngine';
 import { removeRecentItem, removePinnedRecord } from '../services/recentPinsService';
 import { checkDeleteRules, executeDelete } from '../services/deleteService';
 import { fetchFieldsForEntity } from '../../services/fieldService';
@@ -100,11 +102,6 @@ function ResultBanner({ result, onClose }: { result: OpResult; onClose: () => vo
   );
 }
 
-function escapeCsvCell(v: string): string {
-  if (v.includes(',') || v.includes('"') || v.includes('\n')) return `"${v.replace(/"/g, '""')}"`;
-  return v;
-}
-
 function formatExportDate(val: unknown): string {
   if (!val || typeof val !== 'string') return '';
   try { return new Date(val).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return String(val); }
@@ -117,59 +114,49 @@ function formatExportCurrency(val: unknown, currencyCode?: string | null): strin
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: currencyCode ?? 'USD', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(num); } catch { return String(num); }
 }
 
-function exportToCsv(entity: AppEntity, rows: ListRow[], ids: Set<string>, columns?: ColumnState[]) {
+function exportToXlsx(entity: AppEntity, rows: ListRow[], ids: Set<string>, columns?: ColumnState[]) {
   const selected = rows.filter((r) => ids.has(r.id));
   if (selected.length === 0) return;
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const idHeader = `${String(entity).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())} ID`;
+
+  let headers: string[];
+  let dataRows: unknown[][];
+
   if (!columns || columns.length === 0) {
     const keys = Object.keys(selected[0]).filter((k) => k !== 'id');
-    const header = ['ID', ...keys].join(',');
-    const csvRows = selected.map((r) =>
-      [r.id, ...keys.map((k) => escapeCsvCell(String(r[k] ?? '')))].join(',')
-    );
-    downloadCsv(entity, [header, ...csvRows].join('\n'));
-    return;
+    headers = [idHeader, ...keys];
+    dataRows = selected.map((r) => [r.id, ...keys.map((k) => r[k] ?? '')]);
+  } else {
+    headers = [idHeader, ...columns.map((c) => c.labelOverride || c.label)];
+    dataRows = selected.map((row) => [
+      row.id,
+      ...columns.map((col) => {
+        const val = row[col.key];
+        if (val == null || val === '') return '';
+        if (typeof val === 'object' && !Array.isArray(val)) return '';
+        const strVal = String(val);
+        if (UUID_RE.test(strVal)) return '';
+        const colType = col.type;
+        if (colType === 'date') return formatExportDate(val);
+        if (colType === 'currency') return formatExportCurrency(val, row.currency_code as string | null);
+        if (colType === 'boolean') {
+          const isTrue = val === true || val === 'true' || val === '1' || val === 1;
+          const isFalse = val === false || val === 'false' || val === '0' || val === 0;
+          return isTrue ? 'Yes' : isFalse ? 'No' : '';
+        }
+        if (colType === 'owner') return /^[0-9a-f]{8}-/i.test(strVal) ? '' : strVal.split('@')[0];
+        return strVal;
+      }),
+    ]);
   }
 
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-  const headers = columns.map((c) => escapeCsvCell(c.labelOverride || c.label));
-  const csvRows = selected.map((row) =>
-    columns.map((col) => {
-      const val = row[col.key];
-      if (val == null || val === '') return '';
-      if (typeof val === 'object' && !Array.isArray(val)) return '';
-      const strVal = String(val);
-      if (UUID_RE.test(strVal)) return '';
-
-      const colType = col.type;
-      if (colType === 'date') return escapeCsvCell(formatExportDate(val));
-      if (colType === 'currency') return escapeCsvCell(formatExportCurrency(val, row.currency_code as string | null));
-      if (colType === 'boolean') {
-        const isTrue = val === true || val === 'true' || val === '1' || val === 1;
-        const isFalse = val === false || val === 'false' || val === '0' || val === 0;
-        return isTrue ? 'Yes' : isFalse ? 'No' : '';
-      }
-      if (colType === 'owner') {
-        const emailStr = strVal;
-        if (/^[0-9a-f]{8}-/i.test(emailStr)) return '';
-        return escapeCsvCell(emailStr.split('@')[0]);
-      }
-      return escapeCsvCell(strVal);
-    }).join(',')
-  );
-
-  downloadCsv(entity, [headers.join(','), ...csvRows].join('\n'));
-}
-
-function downloadCsv(entity: AppEntity, content: string) {
-  const blob = new Blob([content], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${entity}-export-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+  ws['!cols'] = headers.map((h, i) => ({ wch: i === 0 ? 38 : Math.max(h.length + 4, 14) }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Export');
+  downloadWorkbook(wb, `${entity}-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1131,7 +1118,7 @@ export default function BulkActionsBar({
     onComplete();
   };
 
-  const handleExport = () => exportToCsv(entity, rows, selected, columns);
+  const handleExport = () => exportToXlsx(entity, rows, selected, columns);
 
   const selectedFieldIds = new Set(updateRows.map((r) => r.fieldId));
   const validUpdateRows = updateRows.filter((r) => {

@@ -1,4 +1,4 @@
-import { Database, Settings, ChevronRight, GitBranch, ShieldCheck, Map, BarChart2, LogOut, ExternalLink, GitMerge, Milestone, ScanSearch, UserCheck, ClipboardCheck, FileWarning, KeyRound, ShieldAlert, Activity } from 'lucide-react';
+import { Database, Settings, ChevronRight, GitBranch, ShieldCheck, Map, BarChart2, LogOut, ExternalLink, GitMerge, Milestone, ScanSearch, ClipboardCheck, FileWarning, KeyRound, ShieldAlert, Activity } from 'lucide-react';
 
 interface SideNavItem {
   id: string;
@@ -29,7 +29,6 @@ const SECTIONS: { label: string; items: SideNavItem[] }[] = [
       { id: 'navigation',  label: 'Navigation',        icon: <Map size={14} /> },
       { id: 'dashboard',   label: 'Dashboards',        icon: <BarChart2 size={14} /> },
       { id: 'duplicates',       label: 'Duplicate Detection', icon: <ScanSearch size={14} /> },
-      { id: 'leadqualification',    label: 'Lead Qualification',      icon: <UserCheck size={14} /> },
       { id: 'approvals',            label: 'Approval Processes',      icon: <ClipboardCheck size={14} /> },
       { id: 'policies',          label: 'Data Policies',       icon: <FileWarning size={14} /> },
       { id: 'digitalrules',     label: 'Digital Rules',       icon: <ShieldAlert size={14} /> },

@@ -42,6 +42,8 @@ import ColumnFilterDropdown from '../components/ColumnFilterDropdown';
 import { resolveGridValues } from '../services/gridResolver';
 import ImportFromExcelModal from '../components/ImportFromExcelModal';
 import { fetchSharedRecordIds } from '../services/recordShareService';
+import * as XLSX from 'xlsx';
+import { downloadWorkbook } from '../services/importEngine';
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
@@ -989,29 +991,28 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                   if (rows.length === 0) return;
                   const cols = visibleColumns;
                   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                  const esc = (v: string) => (v.includes(',') || v.includes('"') || v.includes('\n')) ? `"${v.replace(/"/g, '""')}"` : v;
-                  const headers = cols.map((c) => esc(c.labelOverride || c.label));
-                  const csvRows = rows.map((row) =>
-                    cols.map((col) => {
+                  const idHeader = `${entityName.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())} ID`;
+                  const headers = [idHeader, ...cols.map((c) => c.labelOverride || c.label)];
+                  const dataRows = rows.map((row) => [
+                    row.id,
+                    ...cols.map((col) => {
                       const val = row[col.key];
                       if (val == null || val === '') return '';
                       if (typeof val === 'object' && !Array.isArray(val)) return '';
                       const s = String(val);
                       if (UUID_RE.test(s)) return '';
-                      if (col.type === 'date') { try { return esc(new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })); } catch { return esc(s); } }
-                      if (col.type === 'currency') { const n = Number(val); if (!isNaN(n)) { try { return esc(new Intl.NumberFormat(undefined, { style: 'currency', currency: (row.currency_code as string) ?? 'USD', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n)); } catch { return esc(String(n)); } } return ''; }
+                      if (col.type === 'date') { try { return new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return s; } }
+                      if (col.type === 'currency') { const n = Number(val); if (!isNaN(n)) { try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: (row.currency_code as string) ?? 'USD', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n); } catch { return String(n); } } return ''; }
                       if (col.type === 'boolean') return (val === true || val === 'true' || val === '1' || val === 1) ? 'Yes' : (val === false || val === 'false' || val === '0' || val === 0) ? 'No' : '';
-                      if (col.type === 'owner') return /^[0-9a-f]{8}-/i.test(s) ? '' : esc(s.split('@')[0]);
-                      return esc(s);
-                    }).join(',')
-                  );
-                  const blob = new Blob([[headers.join(','), ...csvRows].join('\n')], { type: 'text/csv' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `${entity}-export-${new Date().toISOString().slice(0, 10)}.csv`;
-                  a.click();
-                  URL.revokeObjectURL(url);
+                      if (col.type === 'owner') return /^[0-9a-f]{8}-/i.test(s) ? '' : s.split('@')[0];
+                      return s;
+                    }),
+                  ]);
+                  const wb = XLSX.utils.book_new();
+                  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+                  ws['!cols'] = headers.map((h, i) => ({ wch: i === 0 ? 38 : Math.max(h.length + 4, 14) }));
+                  XLSX.utils.book_append_sheet(wb, ws, 'Export');
+                  downloadWorkbook(wb, `${entity}-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
                 }}>
                   <Download size={14} className="text-[var(--navy-accent)]" />
                   <span>Export to Excel</span>

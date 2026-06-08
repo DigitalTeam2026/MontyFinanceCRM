@@ -352,9 +352,15 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
 
   if (createAccount) {
     const accountPhys = buildPhysicalRecord(allMappings, 'account', leadValues, ACCOUNT_LOGICAL_TO_PHYSICAL);
+    // Ensure account_name (NOT NULL) is always populated
+    if (!accountPhys['account_name']) {
+      accountPhys['account_name'] =
+        (leadValues['company_name'] as string | null) ??
+        (`${leadValues['first_name'] ?? ''} ${leadValues['last_name'] ?? ''}`.trim() || 'New Account');
+    }
     const { data, error } = await supabase
       .from('account')
-      .insert({ ...accountPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: 1, status_reason: 1 })
+      .insert({ ...accountPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: 'active' })
       .select('account_id')
       .single();
     if (error) throw new Error(`Failed to create Account: ${error.message}`);
@@ -366,7 +372,7 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
     if (accountId) contactPhys['account_id'] = accountId;
     const { data, error } = await supabase
       .from('contact')
-      .insert({ ...contactPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: 1, status_reason: 1 })
+      .insert({ ...contactPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: 'active' })
       .select('contact_id')
       .single();
     if (error) throw new Error(`Failed to create Contact: ${error.message}`);
@@ -394,7 +400,7 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
 
       const { data, error } = await supabase
         .from('opportunity')
-        .insert({ ...oppPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: 1, status_reason: 1 })
+        .insert({ ...oppPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: 'active' })
         .select('opportunity_id')
         .single();
       if (error) throw new Error(`Failed to create Opportunity: ${error.message}`);
@@ -404,13 +410,12 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
 
   const leadDefId = ENTITY_DEFINITION_ID['leads'];
   const qualifiedStatus = leadDefId ? await getDefaultStatusForState(leadDefId, 2) : null;
-  const qualifiedStateCode = qualifiedStatus?.stateValue ?? 2;
   const qualifiedReasonValue = qualifiedStatus?.reasonValue ?? 4;
 
   const { error: leadUpdateErr } = await supabase
     .from('lead')
     .update({
-      state_code: String(qualifiedStateCode), status_reason: String(qualifiedReasonValue),
+      state_code: 'inactive', status_reason: String(qualifiedReasonValue),
       is_qualified: true,
       modified_at: new Date().toISOString(),
       modified_by: userId,

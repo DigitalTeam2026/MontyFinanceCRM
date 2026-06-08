@@ -21,7 +21,6 @@ import CurrenciesPage from './currencies/CurrenciesPage';
 import ProcessFlowsPage from './processflows/ProcessFlowsPage';
 import PipelineStagesPage from './stages/PipelineStagesPage';
 import DuplicateDetectionPage from './duplicates/DuplicateDetectionPage';
-import LeadQualificationPage from './qualification/LeadQualificationPage';
 import ApprovalProcessesPage from './approvals/ApprovalProcessesPage';
 import DataPoliciesPage from './policies/DataPoliciesPage';
 import MergeCenterPage from './merges/MergeCenterPage';
@@ -242,9 +241,6 @@ export default function AdminStudio() {
     if (activeModule === 'duplicates') {
       return { title: 'Duplicate Detection', subtitle: 'Configure rules to detect and prevent duplicate records' };
     }
-    if (activeModule === 'leadqualification') {
-      return { title: 'Lead Qualification', subtitle: 'Configure what gets created when a Lead is qualified and how fields map' };
-    }
     if (activeModule === 'approvals') {
       return { title: 'Approval Processes', subtitle: 'Configure approval workflows triggered by entity, product, amount, stage, or business unit' };
     }
@@ -380,7 +376,6 @@ export default function AdminStudio() {
     if (activeModule === 'processflows') return <ProcessFlowsPage />;
     if (activeModule === 'stages') return <PipelineStagesPage />;
     if (activeModule === 'duplicates') return <DuplicateDetectionPage />;
-    if (activeModule === 'leadqualification') return <LeadQualificationPage />;
     if (activeModule === 'approvals') return <ApprovalProcessesPage />;
     if (activeModule === 'policies') return <DataPoliciesPage />;
     if (activeModule === 'digitalrules') return <DigitalRulesPage />;

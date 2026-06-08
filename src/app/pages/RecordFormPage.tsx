@@ -1711,13 +1711,21 @@ export default function RecordFormPage({
     // Optimistically apply finished flag immediately so the bar updates instantly
     setValues((prev) => ({ ...prev, bpf_is_finished: finished }));
     try {
-      // Include the bpf_is_finished patch in the save payload so it persists correctly
-      const savePayload = { ...valuesRef.current, bpf_is_finished: finished };
+      // Include the bpf_is_finished patch in the save payload so it persists correctly.
+      // Also explicitly set the stage field to toStage: onChange(stageField, toStage) queues a
+      // React state update but valuesRef.current is still the old values at this point, so without
+      // this the save would write the previous stage key and refreshFullRecord would revert the bar.
+      const currentPf = processFlowRef.current;
+      const stageField = currentPf?.flow.stage_field;
+      const savePayload = {
+        ...valuesRef.current,
+        ...(stageField ? { [stageField]: toStage } : {}),
+        bpf_is_finished: finished,
+      };
       console.log('doSave payload bpf_is_finished:', savePayload['bpf_is_finished']);
       await doSave(savePayload);
       console.log('doSave complete');
 
-      const currentPf = processFlowRef.current;
       if (currentPf) {
         const newStage = currentPf.stageByKey.get(toStage);
         console.log('newStage found:', newStage?.stage_key, newStage?.name);
@@ -1726,7 +1734,12 @@ export default function RecordFormPage({
           const pk = await getEntityPK(entity);
           console.log('updateRecordActiveStage:', table, pk, currentRecordId, newStage.process_stage_id, finished);
           await updateRecordActiveStage(table, pk, currentRecordId, newStage.process_stage_id, finished);
-          setValues((prev) => ({ ...prev, active_process_stage_id: newStage.process_stage_id, bpf_is_finished: finished }));
+          // Directly write the stage key column — the RPC only sets active_process_stage_id,
+          // so we must also persist the stage_field value or refreshFullRecord will revert the bar.
+          if (stageField) {
+            await updateRowFields(entity, currentRecordId, { [stageField]: toStage }, userId);
+          }
+          setValues((prev) => ({ ...prev, active_process_stage_id: newStage.process_stage_id, bpf_is_finished: finished, ...(stageField ? { [stageField]: toStage } : {}) }));
           console.log('Stage updated in DB and local state');
         }
       }

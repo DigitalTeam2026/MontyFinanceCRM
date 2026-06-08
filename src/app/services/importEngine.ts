@@ -42,7 +42,7 @@ export interface ImportPreviewRow {
   isValid: boolean;
 }
 
-export type ImportMode = 'create' | 'update' | 'upsert';
+export type ImportMode = 'create' | 'update';
 
 export interface ImportResult {
   created: number;
@@ -369,7 +369,117 @@ function applyNumberFormat(_sheet: XLSX.WorkSheet, _range: string, _fmt: string)
 }
 
 export function downloadWorkbook(wb: XLSX.WorkBook, filename: string) {
-  XLSX.writeFile(wb, filename);
+  const safeFilename = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`;
+  const data: Uint8Array = XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
+  const blob = new Blob([data], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = safeFilename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+}
+
+// ---------------------------------------------------------------------------
+// Export for Update — downloads existing records with GUIDs pre-filled
+// ---------------------------------------------------------------------------
+
+export async function exportForUpdate(
+  entity: AppEntity,
+  entityLabel: string,
+  viewName: string,
+  viewColumns: ColumnState[],
+  selectedIds?: string[],
+): Promise<XLSX.WorkBook> {
+  const table = await getEntityTable(entity);
+  const pk = await getEntityPK(entity);
+  const cols = await resolveImportColumns(entity, viewColumns);
+  const importable = cols.filter((c) => !c.isReadonly);
+  const refData = await fetchReferenceData(cols, entity);
+
+  const physCols = [pk, ...([...new Set(importable.map((c) => c.physicalColumn))])];
+  let query = supabase
+    .from(table)
+    .select(physCols.join(', '))
+    .eq('is_deleted', false)
+    .limit(50000);
+  if (selectedIds && selectedIds.length > 0) {
+    query = query.in(pk, selectedIds);
+  }
+  const { data: records } = await query;
+
+  // Reverse maps for display-value resolution
+  const lookupIdToLabel = new Map<string, Map<string, string>>();
+  for (const col of importable) {
+    if (refData.lookupRecords[col.key]?.length) {
+      const m = new Map<string, string>();
+      for (const r of refData.lookupRecords[col.key]) m.set(r.id, r.label);
+      lookupIdToLabel.set(col.key, m);
+    }
+  }
+  const osValueToLabel = new Map<string, Map<string, string>>();
+  for (const col of importable) {
+    if (col.optionSetName && refData.optionSets[col.optionSetName]) {
+      const m = new Map<string, string>();
+      for (const v of refData.optionSets[col.optionSetName]) m.set(String(v.value), v.label);
+      osValueToLabel.set(col.key, m);
+    }
+  }
+
+  const pkLabel = `${entityLabel} ID`;
+  const headers = [pkLabel, ...importable.map((c) => c.label)];
+
+  const dataRows = (records ?? []).map((record: Record<string, unknown>) => {
+    const row: unknown[] = [record[pk]];
+    for (const col of importable) {
+      const raw = record[col.physicalColumn];
+      if (raw == null || String(raw) === '') {
+        row.push('');
+      } else if (col.fieldType === 'lookup' || col.fieldType === 'owner') {
+        row.push(lookupIdToLabel.get(col.key)?.get(String(raw)) ?? '');
+      } else if (['boolean', 'twooptions', 'two_options'].includes(col.fieldType)) {
+        row.push(raw === true || raw === 'true' || raw === 1 ? 'Yes' : 'No');
+      } else if (col.optionSetName) {
+        row.push(osValueToLabel.get(col.key)?.get(String(raw)) ?? String(raw));
+      } else {
+        row.push(raw);
+      }
+    }
+    return row;
+  });
+
+  const wb = XLSX.utils.book_new();
+
+  const dataSheet = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+  dataSheet['!cols'] = [
+    { wch: 38 },
+    ...importable.map((c) => ({ wch: Math.max(c.label.length + 4, 16) })),
+  ];
+  XLSX.utils.book_append_sheet(wb, dataSheet, 'Update Data');
+
+  const instrSheet = XLSX.utils.aoa_to_sheet([
+    [`Export for Update: ${entityLabel}`],
+    [`View: ${viewName}`],
+    [''],
+    ['Instructions:'],
+    ['1. Edit values in the "Update Data" sheet.'],
+    [`2. Do NOT modify the "${pkLabel}" column — it matches records on import.`],
+    ['3. Import this file using "Update existing" mode.'],
+    ['4. For lookup fields, enter the display name exactly as shown.'],
+    ['5. For choice fields, enter the label exactly as shown.'],
+    ['6. For boolean fields, use "Yes" or "No".'],
+    ['7. Leave a cell empty to clear that field\'s value on the record.'],
+  ]);
+  instrSheet['!cols'] = [{ wch: 80 }];
+  XLSX.utils.book_append_sheet(wb, instrSheet, 'Instructions');
+
+  return wb;
 }
 
 // ---------------------------------------------------------------------------
@@ -428,8 +538,16 @@ export async function validateAndResolve(
     }
   }
 
+  // '__pk__' sentinel = GUID-based matching from Export for Update
+  const isPkMatch = mode === 'update' && matchColumn === '__pk__';
+  let pkColumnHeader: string | null = null;
+  if (isPkMatch && rows.length > 0) {
+    const keys = Object.keys(rows[0]);
+    pkColumnHeader = keys.find((k) => k.endsWith(' ID')) ?? keys[0] ?? null;
+  }
+
   let existingRecordMap: Map<string, string> | null = null;
-  if ((mode === 'update' || mode === 'upsert') && matchColumn) {
+  if (mode === 'update' && matchColumn && !isPkMatch) {
     const matchCol = importable.find((c) => c.key === matchColumn || c.label === matchColumn);
     if (matchCol) {
       existingRecordMap = await buildExistingRecordMap(entity, matchCol.physicalColumn);
@@ -544,21 +662,35 @@ export async function validateAndResolve(
       }
     }
 
-    // Check unmatched required columns
-    for (const col of importable) {
-      if (col.isRequired && !(col.key in data)) {
-        const headerVariant = `${col.label} *`;
-        if (!(col.label in raw) && !(headerVariant in raw)) {
-          errors.push({ row: i + 1, column: col.label, message: 'Required column is missing from the file' });
+    // Required column check — only for create mode (update only patches provided fields)
+    if (mode === 'create') {
+      for (const col of importable) {
+        if (col.isRequired && !(col.key in data)) {
+          const headerVariant = `${col.label} *`;
+          if (!(col.label in raw) && !(headerVariant in raw)) {
+            errors.push({ row: i + 1, column: col.label, message: 'Required column is missing from the file' });
+          }
         }
       }
     }
 
-    if ((mode === 'update' || mode === 'upsert') && matchColumn && existingRecordMap) {
+    // GUID-based matching
+    if (isPkMatch && pkColumnHeader) {
+      const pkVal = String(raw[pkColumnHeader] ?? '').trim();
+      if (!pkVal) {
+        errors.push({ row: i + 1, column: pkColumnHeader, message: 'Missing record ID' });
+      } else {
+        resolved['__record_id__'] = pkVal;
+        data['__pk__'] = pkVal;
+      }
+    }
+
+    // Text-based matching
+    if (mode === 'update' && matchColumn && !isPkMatch && existingRecordMap) {
       const matchCol = importable.find((c) => c.key === matchColumn || c.label === matchColumn);
       if (matchCol) {
         const matchVal = String(data[matchCol.key] ?? '').trim().toLowerCase();
-        if (matchVal && !existingRecordMap.has(matchVal) && mode === 'update') {
+        if (matchVal && !existingRecordMap.has(matchVal)) {
           errors.push({ row: i + 1, column: matchCol.label, message: 'No existing record found to update' });
         }
       }
@@ -615,8 +747,10 @@ export async function executeImport(
 
   if (validRows.length === 0) return result;
 
+  const isPkMatch = mode === 'update' && matchColumn === '__pk__';
+
   let existingMap: Map<string, string> | null = null;
-  if ((mode === 'update' || mode === 'upsert') && matchColumn) {
+  if (mode === 'update' && matchColumn && !isPkMatch) {
     const matchCol = columns.find((c) => c.key === matchColumn);
     if (matchCol) {
       existingMap = await buildExistingRecordMap(entity, matchCol.physicalColumn);
@@ -629,13 +763,16 @@ export async function executeImport(
     try {
       const payload: Record<string, unknown> = {};
       for (const [physCol, val] of Object.entries(row.resolved)) {
+        if (physCol === '__record_id__') continue; // internal sentinel — not a DB column
         payload[physCol] = val;
       }
 
       const filtered = filterToExistingColumns(payload, tableCols);
       let recordId: string | null = null;
 
-      if (existingMap && matchColumn) {
+      if (isPkMatch) {
+        recordId = String(row.resolved['__record_id__'] ?? '').trim() || null;
+      } else if (existingMap && matchColumn) {
         const matchCol = columns.find((c) => c.key === matchColumn);
         if (matchCol) {
           const matchVal = String(row.data[matchCol.key] ?? '').trim().toLowerCase();
@@ -648,7 +785,7 @@ export async function executeImport(
         continue;
       }
 
-      if (mode === 'create' || (mode === 'upsert' && !recordId)) {
+      if (mode === 'create') {
         await saveRecord(entity, null, filtered, userId);
         result.created++;
       } else if (recordId) {
