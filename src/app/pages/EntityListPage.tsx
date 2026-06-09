@@ -1212,7 +1212,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                             {colHasFilter && (
                               <Filter size={10} className="text-[var(--navy-accent)]" />
                             )}
-                            <ChevronDown size={11} className={`transition-transform ${colMenuOpen ? 'rotate-180 text-[var(--navy-accent)]' : 'text-[var(--ink-300)]'}`} />
+                            <ChevronDown size={11} className={`transition-transform ${colPanelOpen ? 'rotate-180 text-[var(--navy-accent)]' : 'text-[var(--ink-300)]'}`} />
                           </span>
                         </button>
                       </th>

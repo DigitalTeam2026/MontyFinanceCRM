@@ -34,7 +34,10 @@ export async function createEntityWithTable(form: EntityFormData): Promise<Entit
     p_is_active:           form.is_active,
   });
 
-  if (error) throw error;
+  if (error) {
+    // PostgrestError is not instanceof Error — convert so callers see the real message
+    throw new Error(error.message ?? 'create_crm_entity RPC failed');
+  }
 
   const result = data as { ok: boolean; entity?: Record<string, unknown>; error?: string } | null;
   if (!result?.ok) throw new Error(result?.error ?? 'Failed to create entity');
