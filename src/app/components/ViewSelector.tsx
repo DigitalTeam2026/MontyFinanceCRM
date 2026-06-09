@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   ChevronDown, Check, Plus, Share2,
   Pencil, Trash2, Star, Loader2, MoreHorizontal, AlertTriangle,
-  X, Search, Settings, LayoutList,
+  X, Search, LayoutList,
 } from 'lucide-react';
 import type { ViewDefinition } from '../../types/view';
 import {
@@ -375,23 +375,16 @@ export default function ViewSelector({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center gap-2 p-3" style={{ borderTop: '1px solid #e7eaf1' }}>
+          <div className="p-3" style={{ borderTop: '1px solid #e7eaf1' }}>
             <button
               onClick={() => { setOpen(false); onSaveAsNew(); }}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold text-white transition"
+              className="w-full flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold text-white transition"
               style={{ background: 'linear-gradient(135deg,#3b6fff,#5b87ff)', borderRadius: 10, boxShadow: '0 4px 12px rgba(59,111,255,.3)' }}
               onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.08)'; }}
               onMouseLeave={(e) => { e.currentTarget.style.filter = ''; }}
             >
               <Plus size={13} />
               Create view
-            </button>
-            <button
-              className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-medium text-[#6b7280] hover:bg-[#f9fafb] transition"
-              style={{ border: '1px solid #e7eaf1', borderRadius: 10 }}
-            >
-              <Settings size={13} />
-              Manage
             </button>
           </div>
         </div>

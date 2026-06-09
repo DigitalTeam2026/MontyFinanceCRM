@@ -57,7 +57,8 @@ export default function AdminStudio() {
     supabase.auth.getSession().then(async ({ data }) => {
       if (data.session) {
         const { data: refreshed } = await supabase.auth.refreshSession();
-        setSession(refreshed.session ?? data.session);
+        // If refresh fails, treat as signed out — don't fall back to the expired session
+        setSession(refreshed.session ?? null);
       } else {
         setSession(null);
       }
@@ -112,6 +113,7 @@ export default function AdminStudio() {
     } catch {
       await supabase.auth.signOut({ scope: 'local' });
     }
+    setSession(null);
   };
 
   const backToEntityDetail = () => {

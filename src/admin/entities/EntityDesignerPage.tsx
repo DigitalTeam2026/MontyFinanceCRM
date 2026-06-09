@@ -150,14 +150,11 @@ export default function EntityDesignerPage({ entity, onSaved, onCancel }: Entity
       await new Promise((r) => setTimeout(r, 600));
       onSaved(result);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Create failed';
+      const msg = e instanceof Error ? e.message : String(e) || 'Create failed';
+      console.error('[EntityDesigner] create failed:', e);
       setError(msg);
-      // Mark the first non-done step as errored
-      setSteps((prev) => {
-        const idx = prev.findIndex((s) => s.status === 'running');
-        if (idx < 0) return prev;
-        return prev.map((s, i) => (i === idx ? { ...s, status: 'error' } : s));
-      });
+      // Mark ALL running steps as errored
+      setSteps((prev) => prev.map((s) => s.status === 'running' ? { ...s, status: 'error' } : s));
     } finally {
       setSaving(false);
     }
@@ -429,6 +426,11 @@ export default function EntityDesignerPage({ entity, onSaved, onCancel }: Entity
                   </li>
                 ))}
               </ul>
+              {error && (
+                <div className="mx-4 mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-[11px] text-red-700 font-mono break-all">
+                  {error}
+                </div>
+              )}
             </div>
           )}
 

@@ -49,9 +49,10 @@ export default function CrmApp({ initialEntity, initialModule, initialRecordId }
     supabase.auth.getSession().then(async ({ data }) => {
       if (data.session) {
         const { data: refreshed } = await supabase.auth.refreshSession();
-        const s = refreshed.session ?? data.session;
+        // If refresh fails, treat as signed out — don't fall back to the expired session
+        const s = refreshed.session ?? null;
         setSession(s);
-        loadAdminFlag(s.user.id);
+        if (s) loadAdminFlag(s.user.id);
       } else {
         setSession(null);
       }
@@ -189,6 +190,7 @@ export default function CrmApp({ initialEntity, initialModule, initialRecordId }
     } catch {
       await supabase.auth.signOut({ scope: 'local' });
     }
+    setSession(null);
   };
 
   const QUICK_CREATE_CONFIG: Record<QuickCreateType, {

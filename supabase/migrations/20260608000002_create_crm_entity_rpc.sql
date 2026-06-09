@@ -228,22 +228,22 @@ BEGIN
       format('"%s" is a reserved SQL keyword and cannot be used as a physical table name', p_physical_table_name));
   END IF;
 
-  -- Uniqueness: logical_name
+  -- Uniqueness: logical_name (check ALL rows — unique constraint applies even to soft-deleted)
   IF EXISTS (
     SELECT 1 FROM entity_definition
-    WHERE logical_name = p_logical_name AND deleted_at IS NULL
+    WHERE logical_name = p_logical_name
   ) THEN
     RETURN json_build_object('ok', false, 'error',
-      format('An entity with logical name "%s" already exists', p_logical_name));
+      format('An entity with logical name "%s" already exists (including previously deleted entities)', p_logical_name));
   END IF;
 
-  -- Uniqueness: physical_table_name
+  -- Uniqueness: physical_table_name (check ALL rows)
   IF EXISTS (
     SELECT 1 FROM entity_definition
-    WHERE physical_table_name = p_physical_table_name AND deleted_at IS NULL
+    WHERE physical_table_name = p_physical_table_name
   ) THEN
     RETURN json_build_object('ok', false, 'error',
-      format('An entity with physical table name "%s" already exists', p_physical_table_name));
+      format('An entity with physical table name "%s" already exists (including previously deleted entities)', p_physical_table_name));
   END IF;
 
   -- Physical table must not already exist
