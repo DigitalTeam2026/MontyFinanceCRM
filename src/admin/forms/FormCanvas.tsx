@@ -37,6 +37,7 @@ const FIELD_ICONS: Record<string, React.ReactNode> = {
 
 // MIME type for within-canvas drags
 const CONTROL_DRAG_TYPE = 'application/x-form-control';
+const SECTION_DRAG_TYPE = 'application/x-form-section';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ export default function FormCanvas({ store, onActiveSectionChange }: FormCanvasP
 
   const [activeTabIdx, setActiveTabIdx] = useState(0);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+  const [sectionDrop, setSectionDrop] = useState<{ sectionId: string; side: 'left' | 'right' } | null>(null);
   const dragState = useRef<DragState | null>(null);
 
   const activeTab = layout.tabs[activeTabIdx] ?? layout.tabs[0];
@@ -234,35 +236,64 @@ export default function FormCanvas({ store, onActiveSectionChange }: FormCanvasP
       {/* Canvas body */}
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab && (
-          <div className="space-y-3 max-w-4xl mx-auto">
+          <div className="max-w-4xl mx-auto" style={{ columnCount: 2, columnGap: '0.75rem' }}>
             {activeTab.sections.length === 0 && (
-              <EmptySection onClick={() => addSection(activeTab.id)} />
+              <div style={{ columnSpan: 'all' }}>
+                <EmptySection onClick={() => addSection(activeTab.id)} />
+              </div>
             )}
 
             {activeTab.sections.map((section) => (
-              <SectionCard
+              <div
                 key={section.id}
-                tab={activeTab}
-                section={section}
-                store={store}
-                isSelected={isSelected}
-                dropTarget={dropTarget}
-                dragState={dragState}
-                selectSection={selectSection}
-                selectControl={selectControl}
-                onControlDragStart={handleControlDragStart}
-                onDragEnd={handleDragEnd}
-                onSetDropTarget={setDropTarget}
-                onCommitDrop={commitDrop}
-                onRemoveSection={() => removeSection(activeTab.id, section.id)}
-                onRemoveControl={(cId) => removeControl(activeTab.id, section.id, cId)}
-              />
+                className="relative break-inside-avoid mb-3"
+                style={section.column_span === 1 ? undefined : { columnSpan: 'all' }}
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes(SECTION_DRAG_TYPE)) return;
+                  e.preventDefault();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const side = e.clientX > rect.left + rect.width / 2 ? 'right' : 'left';
+                  setSectionDrop({ sectionId: section.id, side });
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) setSectionDrop(null);
+                }}
+                onDrop={(e) => {
+                  if (!e.dataTransfer.types.includes(SECTION_DRAG_TYPE)) return;
+                  e.preventDefault();
+                  const draggedId = e.dataTransfer.getData(SECTION_DRAG_TYPE);
+                  const side = sectionDrop?.side ?? 'right';
+                  if (draggedId) store.moveSectionBeside(activeTab.id, draggedId, section.id, side);
+                  setSectionDrop(null);
+                }}
+              >
+                {sectionDrop?.sectionId === section.id && (
+                  <div className={`absolute top-0 bottom-0 w-1.5 bg-blue-500 rounded-full z-10 ${sectionDrop.side === 'right' ? '-right-2' : '-left-2'}`} />
+                )}
+                <SectionCard
+                  tab={activeTab}
+                  section={section}
+                  store={store}
+                  isSelected={isSelected}
+                  dropTarget={dropTarget}
+                  dragState={dragState}
+                  selectSection={selectSection}
+                  selectControl={selectControl}
+                  onControlDragStart={handleControlDragStart}
+                  onDragEnd={handleDragEnd}
+                  onSetDropTarget={setDropTarget}
+                  onCommitDrop={commitDrop}
+                  onRemoveSection={() => removeSection(activeTab.id, section.id)}
+                  onRemoveControl={(cId) => removeControl(activeTab.id, section.id, cId)}
+                />
+              </div>
             ))}
 
             {activeTab.sections.length > 0 && (
               <button
                 onClick={() => addSection(activeTab.id)}
-                className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-slate-400 hover:text-blue-600 border-2 border-dashed border-slate-200 hover:border-blue-300 rounded-xl transition-colors"
+                style={{ columnSpan: 'all' }}
+                className="break-inside-avoid w-full flex items-center justify-center gap-1.5 py-2 text-xs text-slate-400 hover:text-blue-600 border-2 border-dashed border-slate-200 hover:border-blue-300 rounded-xl transition-colors"
               >
                 <Plus size={12} />
                 Add Section
@@ -343,7 +374,12 @@ function SectionCard({
     >
       {/* Section header */}
       <div
-        className={`flex items-center gap-2 px-4 py-2.5 border-b border-slate-100 cursor-pointer rounded-t-xl ${
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData(SECTION_DRAG_TYPE, section.id);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        className={`flex items-center gap-2 px-4 py-2.5 border-b border-slate-100 cursor-grab active:cursor-grabbing rounded-t-xl ${
           sectionSelected ? 'bg-blue-50' : 'bg-slate-50 hover:bg-slate-100'
         }`}
         onClick={() => selectSection(tab, section)}
@@ -356,6 +392,11 @@ function SectionCard({
             icon={<Columns size={11} />}
             title={`Toggle columns (${section.columns})`}
             onClick={() => store.updateSection(tab.id, section.id, { columns: section.columns === 1 ? 2 : 1 })}
+          />
+          <ToolButton
+            icon={<LayoutGrid size={11} />}
+            title={`Section width: ${section.column_span === 1 ? 'half (side by side)' : 'full row'}`}
+            onClick={() => store.updateSection(tab.id, section.id, { column_span: section.column_span === 1 ? 2 : 1 })}
           />
           <ToolButton
             icon={<Eye size={11} />}

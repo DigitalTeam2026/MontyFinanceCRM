@@ -361,6 +361,32 @@ export function useDesignerStore(initialLayout?: DesignerLayout | null) {
       ? layout.tabs.find((t) => t.id === selection.tabId) ?? null
       : null;
 
+  // Move a section to sit immediately before/after another section, setting both
+  // to half width so they share the same row. `side` is relative to the target.
+  const moveSectionBeside = useCallback(
+    (tabId: string, draggedId: string, targetId: string, side: 'left' | 'right') => {
+      if (draggedId === targetId) return;
+      updateLayout((l) => ({
+        tabs: l.tabs.map((t) => {
+          if (t.id !== tabId) return t;
+          const dragged = t.sections.find((s) => s.id === draggedId);
+          if (!dragged) return t;
+          const rest = t.sections.filter((s) => s.id !== draggedId);
+          const targetIdx = rest.findIndex((s) => s.id === targetId);
+          if (targetIdx === -1) return t;
+          const insertIdx = side === 'right' ? targetIdx + 1 : targetIdx;
+          const next = [...rest];
+          next.splice(insertIdx, 0, { ...dragged, column_span: 1 });
+          const spanned = next.map((s) =>
+            s.id === targetId || s.id === draggedId ? { ...s, column_span: 1 as 1 | 2 } : s
+          );
+          return { ...t, sections: spanned.map((s, i) => ({ ...s, display_order: i })) };
+        }),
+      }));
+    },
+    [updateLayout]
+  );
+
   const getSelectedSection = () => {
     if (selection?.type !== 'section' && selection?.type !== 'control') return null;
     const tab = layout.tabs.find((t) => t.id === selection.tabId);
@@ -398,6 +424,7 @@ export function useDesignerStore(initialLayout?: DesignerLayout | null) {
     getSelectedControl,
     moveControlToColumn,
     moveControlCrossSection,
+    moveSectionBeside,
   };
 }
 

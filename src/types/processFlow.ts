@@ -31,6 +31,24 @@ export interface RuleCondition {
   value: string | number | boolean | null;
 }
 
+/** A single leaf rule in a condition group. */
+export interface ConditionLeaf {
+  field: string;
+  operator: string;
+  value: string;
+}
+
+/** A condition group combining leaves and/or nested groups with AND/OR. */
+export interface ConditionGroup {
+  logic: 'AND' | 'OR';
+  rules: (ConditionLeaf | ConditionGroup)[];
+}
+
+/** Type guard: is this node a group (vs a leaf rule)? */
+export function isConditionGroup(n: ConditionLeaf | ConditionGroup): n is ConditionGroup {
+  return (n as ConditionGroup).rules !== undefined;
+}
+
 export interface StageVisibleField {
   field: string;
 }
@@ -105,6 +123,7 @@ export interface ProcessStage {
   condition_field: string | null;
   condition_operator: string | null;
   condition_value: string | null;
+  condition_rules: ConditionGroup | null;
   created_at: string;
   modified_at: string;
 }
@@ -223,6 +242,31 @@ export interface ProcessStageFormData {
   condition_field?: string | null;
   condition_operator?: string | null;
   condition_value?: string | null;
+  condition_rules?: ConditionGroup | null;
+}
+
+/**
+ * Serialized BPF working model stored in process_flow.draft_json. Saved by "Save Draft"
+ * (ids may still be temp `tmp_*` for newly-added rows) and applied to the live tables by
+ * "Publish" (where buildPublishSnapshot has resolved every temp id to a real UUID).
+ */
+export interface ProcessFlowDraft {
+  version: 1;
+  flow: {
+    name: string;
+    description: string;
+    entity_definition_id: string;
+    lob_id: string | null;
+    product_id: string | null;
+    form_id: string | null;
+    stage_field: string;
+    is_active: boolean;
+    default_stage_id: string | null;
+  };
+  stages: ProcessStage[];
+  transitions: ProcessFlowTransition[];
+  stageFields: ProcessStageField[];
+  entityConfigs: (ProcessFlowEntityConfigFormData & { config_id: string; is_primary: boolean })[];
 }
 
 export interface ProcessFlowInstance {

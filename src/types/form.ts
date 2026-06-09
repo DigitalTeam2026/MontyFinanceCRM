@@ -115,6 +115,11 @@ export interface DesignerSection {
   name: string;
   label: string;
   columns: 1 | 2;
+  /**
+   * Width of the section within the tab's row grid:
+   * 2 (or undefined) = full row; 1 = half row, so two half sections sit side by side.
+   */
+  column_span?: 1 | 2;
   display_order: number;
   is_visible: boolean;
   is_collapsed: boolean;

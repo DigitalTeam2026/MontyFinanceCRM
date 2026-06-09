@@ -221,6 +221,16 @@ function SectionProperties({
             <option value={2}>2 Columns</option>
           </select>
         </PropField>
+        <PropField label="Section Width">
+          <select
+            value={section.column_span ?? 2}
+            onChange={(e) => store.updateSection(tab.id, section.id, { column_span: Number(e.target.value) as 1 | 2 })}
+            className={pi()}
+          >
+            <option value={2}>Full row</option>
+            <option value={1}>Half (side by side)</option>
+          </select>
+        </PropField>
         <PropToggle
           label="Visible"
           checked={section.is_visible}

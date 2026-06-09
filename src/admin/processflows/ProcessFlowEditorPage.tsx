@@ -13,9 +13,9 @@ import type {
   ProcessFlow, ProcessStage, ProcessFlowTransition,
   ProcessStageFormData, StageType, ProcessFlowScope, ComponentType,
   ProcessStageField, StageCategory, ProcessFlowEntityConfig,
-  ProcessFlowEntityConfigFormData, LinkBehavior,
+  ProcessFlowEntityConfigFormData, LinkBehavior, ConditionGroup, ConditionLeaf,
 } from '../../types/processFlow';
-import { STAGE_TYPE_META, STAGE_CATEGORIES, CONDITION_OPERATORS, LINK_BEHAVIOR_OPTIONS } from '../../types/processFlow';
+import { STAGE_TYPE_META, STAGE_CATEGORIES, CONDITION_OPERATORS, LINK_BEHAVIOR_OPTIONS, isConditionGroup } from '../../types/processFlow';
 import {
   fetchProcessFlowWithDetails, updateProcessFlow,
   createProcessStage, updateProcessStage, deleteProcessStage,
@@ -78,6 +78,103 @@ const COMPONENT_DEFS: ComponentDef[] = [
 
 const getComponentDef = (type: ComponentType): ComponentDef =>
   COMPONENT_DEFS.find((c) => c.type === type) ?? COMPONENT_DEFS[0];
+
+// ─── Condition group builder (AND/OR + nested groups) ─────────────────────────
+function ConditionGroupEditor({ group, onChange, fields, entityId, depth = 0 }: {
+  group: ConditionGroup;
+  onChange: (g: ConditionGroup) => void;
+  fields: FieldDefinition[];
+  entityId: string;
+  depth?: number;
+}) {
+  const update = (rules: (ConditionLeaf | ConditionGroup)[]) => onChange({ ...group, rules });
+  const setRule = (i: number, r: ConditionLeaf | ConditionGroup) => update(group.rules.map((x, idx) => (idx === i ? r : x)));
+  const removeAt = (i: number) => update(group.rules.filter((_, idx) => idx !== i));
+  const addRule = () => update([...group.rules, { field: '', operator: 'eq', value: '' }]);
+  const addGroup = () => update([...group.rules, { logic: 'AND', rules: [{ field: '', operator: 'eq', value: '' }] }]);
+  const selCls = 'px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-white';
+
+  return (
+    <div className={depth > 0 ? 'pl-2 border-l-2 border-amber-200' : ''}>
+      <div className="flex items-center gap-1 mb-2">
+        <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+          {(['AND', 'OR'] as const).map((op) => (
+            <button key={op} type="button" onClick={() => onChange({ ...group, logic: op })}
+              className={`px-2.5 py-1 text-[11px] font-bold ${group.logic === op ? 'bg-amber-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+              {op}
+            </button>
+          ))}
+        </div>
+        <span className="text-[10px] text-gray-400">match {group.logic === 'AND' ? 'all' : 'any'} of the following</span>
+      </div>
+
+      <div className="space-y-1.5">
+        {group.rules.map((r, i) => (isConditionGroup(r) ? (
+          <div key={i} className="rounded-lg border border-amber-100 bg-amber-50/30 p-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wider">Group</span>
+              <button type="button" onClick={() => removeAt(i)} className="text-gray-300 hover:text-red-500"><Trash2 size={11} /></button>
+            </div>
+            <ConditionGroupEditor group={r} onChange={(g) => setRule(i, g)} fields={fields} entityId={entityId} depth={depth + 1} />
+          </div>
+        ) : (
+          <div key={i} className="flex items-center gap-1">
+            <select value={r.field} onChange={(e) => setRule(i, { ...r, field: e.target.value })} className={`${selCls} flex-1 min-w-0`}>
+              <option value="">— field —</option>
+              {fields.map((f) => <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>)}
+            </select>
+            <select value={r.operator} onChange={(e) => setRule(i, { ...r, operator: e.target.value })} className={selCls}>
+              {CONDITION_OPERATORS.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
+            </select>
+            {r.operator !== 'empty' && r.operator !== 'not_empty' && (() => {
+              const f = fields.find((ff) => ff.logical_name === r.field);
+              const ftype = f?.field_type?.name ?? 'text';
+              const cfg = f?.config_json as Record<string, unknown> | null;
+              if (f && (ftype === 'lookup' || ftype === 'owner')) {
+                return <div className="w-28 shrink-0"><ConditionLookupValueInput field={f} value={r.value} onChange={(v) => setRule(i, { ...r, value: v })} /></div>;
+              }
+              if (f && (ftype === 'choice' || ftype === 'optionset') && (cfg?.is_statecode_field || cfg?.is_statusreason_field) && entityId) {
+                return <div className="w-28 shrink-0"><ConditionChoiceValueInput field={f} entityDefId={entityId} value={r.value} onChange={(v) => setRule(i, { ...r, value: v })} /></div>;
+              }
+              return <input value={r.value} onChange={(e) => setRule(i, { ...r, value: e.target.value })} placeholder="value" className={`${selCls} w-24`} />;
+            })()}
+            <button type="button" onClick={() => removeAt(i)} className="text-gray-300 hover:text-red-500 shrink-0"><Trash2 size={11} /></button>
+          </div>
+        )))}
+      </div>
+
+      <div className="flex items-center gap-1.5 mt-2">
+        <button type="button" onClick={addRule}
+          className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100">
+          <Plus size={11} /> Condition
+        </button>
+        <button type="button" onClick={addGroup}
+          className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100">
+          <Plus size={11} /> Group
+        </button>
+      </div>
+
+      {/* Live preview of the whole condition (readable) */}
+      {depth === 0 && (() => {
+        const leafText = (r: ConditionLeaf): string => {
+          if (!r.field) return '';
+          const fname = fields.find((f) => f.logical_name === r.field)?.display_name ?? r.field;
+          const opLabel = CONDITION_OPERATORS.find((o) => o.value === r.operator)?.label ?? r.operator;
+          return (r.operator === 'empty' || r.operator === 'not_empty') ? `${fname} ${opLabel}` : `${fname} ${opLabel} ${r.value || '…'}`;
+        };
+        const groupText = (g: ConditionGroup): string =>
+          g.rules.map((r) => (isConditionGroup(r) ? `(${groupText(r)})` : leafText(r))).filter(Boolean).join(` ${g.logic} `);
+        const text = groupText(group);
+        return text ? (
+          <div className="mt-2 flex items-start gap-1.5 px-2.5 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 flex-wrap">
+            <span className="font-bold text-[10px] text-amber-600 mt-px shrink-0">IF</span>
+            <span className="font-mono break-words">{text}</span>
+          </div>
+        ) : null;
+      })()}
+    </div>
+  );
+}
 
 type Tab = 'designer' | 'transitions' | 'settings';
 
@@ -382,6 +479,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
   const draggingType = useRef<ComponentType | null>(null);
   const [dropTarget, setDropTarget] = useState<'canvas' | null>(null);
   const [branchPickerState, setBranchPickerState] = useState<{ stageId: string; conditionId: string } | null>(null);
+  const [addBranchState, setAddBranchState] = useState<{ conditionId: string; branch: 'yes' | 'no' } | null>(null);
 
   const loadFlow = useCallback(async () => {
     setLoading(true);
@@ -406,8 +504,12 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
 
   const entity = entities.find((e) => e.entity_definition_id === flow.entity_definition_id);
 
+  // Next display_order = after the current maximum (robust to gaps from deletes/reorders,
+  // so a newly-added stage always sorts last and lands in the right column).
+  const nextDisplayOrder = () => (stages.length ? Math.max(...stages.map((s) => s.display_order)) + 1 : 0);
+
   const handleDropOnCanvas = async (componentType: ComponentType) => {
-    const order = stages.length;
+    const order = nextDisplayOrder();
     const def = getComponentDef(componentType);
     const isFirstStage = stages.filter((s) => s.stage_type === 'active').length === 0 && componentType === 'stage';
     // Give new stages a unique numbered name instead of the generic label
@@ -447,14 +549,17 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
       setSelectedStageId(created.process_stage_id);
       setDropTarget(null);
 
-      // If dropping a non-condition stage and there's a condition with an empty branch slot, prompt assignment
-      if (componentType !== 'condition') {
-        const conditionWithSlot = stages.find(
-          (s) => s.component_type === 'condition' && s.stage_type === 'active' && (!s.branch_yes_stage_id || !s.branch_no_stage_id)
-        );
-        if (conditionWithSlot) {
-          setBranchPickerState({ stageId: created.process_stage_id, conditionId: conditionWithSlot.process_stage_id });
-        }
+      // After dropping any component (stage OR condition — conditions can nest inside a
+      // branch), if a condition has an empty Yes/No slot, prompt which branch it belongs to.
+      // Prefer the condition the user currently has selected so the drop lands in that one.
+      const hasOpenSlot = (s: ProcessStage) =>
+        s.component_type === 'condition' && s.stage_type === 'active' &&
+        (!s.branch_yes_stage_id || !s.branch_no_stage_id);
+      const selected = stages.find((s) => s.process_stage_id === selectedStageId);
+      const conditionWithSlot =
+        selected && hasOpenSlot(selected) ? selected : stages.find(hasOpenSlot);
+      if (conditionWithSlot && conditionWithSlot.process_stage_id !== created.process_stage_id) {
+        setBranchPickerState({ stageId: created.process_stage_id, conditionId: conditionWithSlot.process_stage_id });
       }
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Failed to add component');
@@ -474,6 +579,71 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
       showError(e instanceof Error ? e.message : 'Failed to assign branch');
     }
     setBranchPickerState(null);
+  };
+
+  // Build a fresh stage/condition payload (mirrors the canvas-drop defaults).
+  const buildStagePayload = (componentType: ComponentType, order: number): ProcessStageFormData => {
+    const def = getComponentDef(componentType);
+    const sameTypeCount = stages.filter((s) => s.component_type === componentType && s.stage_type === 'active').length + 1;
+    return {
+      name: componentType === 'stage' ? `Stage ${sameTypeCount}` : def.label,
+      description: '',
+      stage_key: `${componentType}_${Date.now()}`,
+      display_order: order,
+      stage_color: componentType === 'condition' ? '#f59e0b' : '#3b82f6',
+      stage_type: 'active',
+      stage_category: 'general',
+      is_default: false,
+      is_fixed: false,
+      probability: null,
+      allow_backward_movement: true,
+      requires_entry_approval: false,
+      requires_exit_approval: false,
+      entry_rules: [],
+      exit_rules: [],
+      target_entity_id: null,
+      stage_entity_id: null,
+      target_relationship_name: '',
+      create_linked_record: false,
+      relationship_definition_id: null,
+      component_type: componentType,
+      branch_yes_stage_id: null,
+      branch_no_stage_id: null,
+      condition_field: null,
+      condition_operator: null,
+      condition_value: null,
+    };
+  };
+
+  // Disconnect a condition's Yes/No branch so it becomes empty and droppable again
+  // (lets each condition have its own independent branches instead of a shared link).
+  const handleClearBranch = async (conditionId: string, branch: 'yes' | 'no') => {
+    const updates = branch === 'yes' ? { branch_yes_stage_id: null } : { branch_no_stage_id: null };
+    try {
+      const updated = await updateProcessStage(conditionId, updates);
+      setStages((prev) => prev.map((s) => s.process_stage_id === conditionId ? updated : s));
+    } catch (e: unknown) {
+      showError(e instanceof Error ? e.message : 'Failed to disconnect branch');
+    }
+  };
+
+  // Explicitly add a new Stage/Condition into a condition's Yes or No branch (supports nesting).
+  const handleAddToBranch = async (conditionId: string, branch: 'yes' | 'no', componentType: ComponentType) => {
+    try {
+      const created = await createProcessStage(flow.process_flow_id, buildStagePayload(componentType, nextDisplayOrder()));
+      const updates = branch === 'yes'
+        ? { branch_yes_stage_id: created.process_stage_id }
+        : { branch_no_stage_id: created.process_stage_id };
+      const updatedCond = await updateProcessStage(conditionId, updates);
+      setStages((prev) => [
+        ...prev.map((s) => s.process_stage_id === conditionId ? updatedCond : s),
+        created,
+      ]);
+      setSelectedStageId(created.process_stage_id);
+    } catch (e: unknown) {
+      showError(e instanceof Error ? e.message : 'Failed to add to branch');
+    }
+    setAddBranchState(null);
   };
 
   const handleDeleteStage = async (stageId: string) => {
@@ -668,6 +838,9 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
                   onMove={handleMoveStage}
                   onRename={handleRenameStage}
                   onDropType={handleDropOnCanvas}
+                  onAddToBranch={(conditionId, branch) => setAddBranchState({ conditionId, branch })}
+                  onDropInBranch={handleAddToBranch}
+                  onClearBranch={handleClearBranch}
                   dropTarget={dropTarget}
                   setDropTarget={setDropTarget}
                   draggingType={draggingType}
@@ -767,6 +940,52 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
           </div>
         </div>
       )}
+
+      {/* Add-to-branch chooser: pick what the Yes/No branch leads to (a stage, or a nested condition) */}
+      {addBranchState && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-[340px] overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <p className="text-sm font-semibold text-gray-800">
+                Add to <span className={addBranchState.branch === 'yes' ? 'text-emerald-600' : 'text-red-600'}>{addBranchState.branch === 'yes' ? 'Yes' : 'No'}</span> branch
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">What should this branch lead to?</p>
+            </div>
+            <div className="p-4 space-y-2.5">
+              <button
+                onClick={() => handleAddToBranch(addBranchState.conditionId, addBranchState.branch, 'stage')}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-400 transition-all text-left"
+              >
+                <div className="w-8 h-8 rounded-lg bg-white border border-blue-200 flex items-center justify-center shrink-0 text-blue-600">
+                  <Layers size={14} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-blue-800">Stage</p>
+                  <p className="text-[10px] text-blue-600">A progress stage with fields</p>
+                </div>
+              </button>
+              <button
+                onClick={() => handleAddToBranch(addBranchState.conditionId, addBranchState.branch, 'condition')}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 hover:border-amber-400 transition-all text-left"
+              >
+                <div className="w-8 h-8 rounded-lg bg-white border border-amber-200 flex items-center justify-center shrink-0 text-amber-600">
+                  <GitBranch size={14} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-amber-800">Condition</p>
+                  <p className="text-[10px] text-amber-600">A nested Yes/No branch</p>
+                </div>
+              </button>
+              <button
+                onClick={() => setAddBranchState(null)}
+                className="w-full text-center text-xs text-gray-500 hover:text-gray-700 py-2 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -785,6 +1004,9 @@ interface BpfCanvasProps {
   onMove: (id: string, dir: 'left' | 'right') => Promise<void>;
   onRename: (id: string, name: string) => void;
   onDropType: (type: ComponentType) => Promise<void>;
+  onAddToBranch: (conditionId: string, branch: 'yes' | 'no') => void;
+  onDropInBranch: (conditionId: string, branch: 'yes' | 'no', componentType: ComponentType) => void;
+  onClearBranch: (conditionId: string, branch: 'yes' | 'no') => void;
   dropTarget: 'canvas' | null;
   setDropTarget: (v: 'canvas' | null) => void;
   draggingType: React.MutableRefObject<ComponentType | null>;
@@ -802,9 +1024,10 @@ type ConnectorDef = { d: string; color: string; dashed?: boolean; label?: string
 
 function BpfCanvas({
   flow, stages, entities, selectedStageId, onSelect, onDelete, onSetDefault, onMove, onRename,
-  onDropType, dropTarget, setDropTarget, draggingType,
+  onDropType, onAddToBranch, onDropInBranch, onClearBranch, dropTarget, setDropTarget, draggingType,
 }: BpfCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [branchDrop, setBranchDrop] = useState<{ conditionId: string; branch: 'yes' | 'no' } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -833,83 +1056,106 @@ function BpfCanvas({
     getEntityColor(currentEntityId);
   }
 
-  // ─── Branching layout algorithm (Dynamics 365 style) ─────────────────────────
-  // Identify which stages belong to the NO-branch (lower lane)
-  const noBranchStageIds = new Set<string>();
-  const noBranchOwner = new Map<string, string>();
-
+  // ─── Branching layout (Dynamics 365 style) ──────────────────────────────────
+  // Map each branch target to its owning condition (ignoring dangling pointers).
+  const activeIds = new Set(activeStages.map((s) => s.process_stage_id));
+  const yesOwner = new Map<string, string>();      // YES-target id -> condition id
+  const noBranchOwner = new Map<string, string>(); // NO-target id  -> condition id
   for (const s of activeStages) {
-    if (s.component_type !== 'condition') continue;
-    const noTargetId = s.branch_no_stage_id;
-    if (!noTargetId) continue;
-
-    // The NO target stage always goes to the lower lane
-    noBranchStageIds.add(noTargetId);
-    noBranchOwner.set(noTargetId, s.process_stage_id);
+    // branch_yes chains BOTH conditions (their YES branch) and stages (continue the
+    // branch's line with another stage), so a branch can hold multiple stages in a row.
+    if (s.branch_yes_stage_id && activeIds.has(s.branch_yes_stage_id)) yesOwner.set(s.branch_yes_stage_id, s.process_stage_id);
+    if (s.component_type === 'condition' && s.branch_no_stage_id && activeIds.has(s.branch_no_stage_id)) noBranchOwner.set(s.branch_no_stage_id, s.process_stage_id);
   }
+  const noBranchStageIds = new Set<string>(noBranchOwner.keys());
 
-  // Lane assignment
-  const laneAssignment = new Map<string, 'main' | 'lower'>();
-  for (const s of activeStages) {
-    laneAssignment.set(s.process_stage_id, noBranchStageIds.has(s.process_stage_id) ? 'lower' : 'main');
-  }
-
-  // ─── Position computation ──────────────────────────────────────────────────
-  // The key difference from before: NO-branch stages are placed BELOW the condition
-  // at the condition's X (first NO stage) then extending to the right.
   const BASELINE_Y = SWIMLANE_HEADER + V_GAP;
-  const LOWER_Y = BASELINE_Y + BRANCH_OFFSET_Y;
   const START_X = 52;
   const COLUMN_WIDTH = NODE_WIDTH + H_GAP;
+  const ROW_HEIGHT = BRANCH_OFFSET_Y;
+
+  // Deterministic row by branch structure (NOT a running counter, so a branch can
+  // never bleed into the main flow): a NO-target sits one row BELOW its condition,
+  // a YES-target sits on the SAME row as its condition, everything else is row 0.
+  const rowOf = new Map<string, number>();
+  const resolveRow = (id: string, seen: Set<string>): number => {
+    const cached = rowOf.get(id);
+    if (cached !== undefined) return cached;
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    let r = 0;
+    if (noBranchOwner.has(id)) r = resolveRow(noBranchOwner.get(id)!, seen) + 1;
+    else if (yesOwner.has(id)) r = resolveRow(yesOwner.get(id)!, seen);
+    rowOf.set(id, r);
+    return r;
+  };
+  for (const s of activeStages) resolveRow(s.process_stage_id, new Set());
+  const maxRow = Math.max(0, ...Array.from(rowOf.values()));
+  const hasLowerLane = maxRow > 0;
+  const LOWER_Y = BASELINE_Y + ROW_HEIGHT; // first NO row (kept for lane labels)
+
+  // Columns: left-to-right by display order within each row; a NO branch indents
+  // one column under its owning condition so it reads as a staircase.
+  const sortedByOrder = [...activeStages].sort((a, b) => a.display_order - b.display_order);
+  const colOf = new Map<string, number>();
+  const nextColInRow = new Map<number, number>();
+  for (const s of sortedByOrder) {
+    const r = rowOf.get(s.process_stage_id) ?? 0;
+    if (noBranchOwner.has(s.process_stage_id)) {
+      const ownerCol = colOf.get(noBranchOwner.get(s.process_stage_id)!) ?? 0;
+      if ((nextColInRow.get(r) ?? 0) <= ownerCol) nextColInRow.set(r, ownerCol + 1);
+    }
+    const c = nextColInRow.get(r) ?? 0;
+    colOf.set(s.process_stage_id, c);
+    nextColInRow.set(r, c + 1);
+  }
+
+  // Which branch a stage belongs to (green YES / red NO). A condition's YES target is
+  // ALWAYS a green YES branch (regardless of where that condition itself sits); a NO
+  // target is red; and a stage→stage continuation inherits the colour of the line it
+  // continues — so each condition's YES line is green and NO line red.
+  const conditionIdSet = new Set(activeStages.filter((s) => s.component_type === 'condition').map((s) => s.process_stage_id));
+  const branchKind = new Map<string, 'yes' | 'no'>();
+  const resolveKind = (id: string, seen: Set<string>): 'yes' | 'no' | undefined => {
+    if (branchKind.has(id)) return branchKind.get(id);
+    if (seen.has(id)) return undefined;
+    seen.add(id);
+    let k: 'yes' | 'no' | undefined;
+    if (noBranchOwner.has(id)) k = 'no';
+    else if (yesOwner.has(id)) {
+      const owner = yesOwner.get(id)!;
+      k = conditionIdSet.has(owner) ? 'yes' : resolveKind(owner, seen);
+    }
+    if (k) branchKind.set(id, k);
+    return k;
+  };
+  for (const s of activeStages) resolveKind(s.process_stage_id, new Set());
 
   const nodePositions = new Map<string, { x: number; y: number }>();
-  const hasLowerLane = noBranchStageIds.size > 0;
-
-  // Build column assignments
-  // NO-branch stages get placed at the same column as the next YES stage (but on LOWER_Y).
-  let col = 0;
-  const stageColumn = new Map<string, number>();
-
-  for (const stage of activeStages) {
-    if (noBranchStageIds.has(stage.process_stage_id)) continue; // placed separately
-    stageColumn.set(stage.process_stage_id, col);
-    col++;
-  }
-
-  // Place NO-branch stages: positioned one column after their owning condition, on lower lane
   for (const s of activeStages) {
-    if (s.component_type !== 'condition') continue;
-    const noTargetId = s.branch_no_stage_id;
-    if (!noTargetId || !noBranchStageIds.has(noTargetId)) continue;
-    const condCol = stageColumn.get(s.process_stage_id) ?? 0;
-    stageColumn.set(noTargetId, condCol + 1);
-    // Ensure main-lane col doesn't overlap: bump col if needed
-    const maxCol = Math.max(col, condCol + 2);
-    col = maxCol;
+    const r = rowOf.get(s.process_stage_id) ?? 0;
+    const c = colOf.get(s.process_stage_id) ?? 0;
+    nodePositions.set(s.process_stage_id, { x: START_X + c * COLUMN_WIDTH, y: BASELINE_Y + r * ROW_HEIGHT });
   }
 
-  // Convert columns to pixel positions
-  for (const s of activeStages) {
-    const c = stageColumn.get(s.process_stage_id) ?? 0;
-    const lane = laneAssignment.get(s.process_stage_id) ?? 'main';
-    const x = START_X + c * COLUMN_WIDTH;
-    const y = lane === 'main' ? BASELINE_Y : LOWER_Y;
-    nodePositions.set(s.process_stage_id, { x, y });
-  }
-
-  // Terminal stages placed below everything
-  const terminalY = (hasLowerLane ? LOWER_Y : BASELINE_Y) + NODE_HEIGHT + 80;
+  // Terminal stages placed below the deepest row.
+  const terminalY = BASELINE_Y + (maxRow + 1) * ROW_HEIGHT + 24;
   let termX = START_X;
   for (const s of terminalStages) {
     nodePositions.set(s.process_stage_id, { x: termX, y: terminalY });
     termX += NODE_WIDTH + 24;
   }
 
+  // A branch is "open" (droppable) when it's unset OR points to a stage that no
+  // longer exists (a dangling pointer left over from a deleted stage).
+  const branchOpen = (id: string | null | undefined) => !id || !nodePositions.has(id);
+
   const maxNodeX = Math.max(...Array.from(nodePositions.values()).map((p) => p.x), 0);
   const canvasWidth = Math.max(maxNodeX + NODE_WIDTH + 300, 800);
+  const bottomRowY = BASELINE_Y + maxRow * ROW_HEIGHT;
   const canvasHeight = terminalStages.length > 0
     ? terminalY + NODE_HEIGHT + 120
-    : (hasLowerLane ? LOWER_Y + NODE_HEIGHT + 160 : BASELINE_Y + NODE_HEIGHT + 160);
+    : bottomRowY + NODE_HEIGHT + 160;
 
   // ─── Swimlane groups ───────────────────────────────────────────────────────
   type EntityGroup = { entityId: string; stages: ProcessStage[] };
@@ -1012,11 +1258,16 @@ function BpfCanvas({
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    // If the release happened while hovering a Yes/No branch drop zone, route the
+    // new component INTO that branch (nested) instead of the main horizontal flow.
+    const bd = branchDrop;
     setDropTarget(null);
-    if (draggingType.current) {
-      onDropType(draggingType.current);
-      draggingType.current = null;
-    }
+    setBranchDrop(null);
+    const type = draggingType.current;
+    draggingType.current = null;
+    if (!type) return;
+    if (bd) onDropInBranch(bd.conditionId, bd.branch, type);
+    else onDropType(type);
   };
 
   // ─── Build SVG connector paths (Dynamics 365 style branching) ──────────────
@@ -1024,47 +1275,34 @@ function BpfCanvas({
     const paths: ConnectorDef[] = [];
     const conditionIds = new Set(activeStages.filter((s) => s.component_type === 'condition').map((s) => s.process_stage_id));
 
-    // Get stages on each lane in order
-    const mainStages = activeStages.filter((s) => laneAssignment.get(s.process_stage_id) === 'main');
-    const lowerStages = activeStages.filter((s) => laneAssignment.get(s.process_stage_id) === 'lower');
-
-    // Sequential connectors on main lane (skip conditions — they draw their own YES connector)
-    for (let i = 0; i < mainStages.length - 1; i++) {
-      const curr = mainStages[i];
-      const next = mainStages[i + 1];
-      if (conditionIds.has(curr.process_stage_id)) continue;
-
-      const currPos = nodePositions.get(curr.process_stage_id);
-      const nextPos = nodePositions.get(next.process_stage_id);
-      if (!currPos || !nextPos) continue;
-
-      const startX = currPos.x + NODE_WIDTH;
-      const startY = currPos.y + NODE_HEIGHT / 2;
-      const endX = nextPos.x;
-      const endY = nextPos.y + NODE_HEIGHT / 2;
-      const midX = (startX + endX) / 2;
-      const d = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
-      const eId = stageEffectiveEntityId.get(curr.process_stage_id) ?? flow.entity_definition_id;
-      paths.push({ d, color: getEntityColor(eId) });
+    // Sequential connectors WITHIN each row, ordered by column. Skip conditions
+    // (they draw their own YES connector) and skip links INTO a NO-target (its NO
+    // branch connector draws that drop-down).
+    const byRow = new Map<number, ProcessStage[]>();
+    for (const s of activeStages) {
+      const r = rowOf.get(s.process_stage_id) ?? 0;
+      if (!byRow.has(r)) byRow.set(r, []);
+      byRow.get(r)!.push(s);
     }
-
-    // Sequential connectors on lower lane (between consecutive NO-branch stages)
-    for (let i = 0; i < lowerStages.length - 1; i++) {
-      const curr = lowerStages[i];
-      const next = lowerStages[i + 1];
-      // Only connect stages owned by the same condition
-      if (noBranchOwner.get(curr.process_stage_id) !== noBranchOwner.get(next.process_stage_id)) continue;
-      const currPos = nodePositions.get(curr.process_stage_id);
-      const nextPos = nodePositions.get(next.process_stage_id);
-      if (!currPos || !nextPos) continue;
-
-      const startX = currPos.x + NODE_WIDTH;
-      const startY = currPos.y + NODE_HEIGHT / 2;
-      const endX = nextPos.x;
-      const endY = nextPos.y + NODE_HEIGHT / 2;
-      const midX = (startX + endX) / 2;
-      const d = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
-      paths.push({ d, color: '#dc2626', dashed: false });
+    for (const rowStages of byRow.values()) {
+      const ordered = [...rowStages].sort((a, b) => (colOf.get(a.process_stage_id) ?? 0) - (colOf.get(b.process_stage_id) ?? 0));
+      for (let i = 0; i < ordered.length - 1; i++) {
+        const curr = ordered[i];
+        const next = ordered[i + 1];
+        if (conditionIds.has(curr.process_stage_id)) continue;            // condition draws its own YES
+        if (noBranchStageIds.has(next.process_stage_id)) continue;        // NO-target drawn by its NO connector
+        const currPos = nodePositions.get(curr.process_stage_id);
+        const nextPos = nodePositions.get(next.process_stage_id);
+        if (!currPos || !nextPos) continue;
+        const startX = currPos.x + NODE_WIDTH;
+        const startY = currPos.y + NODE_HEIGHT / 2;
+        const endX = nextPos.x;
+        const endY = nextPos.y + NODE_HEIGHT / 2;
+        const midX = (startX + endX) / 2;
+        const d = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
+        const eId = stageEffectiveEntityId.get(curr.process_stage_id) ?? flow.entity_definition_id;
+        paths.push({ d, color: getEntityColor(eId) });
+      }
     }
 
     // Condition branch connectors (condition is now full-size card)
@@ -1079,7 +1317,7 @@ function BpfCanvas({
       const bottomY = pos.y + NODE_HEIGHT;
 
       // YES branch: exits from the RIGHT-CENTER of card → goes horizontally to target
-      const yesTargetId = s.branch_yes_stage_id;
+      const yesTargetId = branchOpen(s.branch_yes_stage_id) ? null : s.branch_yes_stage_id;
       if (yesTargetId) {
         const targetPos = nodePositions.get(yesTargetId);
         if (targetPos) {
@@ -1096,7 +1334,7 @@ function BpfCanvas({
       }
 
       // NO branch: exits from the BOTTOM-CENTER of card → goes DOWN then RIGHT (L-shaped path)
-      const noTargetId = s.branch_no_stage_id;
+      const noTargetId = branchOpen(s.branch_no_stage_id) ? null : s.branch_no_stage_id;
       if (noTargetId) {
         const targetPos = nodePositions.get(noTargetId);
         if (targetPos) {
@@ -1129,10 +1367,8 @@ function BpfCanvas({
       const lastW = NODE_WIDTH;
       const x = firstPos.x - 16;
       const width = (lastPos.x + lastW + 16) - x;
-      const groupHasLower = group.stages.some((s) => noBranchStageIds.has(s.process_stage_id));
-      const height = groupHasLower
-        ? LOWER_Y + NODE_HEIGHT - 0 + 20
-        : BASELINE_Y + NODE_HEIGHT + 20;
+      const groupMaxRow = Math.max(0, ...group.stages.map((s) => rowOf.get(s.process_stage_id) ?? 0));
+      const height = BASELINE_Y + groupMaxRow * ROW_HEIGHT + NODE_HEIGHT + 20;
       const entityName = entities.find((e) => e.entity_definition_id === group.entityId)?.display_name ?? 'Entity';
       lanes.push({ x, width, height, entityId: group.entityId, entityName, color: getEntityColor(group.entityId) });
     }
@@ -1140,8 +1376,9 @@ function BpfCanvas({
   };
   const swimlanes = buildSwimlaneBgs();
 
-  // Drop zone x position (after all assigned columns)
-  const dropZoneX = START_X + col * COLUMN_WIDTH;
+  // Drop zone x position (after the rightmost column on the main row)
+  const row0MaxCol = Math.max(0, ...activeStages.filter((s) => (rowOf.get(s.process_stage_id) ?? 0) === 0).map((s) => colOf.get(s.process_stage_id) ?? 0));
+  const dropZoneX = START_X + (row0MaxCol + 1) * COLUMN_WIDTH;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -1331,7 +1568,6 @@ function BpfCanvas({
                 const eId = stageEffectiveEntityId.get(stage.process_stage_id) ?? flow.entity_definition_id;
                 const entColor = getEntityColor(eId);
                 const entName = entities.find((e) => e.entity_definition_id === eId)?.display_name ?? '';
-                const isOnLower = noBranchStageIds.has(stage.process_stage_id);
                 return (
                   <div key={stage.process_stage_id} className="absolute" style={{ left: pos.x, top: pos.y }}>
                     <StageNode
@@ -1342,7 +1578,7 @@ function BpfCanvas({
                       isLast={isLast}
                       entityColor={entColor}
                       entityName={entName}
-                      branchLane={isOnLower ? 'no' : undefined}
+                      branchLane={branchKind.get(stage.process_stage_id)}
                       canMoveLeft={!isFirst && !stage.is_fixed && !activeStages[globalIdx - 1]?.is_fixed}
                       canMoveRight={!isLast && !stage.is_fixed}
                       onSelect={() => onSelect(stage.process_stage_id)}
@@ -1351,7 +1587,104 @@ function BpfCanvas({
                       onMoveLeft={() => onMove(stage.process_stage_id, 'left')}
                       onMoveRight={() => onMove(stage.process_stage_id, 'right')}
                       onRename={(name) => onRename(stage.process_stage_id, name)}
+                      onAddToBranch={(branch) => onAddToBranch(stage.process_stage_id, branch)}
+                      onClearBranch={(branch) => onClearBranch(stage.process_stage_id, branch)}
+                      yesOpen={branchOpen(stage.branch_yes_stage_id)}
+                      noOpen={branchOpen(stage.branch_no_stage_id)}
                     />
+                  </div>
+                );
+              })}
+
+              {/* Branch drop zones — drop a Stage/Condition into an empty YES/NO branch.
+                  These attach the new component to the parent condition's branch (not the main flow). */}
+              {activeStages.filter((s) => s.component_type === 'condition').map((cond) => {
+                const pos = nodePositions.get(cond.process_stage_id);
+                if (!pos) return null;
+                const zones: { branch: 'yes' | 'no'; x: number; y: number }[] = [];
+                if (branchOpen(cond.branch_yes_stage_id)) zones.push({ branch: 'yes', x: pos.x + COLUMN_WIDTH, y: pos.y });
+                if (branchOpen(cond.branch_no_stage_id)) zones.push({ branch: 'no', x: pos.x, y: pos.y + NODE_HEIGHT + V_GAP });
+                return zones.map((z) => {
+                  const isYes = z.branch === 'yes';
+                  const active = branchDrop?.conditionId === cond.process_stage_id && branchDrop.branch === z.branch;
+                  return (
+                    <div
+                      key={cond.process_stage_id + z.branch}
+                      className="absolute"
+                      style={{ left: z.x, top: z.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
+                      onDragOver={(e) => {
+                        if (!draggingType.current) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDropTarget(null);
+                        if (!active) setBranchDrop({ conditionId: cond.process_stage_id, branch: z.branch });
+                      }}
+                      onDragLeave={(e) => { e.stopPropagation(); setBranchDrop(null); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const type = draggingType.current;
+                        setBranchDrop(null);
+                        setDropTarget(null);
+                        if (type) { onDropInBranch(cond.process_stage_id, z.branch, type); draggingType.current = null; }
+                      }}
+                    >
+                      <div className={`w-full h-full rounded-xl border-2 border-dashed flex flex-col items-center justify-center text-center transition-colors ${
+                        active
+                          ? (isYes ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-red-500 bg-red-50 text-red-700')
+                          : (isYes ? 'border-emerald-300/70 bg-emerald-50/30 text-emerald-500' : 'border-red-300/70 bg-red-50/30 text-red-500')
+                      }`}>
+                        <span className={`text-[9px] font-bold uppercase tracking-wider ${isYes ? 'text-emerald-600' : 'text-red-600'}`}>{isYes ? 'YES' : 'NO'} branch</span>
+                        <Plus size={14} className="my-0.5" />
+                        <span className="text-[10px] font-medium px-2 leading-tight">
+                          {active
+                            ? `Drop ${draggingType.current === 'condition' ? 'condition' : 'stage'} in ${isYes ? 'YES' : 'NO'} branch`
+                            : 'Drop Stage / Condition'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                });
+              })}
+
+              {/* Continuation zones — add MORE stages to a branch line (to the right of a branch stage). */}
+              {activeStages.filter((s) => s.component_type !== 'condition' && branchKind.has(s.process_stage_id) && branchOpen(s.branch_yes_stage_id)).map((st) => {
+                const pos = nodePositions.get(st.process_stage_id);
+                if (!pos) return null;
+                const isYes = branchKind.get(st.process_stage_id) === 'yes';
+                const active = branchDrop?.conditionId === st.process_stage_id && branchDrop.branch === 'yes';
+                return (
+                  <div
+                    key={st.process_stage_id + '-cont'}
+                    className="absolute"
+                    style={{ left: pos.x + COLUMN_WIDTH, top: pos.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
+                    onDragOver={(e) => {
+                      if (!draggingType.current) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDropTarget(null);
+                      if (!active) setBranchDrop({ conditionId: st.process_stage_id, branch: 'yes' });
+                    }}
+                    onDragLeave={(e) => { e.stopPropagation(); setBranchDrop(null); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const type = draggingType.current;
+                      setBranchDrop(null);
+                      setDropTarget(null);
+                      if (type) { onDropInBranch(st.process_stage_id, 'yes', type); draggingType.current = null; }
+                    }}
+                  >
+                    <div className={`w-full h-full rounded-xl border-2 border-dashed flex flex-col items-center justify-center text-center transition-colors ${
+                      active
+                        ? (isYes ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-red-500 bg-red-50 text-red-700')
+                        : (isYes ? 'border-emerald-300/60 bg-emerald-50/20 text-emerald-500' : 'border-red-300/60 bg-red-50/20 text-red-500')
+                    }`}>
+                      <Plus size={14} className="my-0.5" />
+                      <span className="text-[10px] font-medium px-2 leading-tight">
+                        {active ? `Drop ${draggingType.current === 'condition' ? 'condition' : 'stage'} here` : 'Add stage'}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
@@ -1528,16 +1861,20 @@ interface StageNodeProps {
   canMoveRight: boolean;
   entityColor?: string;
   entityName?: string;
-  branchLane?: 'no';
+  branchLane?: 'yes' | 'no';
   onSelect: () => void;
   onDelete: () => void;
   onSetDefault: () => void;
   onMoveLeft: () => void;
   onMoveRight: () => void;
   onRename: (name: string) => void;
+  onAddToBranch?: (branch: 'yes' | 'no') => void;
+  onClearBranch?: (branch: 'yes' | 'no') => void;
+  yesOpen?: boolean;
+  noOpen?: boolean;
 }
 
-function StageNode({ stage, isSelected, isDefault, canMoveLeft, canMoveRight, entityColor, entityName, branchLane, onSelect, onDelete, onSetDefault, onMoveLeft, onMoveRight, onRename }: StageNodeProps) {
+function StageNode({ stage, isSelected, isDefault, canMoveLeft, canMoveRight, entityColor, entityName, branchLane, onSelect, onDelete, onSetDefault, onMoveLeft, onMoveRight, onRename, onAddToBranch, onClearBranch, yesOpen, noOpen }: StageNodeProps) {
   const def = getComponentDef(stage.component_type ?? 'stage');
   const isTerminal = stage.stage_type !== 'active';
   const isEntityBoundary = !!stage.target_entity_id;
@@ -1615,23 +1952,57 @@ function StageNode({ stage, isSelected, isDefault, canMoveLeft, canMoveRight, en
             </div>
           )}
 
-          {/* Branch indicators */}
+          {/* Branch indicators — when a branch is empty, it becomes an "+ Add" button */}
           <div className="flex items-center gap-2 mt-2.5">
-            <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
-                <Check size={9} className="text-white" strokeWidth={3} />
+            {!yesOpen ? (
+              <div className="flex items-center gap-1 group/yes">
+                <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
+                  <Check size={9} className="text-white" strokeWidth={3} />
+                </div>
+                <span className="text-[9px] font-semibold text-emerald-700">Yes</span>
+                <ArrowRight size={9} className="text-emerald-500" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); onClearBranch?.('yes'); }}
+                  title="Disconnect Yes branch (make it independent)"
+                  className="ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors"
+                >
+                  <X size={8} strokeWidth={3} />
+                </button>
               </div>
-              <span className="text-[9px] font-semibold text-emerald-700">Yes</span>
-              <ArrowRight size={9} className="text-emerald-500" />
-            </div>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); onAddToBranch?.('yes'); }}
+                title="Add a stage or condition to the Yes branch"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-400 transition-colors"
+              >
+                <Plus size={9} /><span className="text-[9px] font-semibold">Yes</span>
+              </button>
+            )}
             <div className="w-px h-3 bg-gray-200" />
-            <div className="flex items-center gap-1">
-              <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
-                <X size={9} className="text-white" strokeWidth={3} />
+            {!noOpen ? (
+              <div className="flex items-center gap-1 group/no">
+                <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
+                  <X size={9} className="text-white" strokeWidth={3} />
+                </div>
+                <span className="text-[9px] font-semibold text-red-700">No</span>
+                <ArrowDown size={9} className="text-red-500" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); onClearBranch?.('no'); }}
+                  title="Disconnect No branch (make it independent)"
+                  className="ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors"
+                >
+                  <X size={8} strokeWidth={3} />
+                </button>
               </div>
-              <span className="text-[9px] font-semibold text-red-700">No</span>
-              <ArrowDown size={9} className="text-red-500" />
-            </div>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); onAddToBranch?.('no'); }}
+                title="Add a stage or condition to the No branch"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-dashed border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400 transition-colors"
+              >
+                <Plus size={9} /><span className="text-[9px] font-semibold">No</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1661,14 +2032,14 @@ function StageNode({ stage, isSelected, isDefault, canMoveLeft, canMoveRight, en
         minHeight: NODE_HEIGHT,
         borderColor: isSelected
           ? (entityColor ?? '#2563eb')
-          : branchLane === 'no' ? '#fca5a5' : '#e5e7eb',
+          : branchLane === 'no' ? '#fca5a5' : branchLane === 'yes' ? '#86efac' : '#e5e7eb',
         backgroundColor: branchLane === 'no' ? '#fef2f2' : '#ffffff',
         boxShadow: isSelected ? `0 4px 16px ${entityColor ?? '#2563eb'}25, 0 1px 3px rgba(0,0,0,0.06)` : undefined,
         transform: isSelected ? 'scale(1.02)' : undefined,
       }}
     >
       {/* Top accent bar */}
-      <div className="h-1 rounded-t-[10px]" style={{ backgroundColor: branchLane === 'no' ? '#dc2626' : (entityColor ?? stage.stage_color) }} />
+      <div className="h-1 rounded-t-[10px]" style={{ backgroundColor: branchLane === 'no' ? '#dc2626' : branchLane === 'yes' ? '#16a34a' : (entityColor ?? stage.stage_color) }} />
 
       <div className="px-3 py-2.5">
         {/* Component type badge + entity name */}
@@ -1889,9 +2260,11 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
   const [conditionEntityId, setConditionEntityId] = useState<string>(
     stage.condition_entity_id ?? inheritedEntityId
   );
-  const [conditionField, setConditionField] = useState<string>(stage.condition_field ?? '');
-  const [conditionOperator, setConditionOperator] = useState<string>(stage.condition_operator ?? 'eq');
-  const [conditionValue, setConditionValue] = useState<string>(stage.condition_value ?? '');
+  const [conditionGroup, setConditionGroup] = useState<ConditionGroup>(() => {
+    if (stage.condition_rules && stage.condition_rules.rules?.length) return stage.condition_rules;
+    if (stage.condition_field) return { logic: 'AND', rules: [{ field: stage.condition_field, operator: stage.condition_operator ?? 'eq', value: stage.condition_value ?? '' }] };
+    return { logic: 'AND', rules: [{ field: '', operator: 'eq', value: '' }] };
+  });
   const [branchYesStageId] = useState<string>(stage.branch_yes_stage_id ?? '');
   const [branchNoStageId] = useState<string>(stage.branch_no_stage_id ?? '');
   const [conditionEntityFields, setConditionEntityFields] = useState<FieldDefinition[]>([]);
@@ -1986,9 +2359,32 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
         branch_yes_stage_id: branchYesStageId || null,
         branch_no_stage_id: branchNoStageId || null,
         condition_entity_id: conditionEntityId || null,
-        condition_field: conditionField || null,
-        condition_operator: conditionOperator || null,
-        condition_value: conditionValue || null,
+        ...(() => {
+          // Keep only rules with a field; drop empty groups. Mirror the first leaf into the
+          // legacy condition_* columns for backward compatibility.
+          const prune = (g: ConditionGroup): ConditionGroup => ({
+            logic: g.logic,
+            rules: g.rules
+              .map((r) => (isConditionGroup(r) ? prune(r) : r))
+              .filter((r) => (isConditionGroup(r) ? r.rules.length > 0 : !!r.field)),
+          });
+          const firstLeaf = (g: ConditionGroup): ConditionLeaf | null => {
+            for (const r of g.rules) {
+              if (isConditionGroup(r)) { const f = firstLeaf(r); if (f) return f; }
+              else if (r.field) return r;
+            }
+            return null;
+          };
+          const pruned = prune(conditionGroup);
+          const hasRules = pruned.rules.length > 0;
+          const leaf = hasRules ? firstLeaf(pruned) : null;
+          return {
+            condition_rules: hasRules ? pruned : null,
+            condition_field: leaf?.field ?? null,
+            condition_operator: leaf?.operator ?? null,
+            condition_value: leaf?.value ?? null,
+          };
+        })(),
       });
       setDirty(false);
     } finally { setSaving(false); }
@@ -2474,7 +2870,7 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
                             key={eid}
                             onClick={() => {
                               setConditionEntityId(eid);
-                              setConditionField('');
+                              setConditionGroup({ logic: 'AND', rules: [{ field: '', operator: 'eq', value: '' }] });
                               markDirty();
                             }}
                             className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border-2 text-left transition-all ${
@@ -2514,201 +2910,18 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
                 <div className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[9px] font-bold shrink-0">2</div>
                 <p className="text-xs font-semibold text-gray-700">Condition rule</p>
               </div>
-              <div className="p-3 space-y-2">
-                {/* Field */}
-                <div>
-                  <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Field / Column</label>
-                  {conditionEntityFieldsLoading ? (
-                    <div className="flex items-center gap-2 px-2.5 py-2 border border-gray-200 rounded-lg text-xs text-gray-400">
-                      <Loader2 size={11} className="animate-spin" /> Loading fields…
-                    </div>
-                  ) : (
-                    <select
-                      value={conditionField}
-                      onChange={(e) => { setConditionField(e.target.value); markDirty(); }}
-                      className="w-full px-2.5 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-white"
-                    >
-                      <option value="">— Select field —</option>
-                      {conditionEntityFields.map((f) => (
-                        <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-
-                {/* Operator */}
-                <div>
-                  <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Operator</label>
-                  <select
-                    value={conditionOperator}
-                    onChange={(e) => { setConditionOperator(e.target.value); markDirty(); }}
-                    className="w-full px-2.5 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-white"
-                  >
-                    {CONDITION_OPERATORS.map((op) => (
-                      <option key={op.value} value={op.value}>{op.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Value - type-aware input based on selected field */}
-                {conditionOperator !== 'not_empty' && conditionOperator !== 'empty' && (() => {
-                  const selectedField = conditionEntityFields.find((f) => f.logical_name === conditionField);
-                  const fieldTypeName = selectedField?.field_type?.name ?? 'text';
-                  const inputCls = "w-full px-2.5 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400";
-
-                  if (fieldTypeName === 'boolean') {
-                    return (
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>
-                        <select
-                          value={conditionValue}
-                          onChange={(e) => { setConditionValue(e.target.value); markDirty(); }}
-                          className={inputCls}
-                        >
-                          <option value="">-- Select --</option>
-                          <option value="true">Yes</option>
-                          <option value="false">No</option>
-                        </select>
-                      </div>
-                    );
-                  }
-
-                  if (fieldTypeName === 'choice' || fieldTypeName === 'optionset') {
-                    const cfg = selectedField?.config_json as Record<string, unknown> | null;
-                    const choices = (cfg as { choices?: { value: string; label: string }[] } | null)?.choices ?? [];
-                    const isDynamic = !!cfg?.is_statecode_field || !!cfg?.is_statusreason_field;
-
-                    if (choices.length > 0) {
-                      return (
-                        <div>
-                          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>
-                          <select
-                            value={conditionValue}
-                            onChange={(e) => { setConditionValue(e.target.value); markDirty(); }}
-                            className={inputCls}
-                          >
-                            <option value="">-- Select choice --</option>
-                            {choices.map((c) => (
-                              <option key={c.value} value={c.value}>{c.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      );
-                    }
-
-                    if (isDynamic && selectedField && conditionEntityId) {
-                      return (
-                        <ConditionChoiceValueInput
-                          field={selectedField}
-                          entityDefId={conditionEntityId}
-                          value={conditionValue}
-                          onChange={(v) => { setConditionValue(v); markDirty(); }}
-                        />
-                      );
-                    }
-
-                    return (
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>
-                        <input
-                          value={conditionValue}
-                          onChange={(e) => { setConditionValue(e.target.value); markDirty(); }}
-                          placeholder="Choice value"
-                          className={inputCls}
-                        />
-                      </div>
-                    );
-                  }
-
-                  if (fieldTypeName === 'date') {
-                    return (
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>
-                        <input
-                          type="date"
-                          value={conditionValue}
-                          onChange={(e) => { setConditionValue(e.target.value); markDirty(); }}
-                          className={inputCls}
-                        />
-                      </div>
-                    );
-                  }
-
-                  if (fieldTypeName === 'datetime') {
-                    return (
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>
-                        <input
-                          type="datetime-local"
-                          value={conditionValue}
-                          onChange={(e) => { setConditionValue(e.target.value); markDirty(); }}
-                          className={inputCls}
-                        />
-                      </div>
-                    );
-                  }
-
-                  if (fieldTypeName === 'number' || fieldTypeName === 'integer' || fieldTypeName === 'decimal' || fieldTypeName === 'currency') {
-                    return (
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>
-                        <input
-                          type="number"
-                          step={fieldTypeName === 'decimal' || fieldTypeName === 'currency' ? '0.01' : '1'}
-                          value={conditionValue}
-                          onChange={(e) => { setConditionValue(e.target.value); markDirty(); }}
-                          placeholder="Enter number"
-                          className={inputCls}
-                        />
-                      </div>
-                    );
-                  }
-
-                  if (fieldTypeName === 'lookup' || fieldTypeName === 'owner') {
-                    return (
-                      <ConditionLookupValueInput
-                        field={selectedField!}
-                        value={conditionValue}
-                        onChange={(v) => { setConditionValue(v); markDirty(); }}
-                      />
-                    );
-                  }
-
-                  // Default: text input
-                  return (
-                    <div>
-                      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>
-                      <input
-                        value={conditionValue}
-                        onChange={(e) => { setConditionValue(e.target.value); markDirty(); }}
-                        placeholder="e.g.  Payment Gateway"
-                        className={inputCls}
-                      />
-                    </div>
-                  );
-                })()}
-
-                {/* Live preview of the rule */}
-                {conditionField && conditionOperator && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900 font-mono flex-wrap">
-                    <span className="font-semibold not-italic font-sans text-[10px] text-amber-600">IF</span>
-                    <span className="bg-white border border-amber-200 px-1.5 py-0.5 rounded text-amber-800">
-                      {conditionEntityFields.find((f) => f.logical_name === conditionField)?.display_name ?? conditionField}
-                    </span>
-                    <span className="text-amber-700">{CONDITION_OPERATORS.find((o) => o.value === conditionOperator)?.label ?? conditionOperator}</span>
-                    {conditionValue && (() => {
-                      const sf = conditionEntityFields.find((f) => f.logical_name === conditionField);
-                      const fType = sf?.field_type?.name ?? 'text';
-                      let displayVal = conditionValue;
-                      if (fType === 'boolean') displayVal = conditionValue === 'true' ? 'Yes' : 'No';
-                      else if (fType === 'choice' || fType === 'optionset') {
-                        const choices = (sf?.config_json as { choices?: { value: string; label: string }[] } | null)?.choices ?? [];
-                        const match = choices.find((c) => c.value === conditionValue);
-                        if (match) displayVal = match.label;
-                      }
-                      return <span className="bg-white border border-amber-200 px-1.5 py-0.5 rounded text-amber-800">{displayVal}</span>;
-                    })()}
+              <div className="p-3">
+                {conditionEntityFieldsLoading ? (
+                  <div className="flex items-center gap-2 px-2.5 py-2 border border-gray-200 rounded-lg text-xs text-gray-400">
+                    <Loader2 size={11} className="animate-spin" /> Loading fields…
                   </div>
+                ) : (
+                  <ConditionGroupEditor
+                    group={conditionGroup}
+                    onChange={(g) => { setConditionGroup(g); markDirty(); }}
+                    fields={conditionEntityFields}
+                    entityId={conditionEntityId}
+                  />
                 )}
               </div>
             </div>

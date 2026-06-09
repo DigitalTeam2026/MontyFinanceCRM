@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase';
-import type { ProcessFlow, ProcessStage, ProcessFlowTransition, GateCondition, TransitionCondition } from '../../types/processFlow';
+import type { ProcessFlow, ProcessStage, ProcessFlowTransition, GateCondition, TransitionCondition, ConditionGroup } from '../../types/processFlow';
+import { isConditionGroup } from '../../types/processFlow';
 import type { RecordData } from './recordService';
 import type { DesignerLayout } from '../../types/form';
 import type { FormRuleState, FieldRuleState } from './businessRulesEngine';
@@ -752,8 +753,7 @@ export function evaluateConditionBranch(
   const stage = pf.stageByKey.get(stageKey);
   if (!stage || stage.component_type !== 'condition') return null;
 
-  const { condition_entity_id, condition_field, condition_operator, condition_value, branch_yes_stage_id, branch_no_stage_id } = stage;
-  if (!condition_field || !condition_operator) return null;
+  const { condition_entity_id, branch_yes_stage_id, branch_no_stage_id } = stage;
 
   // Resolve which record to evaluate the field from
   let sourceValues = values;
@@ -762,21 +762,36 @@ export function evaluateConditionBranch(
     if (relRecord) sourceValues = relRecord;
   }
 
-  const fieldVal = sourceValues[condition_field];
-  let result = false;
+  const evalLeaf = (field: string, operator: string, value: string | null): boolean => {
+    const fieldVal = sourceValues[field];
+    switch (operator) {
+      case 'not_empty': return fieldVal != null && String(fieldVal).trim() !== '';
+      case 'empty':     return fieldVal == null || String(fieldVal).trim() === '';
+      case 'eq':        return String(fieldVal ?? '') === String(value ?? '');
+      case 'neq':       return String(fieldVal ?? '') !== String(value ?? '');
+      case 'gt':        return Number(fieldVal) > Number(value);
+      case 'gte':       return Number(fieldVal) >= Number(value);
+      case 'lt':        return Number(fieldVal) < Number(value);
+      case 'lte':       return Number(fieldVal) <= Number(value);
+      case 'contains':  return String(fieldVal ?? '').toLowerCase().includes(String(value ?? '').toLowerCase());
+      case 'not_contains': return !String(fieldVal ?? '').toLowerCase().includes(String(value ?? '').toLowerCase());
+      default:          return false;
+    }
+  };
 
-  switch (condition_operator) {
-    case 'not_empty': result = fieldVal != null && String(fieldVal).trim() !== ''; break;
-    case 'empty':     result = fieldVal == null || String(fieldVal).trim() === ''; break;
-    case 'eq':        result = String(fieldVal ?? '') === String(condition_value ?? ''); break;
-    case 'neq':       result = String(fieldVal ?? '') !== String(condition_value ?? ''); break;
-    case 'gt':        result = Number(fieldVal) > Number(condition_value); break;
-    case 'gte':       result = Number(fieldVal) >= Number(condition_value); break;
-    case 'lt':        result = Number(fieldVal) < Number(condition_value); break;
-    case 'lte':       result = Number(fieldVal) <= Number(condition_value); break;
-    case 'contains':  result = String(fieldVal ?? '').toLowerCase().includes(String(condition_value ?? '').toLowerCase()); break;
-    case 'not_contains': result = !String(fieldVal ?? '').toLowerCase().includes(String(condition_value ?? '').toLowerCase()); break;
-    default:          result = false;
+  const evalGroup = (group: ConditionGroup): boolean => {
+    const results = group.rules.map((r) => (isConditionGroup(r) ? evalGroup(r) : evalLeaf(r.field, r.operator, r.value)));
+    if (results.length === 0) return false;
+    return group.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+  };
+
+  let result: boolean;
+  const group = stage.condition_rules;
+  if (group && Array.isArray(group.rules) && group.rules.length > 0) {
+    result = evalGroup(group);
+  } else {
+    if (!stage.condition_field || !stage.condition_operator) return null;
+    result = evalLeaf(stage.condition_field, stage.condition_operator, stage.condition_value);
   }
 
   const targetId = result ? branch_yes_stage_id : branch_no_stage_id;

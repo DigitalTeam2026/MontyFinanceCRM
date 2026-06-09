@@ -10,6 +10,7 @@ import type {
   StageHistoryEntry,
   ProcessFlowEntityConfig,
   ProcessFlowEntityConfigFormData,
+  ProcessFlowDraft,
 } from '../types/processFlow';
 
 export async function fetchProcessFlows(): Promise<ProcessFlow[]> {
@@ -85,6 +86,68 @@ export async function updateProcessFlow(
     .single();
   if (error) throw error;
   return data as ProcessFlow;
+}
+
+// ─── Draft / Publish ──────────────────────────────────────────────────────────
+
+/** Persists the working model as the flow's draft. Does NOT touch the live stages/transitions. */
+export async function saveDraft(flowId: string, draft: ProcessFlowDraft): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const { error } = await supabase
+    .from('process_flow')
+    .update({
+      draft_json: draft,
+      has_draft: true,
+      draft_modified_at: new Date().toISOString(),
+      draft_modified_by: session?.user.id ?? null,
+    })
+    .eq('process_flow_id', flowId);
+  if (error) throw error;
+}
+
+/** Discards the flow's draft. The live published flow is unaffected. */
+export async function clearDraft(flowId: string): Promise<void> {
+  const { error } = await supabase
+    .from('process_flow')
+    .update({ draft_json: null, has_draft: false, draft_modified_at: null, draft_modified_by: null })
+    .eq('process_flow_id', flowId);
+  if (error) throw error;
+}
+
+/** Reads the flow's saved draft (null if none). */
+export async function fetchProcessFlowDraft(
+  flowId: string,
+): Promise<{ has_draft: boolean; draft_json: ProcessFlowDraft | null; draft_modified_at: string | null } | null> {
+  const { data, error } = await supabase
+    .from('process_flow')
+    .select('has_draft, draft_json, draft_modified_at')
+    .eq('process_flow_id', flowId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return data as { has_draft: boolean; draft_json: ProcessFlowDraft | null; draft_modified_at: string | null };
+}
+
+/** Publishes a fully id-resolved snapshot to the live flow via the admin Edge Function (atomic, server-side). */
+export async function publishProcessFlowDraft(flowId: string, snapshot: ProcessFlowDraft): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) throw new Error('Not authenticated');
+
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-process-flow`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ action: 'publish', flow_id: flowId, snapshot }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error ?? `Publish failed: ${res.status}`);
+  }
 }
 
 export async function fetchFormsForEntity(entityDefinitionId: string): Promise<{ form_id: string; name: string; form_type: string; is_default: boolean }[]> {
@@ -318,6 +381,21 @@ export async function fetchStageFields(stageId: string): Promise<ProcessStageFie
     .order('display_order');
   if (error) throw error;
   return data as ProcessStageField[];
+}
+
+/** All stage fields for a flow, grouped by process_stage_id (used by the draft working model). */
+export async function fetchStageFieldsForFlow(flowId: string): Promise<Record<string, ProcessStageField[]>> {
+  const { data, error } = await supabase
+    .from('process_stage_fields')
+    .select('*')
+    .eq('process_flow_id', flowId)
+    .order('display_order');
+  if (error) throw error;
+  const map: Record<string, ProcessStageField[]> = {};
+  for (const row of (data ?? []) as ProcessStageField[]) {
+    (map[row.process_stage_id] ??= []).push(row);
+  }
+  return map;
 }
 
 export async function addStageField(

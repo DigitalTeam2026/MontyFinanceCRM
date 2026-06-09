@@ -90,6 +90,41 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (action === "publish") {
+      const flowId = body?.flow_id as string | undefined;
+      const snapshot = body?.snapshot;
+      if (!flowId || typeof flowId !== "string") {
+        return new Response(JSON.stringify({ error: "flow_id is required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!snapshot || typeof snapshot !== "object") {
+        return new Response(JSON.stringify({ error: "snapshot is required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Apply the draft to the live flow atomically via the SECURITY DEFINER RPC.
+      const { error: rpcErr } = await adminClient.rpc("publish_process_flow_draft", {
+        p_flow_id: flowId,
+        p_snapshot: snapshot,
+      });
+
+      if (rpcErr) {
+        return new Response(JSON.stringify({ error: rpcErr.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

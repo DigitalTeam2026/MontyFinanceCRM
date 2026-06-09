@@ -107,6 +107,18 @@ export default function CrmApp({ initialEntity, initialModule, initialRecordId }
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Keep the URL hash in sync with the open record so a browser refresh
+  // restores the same entity + record instead of falling back to the list.
+  // Uses replaceState (no navigation/history churn); App.parseRoute reads it on reload.
+  useEffect(() => {
+    const base = `${window.location.pathname}${window.location.search}`;
+    if (view.type === 'record') {
+      window.history.replaceState(null, '', `${base}#/record/${activeEntity}/${view.id}`);
+    } else if (window.location.hash.startsWith('#/record/')) {
+      window.history.replaceState(null, '', base);
+    }
+  }, [view, activeEntity]);
+
   if (session === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy-900)' }}>
