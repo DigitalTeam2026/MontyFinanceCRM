@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, X, Check, Loader2 } from 'lucide-react';
+import { Search, X, Check, Loader2, ArrowUpAZ, ArrowDownZA, EyeOff } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { ColumnState } from './ColumnCustomizer';
 import type { ActiveFilter, FilterOperator } from '../services/listService';
@@ -14,6 +14,12 @@ interface ColumnFilterDropdownProps {
   entityDefinitionId?: string | null;
   /** Physical table name for the source entity — used for distinct value queries */
   entityTable?: string | null;
+  isRedesign?: boolean;
+  /** When provided, show a combined sort section at the top */
+  sortKey?: string | null;
+  sortDir?: 'asc' | 'desc';
+  onSort?: (dir: 'asc' | 'desc') => void;
+  onHide?: () => void;
 }
 
 type TextOperator = 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'eq' | 'neq' | 'is_empty' | 'is_not_empty';
@@ -114,6 +120,11 @@ export default function ColumnFilterDropdown({
   onClose,
   entityDefinitionId,
   entityTable,
+  isRedesign = false,
+  sortKey,
+  sortDir,
+  onSort,
+  onHide,
 }: ColumnFilterDropdownProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const colType = resolveColType(column);
@@ -401,207 +412,333 @@ export default function ColumnFilterDropdown({
   if (!anchorEl) return null;
 
   const dateOpInfo = DATE_OPERATORS.find((d) => d.value === dateOp);
+  const colFieldKey = column.field_physical_column ?? column.key;
+  const isSortedAsc  = sortKey === colFieldKey && sortDir === 'asc';
+  const isSortedDesc = sortKey === colFieldKey && sortDir === 'desc';
+  const colLabel = column.labelOverride ?? column.label;
 
   return (
     <div
       ref={panelRef}
-      className="fixed z-[9999] bg-white shadow-2xl border border-[#c8c8c8] overflow-hidden"
-      style={{ top: pos.top, left: pos.left, width: pos.width }}
+      className="fixed z-[9999] bg-white overflow-hidden"
+      style={{
+        top: pos.top, left: pos.left, width: pos.width,
+        border: '1px solid #e7eaf1',
+        borderRadius: 14,
+        boxShadow: '0 8px 32px rgba(17,24,39,.12), 0 2px 8px rgba(17,24,39,.06)',
+      }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-[#f3f2f1] border-b border-[#c8c8c8]">
-        <span className="text-[13px] font-semibold text-[#201f1e]">Filter by</span>
-        <button onClick={onClose} className="w-6 h-6 flex items-center justify-center hover:bg-[#e1dfdd] rounded transition-colors">
-          <X size={14} className="text-[#605e5c]" />
+      {/* ── Header: column name ── */}
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #f3f4f6' }}>
+        <span className="text-[13px] font-semibold text-[#111827] truncate">{colLabel}</span>
+        <button onClick={onClose}
+          className="w-6 h-6 flex items-center justify-center rounded-md text-[#9ca3af] hover:text-[#374151] hover:bg-[#f3f4f6] transition shrink-0">
+          <X size={13} />
         </button>
       </div>
 
-      <div className="p-3 space-y-2">
-
-        {/* ── TEXT ── */}
-        {colType === 'text' && (
-          <>
-            <Select value={textOp} onChange={(v) => setTextOp(v as TextOperator)}
-              options={TEXT_OPERATORS} />
-            {!needsNoValue(textOp) && (
-              <Input autoFocus value={textValue} onChange={setTextValue}
-                onEnter={handleApply} placeholder="Enter value" />
-            )}
-          </>
-        )}
-
-        {/* ── NUMBER ── */}
-        {colType === 'number' && (
-          <>
-            <Select value={numOp} onChange={(v) => setNumOp(v as NumberOperator)}
-              options={NUMBER_OPERATORS} />
-            {!needsNoValue(numOp) && (
-              <Input autoFocus type="number" value={numValue} onChange={setNumValue}
-                onEnter={handleApply} placeholder="Enter value" />
-            )}
-          </>
-        )}
-
-        {/* ── DATE ── */}
-        {colType === 'date' && (
-          <>
-            <Select value={dateOp} onChange={(v) => setDateOp(v as DateOperator)}
-              options={DATE_OPERATORS} />
-            {dateOpInfo?.hasInput && (
-              <input
-                autoFocus
-                type="date"
-                value={dateValue}
-                onChange={(e) => setDateValue(e.target.value)}
-                className="w-full text-[13px] border border-[#8a8886] rounded px-2 py-1.5 bg-white text-[#201f1e] focus:outline-none focus:border-[#0078d4] focus:ring-1 focus:ring-[#0078d4]"
-              />
-            )}
-          </>
-        )}
-
-        {/* ── BOOLEAN ── */}
-        {colType === 'boolean' && (
-          <div className="space-y-1">
-            {(['true', 'false'] as const).map((v) => (
-              <button
-                key={v}
-                onClick={() => setBoolValue(boolValue === v ? '' : v)}
-                className={`w-full flex items-center gap-2.5 px-2.5 py-2 text-[13px] text-left border rounded transition-colors ${
-                  boolValue === v
-                    ? 'bg-[#deecf9] border-[#0078d4] text-[#0078d4] font-medium'
-                    : 'bg-white border-[#edebe9] text-[#201f1e] hover:bg-[#f3f2f1]'
-                }`}
-              >
-                <span className={`w-4 h-4 rounded-sm border flex items-center justify-center shrink-0 ${
-                  boolValue === v ? 'bg-[#0078d4] border-[#0078d4]' : 'border-[#8a8886]'
-                }`}>
-                  {boolValue === v && <Check size={10} className="text-white" />}
-                </span>
-                {v === 'true' ? 'Yes' : 'No'}
-              </button>
-            ))}
+      {/* ── SORT section (when sort callbacks provided) ── */}
+      {onSort && (
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid #f3f4f6' }}>
+          <p className="text-[9px] font-bold text-[#9ca3af] uppercase tracking-widest mb-2">Sort</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { onSort('asc'); onClose(); }}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold rounded-lg transition"
+              style={isSortedAsc
+                ? { background: '#eef3ff', color: '#3b6fff', border: '1px solid #c7d9ff' }
+                : { background: '#f9fafb', color: '#374151', border: '1px solid #e7eaf1' }}
+              onMouseEnter={(e) => { if (!isSortedAsc) (e.currentTarget as HTMLElement).style.background = '#f3f4f6'; }}
+              onMouseLeave={(e) => { if (!isSortedAsc) (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
+            >
+              <ArrowUpAZ size={14} />
+              A → Z
+            </button>
+            <button
+              onClick={() => { onSort('desc'); onClose(); }}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold rounded-lg transition"
+              style={isSortedDesc
+                ? { background: '#eef3ff', color: '#3b6fff', border: '1px solid #c7d9ff' }
+                : { background: '#f9fafb', color: '#374151', border: '1px solid #e7eaf1' }}
+              onMouseEnter={(e) => { if (!isSortedDesc) (e.currentTarget as HTMLElement).style.background = '#f3f4f6'; }}
+              onMouseLeave={(e) => { if (!isSortedDesc) (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
+            >
+              <ArrowDownZA size={14} />
+              Z → A
+            </button>
           </div>
+        </div>
+      )}
+
+      {/* ── FILTER section ── */}
+      <div className="px-4 py-3">
+        {onSort && (
+          <p className="text-[9px] font-bold text-[#9ca3af] uppercase tracking-widest mb-2">Filter</p>
         )}
 
-        {/* ── CHOICE / STATUS ── */}
-        {colType === 'choice' && (
-          <div className="max-h-56 overflow-y-auto space-y-0.5">
-            {choiceLoading ? (
-              <div className="flex items-center justify-center py-6">
-                <Loader2 size={16} className="animate-spin text-[#0078d4]" />
-              </div>
-            ) : choiceOptions.length === 0 ? (
-              <p className="text-[12px] text-[#a19f9d] py-3 text-center">No options available</p>
-            ) : (
-              choiceOptions.map((opt) => (
+        <div className="space-y-2">
+          {/* ── TEXT ── */}
+          {colType === 'text' && (
+            <>
+              <StyledSelect value={textOp} onChange={(v) => setTextOp(v as TextOperator)}
+                options={TEXT_OPERATORS} />
+              {!needsNoValue(textOp) && (
+                <StyledInput autoFocus value={textValue} onChange={setTextValue}
+                  onEnter={handleApply} placeholder="Enter value" />
+              )}
+            </>
+          )}
+
+          {/* ── NUMBER ── */}
+          {colType === 'number' && (
+            <>
+              <StyledSelect value={numOp} onChange={(v) => setNumOp(v as NumberOperator)}
+                options={NUMBER_OPERATORS} />
+              {!needsNoValue(numOp) && (
+                <StyledInput autoFocus type="number" value={numValue} onChange={setNumValue}
+                  onEnter={handleApply} placeholder="Enter value" />
+              )}
+            </>
+          )}
+
+          {/* ── DATE ── */}
+          {colType === 'date' && (
+            <>
+              <StyledSelect value={dateOp} onChange={(v) => setDateOp(v as DateOperator)}
+                options={DATE_OPERATORS} />
+              {dateOpInfo?.hasInput && (
+                <input
+                  autoFocus
+                  type="date"
+                  value={dateValue}
+                  onChange={(e) => setDateValue(e.target.value)}
+                  className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[#374151] focus:outline-none transition"
+                  style={{ borderColor: '#e7eaf1' }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+                />
+              )}
+            </>
+          )}
+
+          {/* ── BOOLEAN ── */}
+          {colType === 'boolean' && (
+            <div className="flex gap-2">
+              {(['true', 'false'] as const).map((v) => (
                 <button
-                  key={opt.value}
-                  onClick={() => toggleChoice(opt.value)}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 text-[13px] text-left border rounded transition-colors ${
-                    selectedChoices.includes(opt.value)
-                      ? 'bg-[#deecf9] border-[#0078d4] text-[#0078d4]'
-                      : 'bg-white border-transparent text-[#201f1e] hover:bg-[#f3f2f1]'
-                  }`}
+                  key={v}
+                  onClick={() => setBoolValue(boolValue === v ? '' : v)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold rounded-lg transition"
+                  style={boolValue === v
+                    ? { background: '#eef3ff', color: '#3b6fff', border: '1px solid #c7d9ff' }
+                    : { background: '#f9fafb', color: '#374151', border: '1px solid #e7eaf1' }}
                 >
-                  <span className={`w-4 h-4 rounded-sm border flex-shrink-0 flex items-center justify-center ${
-                    selectedChoices.includes(opt.value) ? 'bg-[#0078d4] border-[#0078d4]' : 'border-[#8a8886]'
-                  }`}>
-                    {selectedChoices.includes(opt.value) && <Check size={10} className="text-white" />}
-                  </span>
-                  {opt.label}
+                  {boolValue === v && <Check size={12} />}
+                  {v === 'true' ? 'Yes' : 'No'}
                 </button>
-              ))
-            )}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
 
-        {/* ── LOOKUP ── */}
-        {colType === 'lookup' && (
-          <>
-            <Select value={lookupOp} onChange={(v) => {
-              setLookupOp(v as LookupOperator);
-              setSelectedLookup(null);
-              setLookupTextValue('');
-              setLookupSearch('');
-              setLookupResults([]);
-            }} options={LOOKUP_OPERATORS} />
-
-            {!needsNoValue(lookupOp) && (lookupOp === 'eq' || lookupOp === 'neq') && (
-              <>
-                <div className="relative">
-                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#a19f9d] pointer-events-none" />
-                  <input
-                    autoFocus
-                    type="text"
-                    value={lookupSearch}
-                    onChange={(e) => setLookupSearch(e.target.value)}
-                    placeholder="Search records..."
-                    className="w-full text-[13px] border border-[#8a8886] rounded pl-8 pr-2.5 py-1.5 bg-white text-[#201f1e] placeholder-[#a19f9d] focus:outline-none focus:border-[#0078d4] focus:ring-1 focus:ring-[#0078d4]"
-                  />
+          {/* ── CHOICE / STATUS ── */}
+          {colType === 'choice' && (
+            <div className="max-h-48 overflow-y-auto space-y-0.5 -mx-1 px-1">
+              {choiceLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 size={16} className="animate-spin" style={{ color: '#3b6fff' }} />
                 </div>
-                {selectedLookup && (
-                  <div className="flex items-center justify-between px-2.5 py-1.5 bg-[#deecf9] border border-[#0078d4] rounded">
-                    <span className="text-[13px] text-[#0078d4] font-medium truncate">{selectedLookup.label}</span>
-                    <button onClick={() => setSelectedLookup(null)} className="ml-1.5 shrink-0 hover:opacity-70">
-                      <X size={12} className="text-[#0078d4]" />
-                    </button>
+              ) : choiceOptions.length === 0 ? (
+                <p className="text-[12px] text-[#9ca3af] py-3 text-center">No options available</p>
+              ) : (
+                choiceOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => toggleChoice(opt.value)}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-2 text-[12px] text-left rounded-lg transition"
+                    style={selectedChoices.includes(opt.value)
+                      ? { background: '#eef3ff', color: '#3b6fff', border: '1px solid #c7d9ff' }
+                      : { background: 'transparent', color: '#374151' }}
+                    onMouseEnter={(e) => { if (!selectedChoices.includes(opt.value)) (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
+                    onMouseLeave={(e) => { if (!selectedChoices.includes(opt.value)) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                  >
+                    <span className="w-4 h-4 rounded-sm border flex-shrink-0 flex items-center justify-center transition"
+                      style={selectedChoices.includes(opt.value) ? { background: '#3b6fff', borderColor: '#3b6fff' } : { borderColor: '#d1d5db' }}>
+                      {selectedChoices.includes(opt.value) && <Check size={10} className="text-white" />}
+                    </span>
+                    {opt.label}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* ── LOOKUP ── */}
+          {colType === 'lookup' && (
+            <>
+              <StyledSelect value={lookupOp} onChange={(v) => {
+                setLookupOp(v as LookupOperator);
+                setSelectedLookup(null);
+                setLookupTextValue('');
+                setLookupSearch('');
+                setLookupResults([]);
+              }} options={LOOKUP_OPERATORS} />
+
+              {!needsNoValue(lookupOp) && (lookupOp === 'eq' || lookupOp === 'neq') && (
+                <>
+                  <div className="relative">
+                    <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#9ca3af' }} />
+                    <input
+                      autoFocus
+                      type="text"
+                      value={lookupSearch}
+                      onChange={(e) => setLookupSearch(e.target.value)}
+                      placeholder="Search records..."
+                      className="w-full text-[12px] border rounded-lg pl-8 pr-2.5 py-2 bg-white placeholder-[#9ca3af] focus:outline-none transition"
+                      style={{ borderColor: '#e7eaf1', color: '#374151' }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+                    />
                   </div>
-                )}
-                <div className="max-h-44 overflow-y-auto border border-[#edebe9] rounded">
-                  {lookupLoading ? (
-                    <div className="flex items-center justify-center py-3">
-                      <Loader2 size={14} className="animate-spin text-[#0078d4]" />
-                    </div>
-                  ) : lookupResults.length === 0 ? (
-                    <p className="text-[12px] text-[#a19f9d] py-3 text-center">
-                      {lookupSearch ? 'No records found' : 'Type to search...'}
-                    </p>
-                  ) : (
-                    lookupResults.map((r) => (
-                      <button
-                        key={r.id}
-                        onClick={() => { setSelectedLookup(r); setLookupSearch(''); }}
-                        className={`w-full flex items-center gap-2 px-2.5 py-2 text-[13px] text-left transition-colors border-b border-[#edebe9] last:border-0 ${
-                          selectedLookup?.id === r.id ? 'bg-[#deecf9] text-[#0078d4]' : 'bg-white text-[#201f1e] hover:bg-[#f3f2f1]'
-                        }`}
-                      >
-                        <span className={`w-3.5 h-3.5 rounded-full border flex-shrink-0 flex items-center justify-center ${
-                          selectedLookup?.id === r.id ? 'bg-[#0078d4] border-[#0078d4]' : 'border-[#8a8886]'
-                        }`}>
-                          {selectedLookup?.id === r.id && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                        </span>
-                        {r.label}
+                  {selectedLookup && (
+                    <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg"
+                      style={{ background: '#eef3ff', border: '1px solid #c7d9ff' }}>
+                      <span className="text-[12px] font-medium truncate" style={{ color: '#3b6fff' }}>{selectedLookup.label}</span>
+                      <button onClick={() => setSelectedLookup(null)} className="ml-1.5 shrink-0 hover:opacity-70">
+                        <X size={12} style={{ color: '#3b6fff' }} />
                       </button>
-                    ))
+                    </div>
                   )}
-                </div>
-              </>
-            )}
+                  <div className="max-h-40 overflow-y-auto rounded-lg" style={{ border: '1px solid #e7eaf1' }}>
+                    {lookupLoading ? (
+                      <div className="flex items-center justify-center py-3">
+                        <Loader2 size={14} className="animate-spin" style={{ color: '#3b6fff' }} />
+                      </div>
+                    ) : lookupResults.length === 0 ? (
+                      <p className="text-[12px] text-[#9ca3af] py-3 text-center">
+                        {lookupSearch ? 'No records found' : 'Type to search...'}
+                      </p>
+                    ) : (
+                      lookupResults.map((r) => (
+                        <button
+                          key={r.id}
+                          onClick={() => { setSelectedLookup(r); setLookupSearch(''); }}
+                          className="w-full flex items-center gap-2 px-2.5 py-2 text-[12px] text-left transition-colors"
+                          style={selectedLookup?.id === r.id
+                            ? { background: '#eef3ff', color: '#3b6fff', borderBottom: '1px solid #e7eaf1' }
+                            : { background: 'white', color: '#374151', borderBottom: '1px solid #f3f4f6' }}
+                          onMouseEnter={(e) => { if (selectedLookup?.id !== r.id) (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
+                          onMouseLeave={(e) => { if (selectedLookup?.id !== r.id) (e.currentTarget as HTMLElement).style.background = 'white'; }}
+                        >
+                          <span className="w-3.5 h-3.5 rounded-full border flex-shrink-0 flex items-center justify-center transition"
+                            style={selectedLookup?.id === r.id ? { background: '#3b6fff', borderColor: '#3b6fff' } : { borderColor: '#d1d5db' }}>
+                            {selectedLookup?.id === r.id && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                          </span>
+                          {r.label}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
 
-            {!needsNoValue(lookupOp) && lookupOp !== 'eq' && lookupOp !== 'neq' && (
-              <Input autoFocus value={lookupTextValue} onChange={setLookupTextValue}
-                onEnter={handleApply} placeholder="Enter value" />
-            )}
-          </>
-        )}
+              {!needsNoValue(lookupOp) && lookupOp !== 'eq' && lookupOp !== 'neq' && (
+                <StyledInput autoFocus value={lookupTextValue} onChange={setLookupTextValue}
+                  onEnter={handleApply} placeholder="Enter value" />
+              )}
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-[#f3f2f1] border-t border-[#c8c8c8]">
-        <button onClick={handleApply}
-          className="px-4 py-1.5 text-[13px] font-semibold bg-[#0078d4] hover:bg-[#106ebe] text-white rounded transition-colors">
-          Apply
-        </button>
+      {/* ── Footer ── */}
+      <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: '1px solid #f3f4f6' }}>
+        {/* Hide column button */}
+        {onHide && (
+          <button
+            onClick={() => { onHide(); onClose(); }}
+            className="flex items-center gap-1.5 text-[12px] font-medium transition"
+            style={{ color: '#6b7280' }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#374151'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#6b7280'; }}
+          >
+            <EyeOff size={13} />
+            Hide
+          </button>
+        )}
+        <div className="flex-1" />
         {currentFilter && (
-          <button onClick={handleClear}
-            className="px-4 py-1.5 text-[13px] font-medium bg-white border border-[#8a8886] text-[#201f1e] hover:bg-[#f3f2f1] rounded transition-colors">
+          <button
+            onClick={handleClear}
+            className="px-3 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f9fafb] transition"
+            style={{ color: '#374151', border: '1px solid #e7eaf1' }}
+          >
             Clear
           </button>
         )}
+        <button
+          onClick={handleApply}
+          className="px-3 py-1.5 text-[12px] font-semibold text-white rounded-lg transition"
+          style={{ background: 'linear-gradient(135deg,#3b6fff,#5b87ff)', boxShadow: '0 4px 12px rgba(59,111,255,.25)' }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.filter = 'brightness(1.08)'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.filter = ''; }}
+        >
+          Apply
+        </button>
       </div>
     </div>
   );
 }
+
+/* ── Styled sub-components (new design) ── */
+
+function StyledSelect({ value, onChange, options }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[#374151] focus:outline-none appearance-none pr-6 transition"
+        style={{ borderColor: '#e7eaf1' }}
+        onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+        onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+      >
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="none">
+        <path d="M2 3.5L5 6.5L8 3.5" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
+function StyledInput({ value, onChange, onEnter, placeholder, autoFocus, type = 'text' }: {
+  value: string;
+  onChange: (v: string) => void;
+  onEnter?: () => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  type?: string;
+}) {
+  return (
+    <input
+      autoFocus={autoFocus}
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => e.key === 'Enter' && onEnter?.()}
+      placeholder={placeholder}
+      className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[#374151] placeholder-[#9ca3af] focus:outline-none transition"
+      style={{ borderColor: '#e7eaf1' }}
+      onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+      onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+    />
+  );
+}
+
 
 /* ── Small reusable sub-components ── */
 

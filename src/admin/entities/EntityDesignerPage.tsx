@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Save, AlertCircle, Lock, Info, GitBranch } from 'lucide-react';
+import { Save, AlertCircle, Lock, Info, GitBranch, CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import type { EntityDefinition, EntityFormData, OwnershipType } from '../../types/entity';
-import { createEntity, updateEntity } from '../../services/entityService';
+import { createEntityWithTable, updateEntity } from '../../services/entityService';
 import { bootstrapEntity } from '../../services/bootstrapEntityService';
 import { fetchProcessFlowsForEntity, setEntityDefaultFlow } from '../../services/processFlowService';
 import type { ProcessFlow } from '../../types/processFlow';
@@ -48,6 +48,7 @@ export default function EntityDesignerPage({ entity, onSaved, onCancel }: Entity
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof EntityFormData, string>>>({});
+  const [steps, setSteps] = useState<{ label: string; status: 'idle' | 'running' | 'done' | 'error' }[]>([]);
   const [entityFlows, setEntityFlows] = useState<ProcessFlow[]>([]);
   const [defaultFlowId, setDefaultFlowId] = useState<string | null>(null);
   const [allowFlowSwitch, setAllowFlowSwitch] = useState(true);
@@ -103,17 +104,63 @@ export default function EntityDesignerPage({ entity, onSaved, onCancel }: Entity
     if (!validate()) return;
     setSaving(true);
     setError(null);
-    try {
-      const result = isEdit
-        ? await updateEntity(entity!.entity_definition_id, form)
-        : await createEntity(form);
-      if (!isEdit) {
-        // Provision system fields, default views, and default forms for the new entity
-        await bootstrapEntity(result).catch(() => {});
+
+    if (isEdit) {
+      // Edit path: simple metadata update, no table DDL
+      try {
+        const result = await updateEntity(entity!.entity_definition_id, form);
+        onSaved(result);
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Save failed');
+      } finally {
+        setSaving(false);
       }
+      return;
+    }
+
+    // Create path: provision table + metadata + bootstrap in steps
+    const initialSteps = [
+      { label: 'Creating physical database table', status: 'idle' as const },
+      { label: 'Saving entity metadata', status: 'idle' as const },
+      { label: 'Provisioning system fields', status: 'idle' as const },
+      { label: 'Creating default views & forms', status: 'idle' as const },
+    ];
+    setSteps(initialSteps);
+
+    const updateStep = (index: number, status: 'running' | 'done' | 'error') => {
+      setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, status } : s)));
+    };
+
+    try {
+      // Step 1+2: create physical table and entity_definition atomically
+      updateStep(0, 'running');
+      updateStep(1, 'running');
+      const result = await createEntityWithTable(form);
+      updateStep(0, 'done');
+      updateStep(1, 'done');
+
+      // Step 3+4: bootstrap system fields, views, forms
+      updateStep(2, 'running');
+      updateStep(3, 'running');
+      await bootstrapEntity(result).catch(() => {});
+      updateStep(2, 'done');
+      updateStep(3, 'done');
+
+      // Brief pause so the user sees all steps green before navigation
+      await new Promise((r) => setTimeout(r, 600));
       onSaved(result);
-    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Save failed'); }
-    finally { setSaving(false); }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Create failed';
+      setError(msg);
+      // Mark the first non-done step as errored
+      setSteps((prev) => {
+        const idx = prev.findIndex((s) => s.status === 'running');
+        if (idx < 0) return prev;
+        return prev.map((s, i) => (i === idx ? { ...s, status: 'error' } : s));
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -348,12 +395,49 @@ export default function EntityDesignerPage({ entity, onSaved, onCancel }: Entity
             </div>
           )}
 
+          {/* Creation progress — only visible for new entities while saving */}
+          {!isEdit && steps.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded overflow-hidden">
+              <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+                <h2 className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
+                  Creating entity…
+                </h2>
+              </div>
+              <ul className="px-4 py-3 space-y-2">
+                {steps.map((step, i) => (
+                  <li key={i} className="flex items-center gap-2.5 text-[12px]">
+                    {step.status === 'idle' && (
+                      <Circle size={14} className="text-slate-300 shrink-0" />
+                    )}
+                    {step.status === 'running' && (
+                      <Loader2 size={14} className="text-blue-500 animate-spin shrink-0" />
+                    )}
+                    {step.status === 'done' && (
+                      <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
+                    )}
+                    {step.status === 'error' && (
+                      <AlertCircle size={14} className="text-red-500 shrink-0" />
+                    )}
+                    <span className={
+                      step.status === 'done'    ? 'text-emerald-700' :
+                      step.status === 'error'   ? 'text-red-600' :
+                      step.status === 'running' ? 'text-blue-700 font-medium' :
+                      'text-slate-400'
+                    }>
+                      {step.label}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="flex items-center justify-end gap-2 pt-2 pb-6">
-            <button type="button" onClick={onCancel} className="px-4 py-2 text-[12px] text-slate-600 border border-slate-300 rounded hover:bg-slate-50 transition-colors">
+            <button type="button" onClick={onCancel} disabled={saving} className="px-4 py-2 text-[12px] text-slate-600 border border-slate-300 rounded hover:bg-slate-50 transition-colors disabled:opacity-50">
               Cancel
             </button>
             <button type="submit" disabled={saving} className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-[12px] font-medium rounded transition-colors">
-              <Save size={13} /> {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Entity'}
+              <Save size={13} /> {saving ? (isEdit ? 'Saving…' : 'Creating…') : isEdit ? 'Save Changes' : 'Create Entity'}
             </button>
           </div>
         </div>

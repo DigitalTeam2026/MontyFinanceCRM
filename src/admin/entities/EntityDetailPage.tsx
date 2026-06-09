@@ -3,9 +3,10 @@ import {
   ChevronRight, Database, Layers, GitFork, FileText, LayoutList,
   Zap, RefreshCw, Settings, Pencil, Trash2, Lock,
   ToggleLeft, ToggleRight, ChevronDown, ChevronUp, ExternalLink, Table2,
+  AlertTriangle, Wrench,
 } from 'lucide-react';
 import type { EntityDefinition } from '../../types/entity';
-import { softDeleteEntity, updateEntity } from '../../services/entityService';
+import { softDeleteEntity, updateEntity, checkEntityTableHealth, repairEntityTable } from '../../services/entityService';
 import { fetchFieldsForEntity } from '../../services/fieldService';
 import { fetchFormsForEntity } from '../../services/formService';
 import { fetchViewsForEntity } from '../../services/viewService';
@@ -65,6 +66,9 @@ export default function EntityDetailPage({
   const [propsExpanded, setPropsExpanded] = useState(true);
   const [statusToggling, setStatusToggling] = useState(false);
   const [currentEntity, setCurrentEntity] = useState(entity);
+  const [tableHealth, setTableHealth] = useState<{ tableExists: boolean; tableName: string } | null>(null);
+  const [repairing, setRepairing] = useState(false);
+  const [repairMsg, setRepairMsg] = useState<string | null>(null);
 
   const id = entity.entity_definition_id;
 
@@ -93,6 +97,27 @@ export default function EntityDetailPage({
   }, [id]);
 
   useEffect(() => { loadCounts(); }, [loadCounts]);
+
+  // Check physical table existence for all entities (custom and system)
+  useEffect(() => {
+    checkEntityTableHealth(entity.entity_definition_id)
+      .then((h) => setTableHealth({ tableExists: h.tableExists, tableName: h.tableName }))
+      .catch(() => setTableHealth(null));
+  }, [entity.entity_definition_id]);
+
+  const handleRepair = async () => {
+    setRepairing(true);
+    setRepairMsg(null);
+    try {
+      const msg = await repairEntityTable(entity.entity_definition_id);
+      setRepairMsg(msg);
+      setTableHealth((prev) => prev ? { ...prev, tableExists: true } : prev);
+    } catch (e) {
+      setRepairMsg(e instanceof Error ? e.message : 'Repair failed');
+    } finally {
+      setRepairing(false);
+    }
+  };
 
   const handleDeleteRequest = async () => {
     setDepChecking(true);
@@ -241,6 +266,39 @@ export default function EntityDetailPage({
             </div>
           )}
         </div>
+
+        {/* Physical table health warning */}
+        {tableHealth && !tableHealth.tableExists && (
+          <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-300 rounded-lg">
+            <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-semibold text-amber-800">
+                Physical database table missing
+              </p>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                The table{' '}
+                <code className="font-mono bg-amber-100 px-1 rounded">
+                  {tableHealth.tableName}
+                </code>{' '}
+                does not exist in the database. Records cannot be created or read until it is
+                provisioned.
+              </p>
+              {repairMsg && (
+                <p className="text-[11px] mt-1.5 font-medium text-amber-900">{repairMsg}</p>
+              )}
+            </div>
+            {currentEntity.is_custom && (
+              <button
+                onClick={handleRepair}
+                disabled={repairing}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded transition-colors shrink-0"
+              >
+                <Wrench size={12} />
+                {repairing ? 'Repairing…' : 'Create missing table'}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Sub-area Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

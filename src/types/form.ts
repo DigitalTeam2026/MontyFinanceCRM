@@ -156,6 +156,8 @@ export interface DesignerControl {
   lookup_entity_slug?: string | null;
   /** Lookup-specific configuration. Only set when field_type_name === 'lookup'. */
   lookup_config?: LookupConfig | null;
+  /** Field definition config_json — enriched at runtime for calculated fields. */
+  config_json?: Record<string, unknown> | null;
 }
 
 export interface SubgridConfig {

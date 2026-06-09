@@ -1,6 +1,30 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, AlertTriangle, CheckCircle2, ExternalLink, Info, Lock, HelpCircle, EyeOff, Search, Loader2, ScanSearch, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle2, ExternalLink, Info, Lock, HelpCircle, EyeOff, Search, Loader2, ScanSearch, X, Calculator } from 'lucide-react';
+import type { CalcToken, CalcFormula } from '../../../types/field';
+
+function evaluateCalcFormula(formula: CalcFormula, formValues: Record<string, unknown>): number | null {
+  const { tokens } = formula;
+  if (tokens.length === 0) return null;
+  let result: number | null = null;
+  let pendingOp: string | null = null;
+  for (const token of tokens) {
+    if (token.type === 'operator') { pendingOp = token.op; continue; }
+    let val: number;
+    if (token.type === 'field') {
+      const raw = formValues[token.fieldName];
+      val = raw != null && raw !== '' ? Number(raw) : 0;
+      if (isNaN(val)) val = 0;
+    } else { val = token.value; }
+    if (result === null) { result = val; continue; }
+    if (pendingOp === '+') result += val;
+    else if (pendingOp === '-') result -= val;
+    else if (pendingOp === '*') result *= val;
+    else if (pendingOp === '/') result = val !== 0 ? result / val : null;
+    pendingOp = null;
+  }
+  return result;
+}
 import { supabase } from '../../../lib/supabase';
 import { useFormDensity, densityStyles } from '../../context/FormDensityContext';
 import type { DesignerControl, LookupConfig } from '../../../types/form';
@@ -971,6 +995,29 @@ export default function FormField({
         }
 
         return <MultiChoiceDropdown choices={choices} selected={selected} onToggle={toggle} activeError={!!activeError} />;
+      }
+
+      case 'calculated': {
+        const formula = (control.config_json?.formula) as CalcFormula | null | undefined;
+        if (!formula || formula.tokens.length === 0) {
+          return (
+            <div className="flex items-center gap-2 px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-md text-slate-400">
+              <Calculator size={12} className="shrink-0" />
+              <span className="text-[12px] italic">No formula configured</span>
+            </div>
+          );
+        }
+        const result = evaluateCalcFormula(formula, formValues ?? {});
+        return (
+          <div className="flex items-center gap-2 px-2.5 py-2 bg-[#f0f4ff] border border-[#c7d9ff] rounded-md">
+            <Calculator size={12} className="text-[#3b6fff] shrink-0" />
+            <span className="text-[13px] font-semibold text-[#111827]">
+              {result !== null
+                ? Number(result).toLocaleString(undefined, { maximumFractionDigits: 6, minimumFractionDigits: 0 })
+                : '—'}
+            </span>
+          </div>
+        );
       }
 
       default:

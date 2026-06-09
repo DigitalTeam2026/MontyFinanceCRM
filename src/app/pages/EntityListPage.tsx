@@ -182,6 +182,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
   }, [entityName, staticEntityDefId]);
 
   const entityDefinitionId = resolvedEntityDefId;
+  const isRedesign = entity === 'accounts';
   const priv = getEntityPrivilege(entityName);
   const canRead = priv.can_read;
   const canCreate = priv.can_create && !creationBlocked;
@@ -576,12 +577,12 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
 
   const openColMenu = (e: React.MouseEvent, colKey: string) => {
     e.stopPropagation();
-    if (colMenuKey === colKey) { setColMenuKey(null); setColMenuAnchor(null); return; }
-    setColMenuKey(colKey);
-    setColMenuAnchor(e.currentTarget as HTMLElement);
-    // Close filter if open
-    setColFilterKey(null);
-    setColFilterAnchor(null);
+    // Combined sort+filter panel — route directly to colFilter
+    if (colFilterKey === colKey) { setColFilterKey(null); setColFilterAnchor(null); return; }
+    setColFilterKey(colKey);
+    setColFilterAnchor(e.currentTarget as HTMLElement);
+    setColMenuKey(null);
+    setColMenuAnchor(null);
   };
 
   const openColFilter = (e: React.MouseEvent, colKey: string) => {
@@ -748,6 +749,20 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
     }
 
     if (colType === 'badge') {
+      if (isRedesign) {
+        const lc = strVal.toLowerCase();
+        let pillCls = 'rd-pill-blue';
+        if (lc === 'active' || lc === 'open') pillCls = 'rd-pill-green';
+        else if (lc === 'inactive' || lc === 'closed') pillCls = 'rd-pill-gray';
+        else if (lc.includes('progress') || lc.includes('pending')) pillCls = 'rd-pill-amber';
+        else if (lc.includes('lost') || lc.includes('won') || lc === 'dead') pillCls = 'rd-pill-red';
+        return (
+          <span className={`rd-pill ${pillCls}`}>
+            <span className="rd-pill-dot" />
+            {strVal}
+          </span>
+        );
+      }
       return <StatusBadge value={strVal} />;
     }
 
@@ -782,6 +797,14 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
       if (!emailStr || emailStr === '—' || /^[0-9a-f]{8}-/i.test(emailStr)) return <span className="text-[var(--ink-300)] text-[11px]">—</span>;
       const initials = emailStr.split('@')[0].slice(0, 2).toUpperCase();
       const shortName = emailStr.split('@')[0];
+      if (isRedesign) {
+        return (
+          <span className="flex items-center gap-1.5">
+            <span className="rd-avatar">{initials}</span>
+            <span className="text-[12px] text-[#374151] font-medium truncate max-w-[100px]">{shortName}</span>
+          </span>
+        );
+      }
       const AVATAR_COLORS = ['#2b6cb0', '#0d9488', '#b45309', '#7c3aed', '#dc2626', '#059669'];
       const colorIndex = emailStr.charCodeAt(0) % AVATAR_COLORS.length;
       return (
@@ -854,20 +877,38 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
   }
 
   return (
-    <div className="flex-1 flex overflow-hidden">
-      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
-        {/* --- Command bar (40px, white, bottom border) --- */}
+    <div className={`flex-1 flex overflow-hidden${isRedesign ? ' rd-active' : ''}`}>
+      {isRedesign && (
+        <style>{`
+          .rd-active{font-family:'Plus Jakarta Sans','Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+          .rd-pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px 2px 7px;border-radius:99px;font-size:11px;font-weight:600;line-height:1.5;}
+          .rd-pill-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+          .rd-pill-green{background:#e7f8ef;color:#0f9d63;}.rd-pill-green .rd-pill-dot{background:#0f9d63;}
+          .rd-pill-gray{background:#f3f4f6;color:#6b7280;}.rd-pill-gray .rd-pill-dot{background:#9ca3af;}
+          .rd-pill-amber{background:#fdf4e3;color:#c2820a;}.rd-pill-amber .rd-pill-dot{background:#c2820a;}
+          .rd-pill-red{background:#fee2e2;color:#dc2626;}.rd-pill-red .rd-pill-dot{background:#dc2626;}
+          .rd-pill-blue{background:#eff6ff;color:#3b6fff;}.rd-pill-blue .rd-pill-dot{background:#3b6fff;}
+          .rd-avatar{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#3b6fff,#22d3ee);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-transform:uppercase;}
+          .rd-active .rd-row:hover td{background:#eef3ff !important;}
+        `}</style>
+      )}
+      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: isRedesign ? '#eef1f7' : 'var(--bg)' }}>
+        {/* --- Command bar (44px, white/gradient, bottom border) --- */}
         <div
-          className="h-[40px] flex items-center gap-1 px-4 shrink-0 bg-white"
-          style={{ borderBottom: '1px solid var(--border)' }}
+          className="h-[44px] flex items-center gap-0.5 px-3 shrink-0"
+          style={{
+            borderBottom: selected.size > 0 ? '1px solid #d9e4ff' : '1px solid #e7eaf1',
+            background: selected.size > 0 ? 'linear-gradient(90deg,#eef3ff,#f3f9ff)' : 'white',
+            fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif",
+          }}
           ref={toolbarRef}
         >
           {selected.size > 0 ? (
             /* Contextual command bar when rows selected */
-            <div className="flex items-center gap-1 flex-1" style={{ background: '#f4f8fd' }}>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold text-[var(--navy-accent)] bg-[#e5efff]">
+            <div className="flex items-center gap-0.5 flex-1">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-semibold text-[#3b6fff] shrink-0" style={{ background: 'white', border: '1px solid #cdddff', borderRadius: 99, boxShadow: '0 1px 4px rgba(59,111,255,.12)' }}>
                 {selected.size} selected
-                <button onClick={() => setSelected(new Set())} className="ml-0.5 hover:text-[var(--ink-700)]">
+                <button onClick={() => setSelected(new Set())} className="ml-0.5 opacity-70 hover:opacity-100 leading-none">
                   <X size={11} />
                 </button>
               </span>
@@ -910,9 +951,9 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
               {canCreate && onNewRecord && (
                 <button
                   onClick={onNewRecord}
-                  className="flex items-center gap-1.5 px-3 h-[28px] rounded text-[12px] font-semibold text-white transition-colors shrink-0"
-                  style={{ background: 'var(--navy-accent)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(0.9)'; }}
+                  className="flex items-center gap-1.5 px-3 h-[30px] text-[12px] font-semibold text-white shrink-0 transition"
+                  style={{ background: 'linear-gradient(135deg,#3b6fff,#5b87ff)', borderRadius: 10, boxShadow: '0 7px 16px -5px rgba(59,111,255,.55)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.07)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.filter = ''; }}
                 >
                   <Plus size={13} />
@@ -921,12 +962,11 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
               )}
               {canCreate && onNewRecord && <CmdSep />}
               <CmdBtn onClick={load}>
-                <RefreshCw size={14} className="text-[var(--navy-accent)]" />
+                <RefreshCw size={14} />
                 <span>Refresh</span>
               </CmdBtn>
-              <CmdSep />
               <CmdBtn onClick={() => setShowFilters((v) => !v)} active={showFilters || filters.length > 0}>
-                <SlidersHorizontal size={14} className="text-[var(--navy-accent)]" />
+                <SlidersHorizontal size={14} />
                 <span>Filters</span>
                 {filters.length > 0 && (
                   <span className="text-[9px] bg-[var(--navy-accent)] text-white w-4 h-4 rounded-full flex items-center justify-center font-bold leading-none">
@@ -951,15 +991,14 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                     }}
                     active={!!myFilter}
                   >
-                    <UserCheck size={14} className="text-[var(--navy-accent)]" />
+                    <UserCheck size={14} />
                     <span>Mine</span>
                   </CmdBtn>
                 );
               })()}
-              <CmdSep />
               <div ref={colBtnRef} className="relative">
                 <CmdBtn onClick={() => setShowColCustomizer((v) => !v)} active={showColCustomizer}>
-                  <Columns3 size={14} className="text-[var(--navy-accent)]" />
+                  <Columns3 size={14} />
                   <span>Edit columns</span>
                   {columnsModified && (
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="Unsaved column changes" />
@@ -977,13 +1016,15 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                     onChange={setColumnStates}
                     onClose={() => setShowColCustomizer(false)}
                     onSaveView={handleSaveViewColumns}
+                    isRedesign={isRedesign}
                   />
                 )}
               </div>
+              {(canImport || canExportExcel) && <CmdSep />}
               {canImport && (
                 <CmdBtn onClick={() => setShowImportModal(true)}>
-                  <Upload size={14} className="text-[var(--navy-accent)]" />
-                  <span>Import from Excel</span>
+                  <Upload size={14} />
+                  <span>Import</span>
                 </CmdBtn>
               )}
               {canExportExcel && (
@@ -1014,15 +1055,18 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                   XLSX.utils.book_append_sheet(wb, ws, 'Export');
                   downloadWorkbook(wb, `${entity}-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
                 }}>
-                  <Download size={14} className="text-[var(--navy-accent)]" />
-                  <span>Export to Excel</span>
+                  <Download size={14} />
+                  <span>Export</span>
                 </CmdBtn>
               )}
               <div className="flex-1" />
               {loading ? (
-                <span className="text-[11px] text-[var(--ink-400)] animate-pulse">Loading...</span>
+                <span className="text-[11px] text-[#9ca3af] animate-pulse">Loading…</span>
               ) : (
-                <span className="text-[11px] text-[var(--ink-400)]">{total.toLocaleString()} record{total !== 1 ? 's' : ''}</span>
+                <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[#5b6472] px-3 py-1" style={{ background: '#f4f6fb', border: '1px solid #e7eaf1', borderRadius: 99 }}>
+                  <span className="font-bold text-[#3b6fff]">{total.toLocaleString()}</span>
+                  &nbsp;record{total !== 1 ? 's' : ''}
+                </span>
               )}
             </>
           )}
@@ -1030,8 +1074,8 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
 
         {/* --- View row (white, bottom border) --- */}
         <div
-          className="flex items-center gap-3 px-4 py-2 bg-white shrink-0"
-          style={{ borderBottom: '1px solid var(--border)' }}
+          className="flex items-center gap-2 px-3 py-2 bg-white shrink-0"
+          style={{ borderBottom: '1px solid #e7eaf1', fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif" }}
         >
           <ViewSelector
             entityDefinitionId={entityDefinitionId}
@@ -1044,28 +1088,38 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
             onShareView={(v) => setShareTarget(v)}
           />
           <div className="flex-1" />
-          <CmdBtn onClick={() => setShowColCustomizer((v) => !v)}>
-            <Columns3 size={14} className="text-[var(--navy-accent)]" />
+          <button
+            onClick={() => setShowColCustomizer((v) => !v)}
+            className="flex items-center gap-1.5 px-2.5 h-[28px] text-[12px] font-medium text-[#5b6472] bg-white shrink-0 transition hover:bg-[#f4f6fb] hover:text-[#161a22]"
+            style={{ border: '1px solid #e7eaf1', borderRadius: 10 }}
+          >
+            <Columns3 size={13} />
             <span>Edit columns</span>
-          </CmdBtn>
-          <CmdBtn onClick={() => setShowFilters((v) => !v)}>
-            <Filter size={14} className="text-[var(--navy-accent)]" />
+          </button>
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            className="flex items-center gap-1.5 px-2.5 h-[28px] text-[12px] font-medium text-[#5b6472] bg-white shrink-0 transition hover:bg-[#f4f6fb] hover:text-[#161a22]"
+            style={{ border: '1px solid #e7eaf1', borderRadius: 10 }}
+          >
+            <Filter size={13} />
             <span>Edit filters</span>
-          </CmdBtn>
-          <div className="relative w-[240px]">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--ink-300)]" />
+          </button>
+          <div className="relative w-[210px]">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#9ca3af] pointer-events-none" />
             <input
               type="text"
               value={search}
               onChange={(e) => onSearchChange?.(e.target.value)}
               placeholder="Filter by keyword"
-              className="w-full h-[28px] pl-8 pr-8 text-[12px] bg-[var(--ink-50)] border rounded text-[var(--ink-700)] placeholder-[var(--ink-400)] focus:outline-none focus:ring-1 focus:ring-[var(--navy-accent)]"
-              style={{ borderColor: 'var(--border)' }}
+              className="w-full h-[28px] pl-8 pr-7 text-[12px] text-[#374151] placeholder-[#9ca3af] focus:outline-none transition"
+              style={{ background: '#f4f6fb', border: '1px solid transparent', borderRadius: 10 }}
+              onFocus={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.border = '1px solid #e7eaf1'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.12)'; }}
+              onBlur={(e) => { if (!e.currentTarget.value) { e.currentTarget.style.background = '#f4f6fb'; e.currentTarget.style.border = '1px solid transparent'; } e.currentTarget.style.boxShadow = ''; }}
             />
             {search && (
               <button
                 onClick={() => onSearchChange?.('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-400)] hover:text-[var(--ink-600)]"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-[#374151]"
               >
                 <X size={11} />
               </button>
@@ -1113,7 +1167,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
             <table className="w-full text-sm border-separate border-spacing-0">
               <thead className="sticky top-0 z-10">
                 <tr>
-                  <th className="w-10 px-3 py-2 bg-[#fafbfc]" style={{ borderBottom: '1px solid var(--divider)' }}>
+                  <th className={`w-10 px-3 py-2 ${isRedesign ? 'bg-[#f0f4ff]' : 'bg-[#fafbfc]'}`} style={{ borderBottom: '1px solid var(--divider)' }}>
                     <input
                       type="checkbox"
                       checked={allSelected}
@@ -1124,17 +1178,17 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                   </th>
                   {visibleColumns.map((col) => {
                     const colHasFilter = !!getColFilter(col.key);
-                    const colMenuOpen = colMenuKey === col.key;
+                    const colPanelOpen = colFilterKey === col.key;
                     return (
                       <th
                         key={col.key}
                         style={col.width ? { width: col.width, borderBottom: '1px solid var(--divider)' } : { borderBottom: '1px solid var(--divider)' }}
-                        className="bg-[#fafbfc] text-left whitespace-nowrap select-none relative group/th"
+                        className={`${isRedesign ? 'bg-[#f0f4ff]' : 'bg-[#fafbfc]'} text-left whitespace-nowrap select-none relative group/th`}
                       >
                         <button
                           onClick={(e) => openColMenu(e, col.key)}
                           className={`w-full flex items-center gap-1.5 px-3 py-2 text-left transition-colors ${
-                            colMenuOpen || colHasFilter
+                            colPanelOpen || colHasFilter
                               ? 'bg-[var(--ink-50)]'
                               : 'hover:bg-[var(--ink-50)]'
                           }`}
@@ -1164,7 +1218,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                       </th>
                     );
                   })}
-                  <th className="w-36 px-3 py-2 bg-[#fafbfc]" style={{ borderBottom: '1px solid var(--divider)' }} />
+                  <th className={`w-36 px-3 py-2 ${isRedesign ? 'bg-[#f0f4ff]' : 'bg-[#fafbfc]'}`} style={{ borderBottom: '1px solid var(--divider)' }} />
                 </tr>
               </thead>
               <tbody>
@@ -1228,7 +1282,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                           }
                         }}
                         style={{ height: 34 }}
-                        className={`group transition-colors duration-100 cursor-pointer ${
+                        className={`group transition-colors duration-100 cursor-pointer${isRedesign ? ' rd-row' : ''} ${
                           isEditingThis
                             ? 'bg-blue-50'
                             : isSelected
@@ -1450,90 +1504,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
         />
       )}
 
-      {/* Dynamics-style column header menu */}
-      {colMenuKey && colMenuAnchor && (() => {
-        const col = visibleColumns.find((c) => c.key === colMenuKey);
-        if (!col) return null;
-        const rect = colMenuAnchor.getBoundingClientRect();
-        const menuTop = rect.bottom + window.scrollY;
-        let menuLeft = rect.left + window.scrollX;
-        const menuWidth = 200;
-        if (menuLeft + menuWidth > window.innerWidth - 8) menuLeft = window.innerWidth - menuWidth - 8;
-        const colHasFilter = !!getColFilter(col.key);
-        return (
-          <div
-            ref={colMenuRef}
-            className="fixed z-[9998] bg-white border border-[#c8c8c8] shadow-xl py-1 min-w-[200px]"
-            style={{ top: menuTop, left: menuLeft, width: menuWidth }}
-          >
-            {col.sortable && (
-              <>
-                <button
-                  onClick={() => {
-                    const sk = col.field_physical_column ?? col.key;
-                    setSortKey(sk);
-                    setSortDir('asc');
-                    setPage(1);
-                    setColMenuKey(null);
-                    setColMenuAnchor(null);
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#201f1e] hover:bg-[#f3f2f1] transition-colors text-left ${
-                    sortKey === (col.field_physical_column ?? col.key) && sortDir === 'asc' ? 'bg-[#edebe9] font-semibold' : ''
-                  }`}
-                >
-                  <ChevronUp size={14} className="text-[#605e5c]" />
-                  Sort A to Z
-                </button>
-                <button
-                  onClick={() => {
-                    const sk = col.field_physical_column ?? col.key;
-                    setSortKey(sk);
-                    setSortDir('desc');
-                    setPage(1);
-                    setColMenuKey(null);
-                    setColMenuAnchor(null);
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#201f1e] hover:bg-[#f3f2f1] transition-colors text-left ${
-                    sortKey === (col.field_physical_column ?? col.key) && sortDir === 'desc' ? 'bg-[#edebe9] font-semibold' : ''
-                  }`}
-                >
-                  <ChevronDown size={14} className="text-[#605e5c]" />
-                  Sort Z to A
-                </button>
-                <div className="my-1 border-t border-[#edebe9]" />
-              </>
-            )}
-            <button
-              onClick={(e) => {
-                setColMenuKey(null);
-                setColMenuAnchor(null);
-                // Open filter anchored to the th button
-                const thBtn = colMenuAnchor;
-                setColFilterKey(col.key);
-                setColFilterAnchor(thBtn);
-              }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#201f1e] hover:bg-[#f3f2f1] transition-colors text-left"
-            >
-              <Filter size={13} className={colHasFilter ? 'text-[#0078d4]' : 'text-[#605e5c]'} />
-              Filter by
-            </button>
-            {colHasFilter && (
-              <button
-                onClick={() => {
-                  applyColFilter(col.key, null);
-                  setColMenuKey(null);
-                  setColMenuAnchor(null);
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-[#d13438] hover:bg-[#fde7e9] transition-colors text-left"
-              >
-                <X size={13} className="text-[#d13438]" />
-                Clear filter
-              </button>
-            )}
-          </div>
-        );
-      })()}
-
+      {/* Combined sort + filter panel for column headers */}
       {colFilterKey && colFilterAnchor && (() => {
         const col = visibleColumns.find((c) => c.key === colFilterKey);
         if (!col) return null;
@@ -1546,6 +1517,15 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
             entityTable={entityName}
             onApply={(filter) => applyColFilter(colFilterKey, filter)}
             onClose={() => { setColFilterKey(null); setColFilterAnchor(null); }}
+            isRedesign={isRedesign}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={col.sortable ? (dir) => {
+              const sk = col.field_physical_column ?? col.key;
+              setSortKey(sk);
+              setSortDir(dir);
+              setPage(1);
+            } : undefined}
           />
         );
       })()}
@@ -1559,12 +1539,12 @@ function CmdBtn({ children, onClick, active }: { children: React.ReactNode; onCl
   return (
     <button
       onClick={onClick}
-      className={`h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium rounded-sm transition-colors ${
+      className={`h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors ${
         active
-          ? 'text-[var(--navy-accent)] bg-[var(--ink-50)]'
-          : 'text-[var(--ink-600)] hover:bg-[var(--ink-50)]'
+          ? 'text-[#3b6fff] bg-[#eef3ff]'
+          : 'text-[#5b6472] hover:bg-[#f4f6fb] hover:text-[#161a22]'
       }`}
-      style={{ border: 'none' }}
+      style={{ borderRadius: 10, border: 'none' }}
     >
       {children}
     </button>
@@ -1572,7 +1552,7 @@ function CmdBtn({ children, onClick, active }: { children: React.ReactNode; onCl
 }
 
 function CmdSep() {
-  return <div className="w-px h-[18px] mx-0.5" style={{ background: 'var(--border)' }} />;
+  return <div className="w-px h-[16px] mx-1.5 shrink-0" style={{ background: '#e7eaf1' }} />;
 }
 
 function PgBtn({ children, disabled, onClick, title }: { children: React.ReactNode; disabled: boolean; onClick: () => void; title?: string }) {

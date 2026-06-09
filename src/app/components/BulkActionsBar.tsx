@@ -1100,6 +1100,10 @@ export default function BulkActionsBar({
 
   const showActivateDeactivate = entity !== 'leads' && entity !== 'opportunities';
 
+  const hasGroup1 = showActivateDeactivate && (canActivate || canDeactivate);
+  const hasGroup2 = (canWrite && canAssign) || (canWrite && canBulkEdit) || canExport || (canShare && selected.size >= 1 && !!onShare);
+  const hasGroup3 = canDelete;
+
   const handleActivate = async () => {
     if (!userId) return;
     setBusy(true);
@@ -1130,16 +1134,18 @@ export default function BulkActionsBar({
 
   return (
     <>
-      <div className="flex items-center gap-1 flex-wrap">
+      <div className="flex items-center gap-0.5 flex-wrap">
         {result && <ResultBanner result={result} onClose={() => setResult(null)} />}
 
+        {/* Group 1: Activate / Deactivate */}
         {showActivateDeactivate && canActivate && (
           <button
             onClick={handleActivate}
             disabled={busy}
-            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] text-[var(--ink-600)] hover:bg-emerald-50 hover:text-emerald-700 rounded-sm transition font-medium disabled:opacity-40"
+            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors disabled:opacity-40 text-[#5b6472] hover:bg-[#e7f8ef] hover:text-[#0f9d63]"
+            style={{ borderRadius: 10 }}
           >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <ToggleRight size={14} className="text-emerald-600" />}
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <ToggleRight size={14} />}
             Activate
           </button>
         )}
@@ -1147,58 +1153,70 @@ export default function BulkActionsBar({
           <button
             onClick={handleDeactivate}
             disabled={busy}
-            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] text-[var(--ink-600)] hover:bg-amber-50 hover:text-amber-700 rounded-sm transition font-medium disabled:opacity-40"
+            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors disabled:opacity-40 text-[#5b6472] hover:bg-[#fdf4e3] hover:text-[#c2820a]"
+            style={{ borderRadius: 10 }}
           >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <ToggleLeft size={14} className="text-amber-600" />}
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <ToggleLeft size={14} />}
             Deactivate
           </button>
         )}
 
+        {/* Divider G1 → G2 */}
+        {hasGroup1 && hasGroup2 && <div className="w-px h-[16px] mx-1.5 shrink-0" style={{ background: '#d9e4ff' }} />}
+
+        {/* Group 2: Assign / Edit / Export / Share */}
         {canWrite && canAssign && (
           <button
             onClick={() => setModal('assign')}
-            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] text-[var(--ink-600)] hover:bg-[var(--ink-50)] rounded-sm transition font-medium"
+            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors text-[#5b6472] hover:bg-[#f4f6fb] hover:text-[#161a22]"
+            style={{ borderRadius: 10 }}
           >
-            <UserCheck size={14} className="text-[var(--navy-accent)]" />
+            <UserCheck size={14} />
             Assign
           </button>
         )}
         {canWrite && canBulkEdit && (
           <button
             onClick={() => setModal('update')}
-            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] text-[var(--ink-600)] hover:bg-[var(--ink-50)] rounded-sm transition font-medium"
+            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors text-[#5b6472] hover:bg-[#f4f6fb] hover:text-[#161a22]"
+            style={{ borderRadius: 10 }}
           >
-            <Pencil size={14} className="text-[var(--navy-accent)]" />
+            <Pencil size={14} />
             Edit
           </button>
         )}
-
         {canExport && (
           <button
             onClick={handleExport}
-            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] text-[var(--ink-600)] hover:bg-[var(--ink-50)] rounded-sm transition font-medium"
+            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors text-[#5b6472] hover:bg-[#f4f6fb] hover:text-[#161a22]"
+            style={{ borderRadius: 10 }}
           >
-            <Download size={14} className="text-[var(--navy-accent)]" />
+            <Download size={14} />
             Export
           </button>
         )}
-
         {canShare && selected.size >= 1 && onShare && (
           <button
             onClick={() => onShare(Array.from(selected)[0])}
-            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] text-[var(--ink-600)] hover:bg-blue-50 hover:text-blue-700 rounded-sm transition font-medium"
+            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors text-[#5b6472] hover:bg-[#f4f6fb] hover:text-[#161a22]"
+            style={{ borderRadius: 10 }}
           >
-            <Share2 size={14} className="text-blue-500" />
+            <Share2 size={14} />
             Share
           </button>
         )}
 
+        {/* Divider G2 → G3 */}
+        {(hasGroup1 || hasGroup2) && hasGroup3 && <div className="w-px h-[16px] mx-1.5 shrink-0" style={{ background: '#d9e4ff' }} />}
+
+        {/* Group 3: Delete */}
         {canDelete && (
           <button
             onClick={openDeleteModal}
-            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] text-[#c0392b] hover:bg-[#fde7e9] rounded-sm transition font-medium"
+            className="h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors text-[#5b6472] hover:bg-[#fdecef] hover:text-[#dc2b46]"
+            style={{ borderRadius: 10 }}
           >
-            <Trash2 size={14} className="text-[#c0392b]" />
+            <Trash2 size={14} />
             Delete
           </button>
         )}

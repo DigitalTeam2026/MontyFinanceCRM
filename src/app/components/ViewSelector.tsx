@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  ChevronDown, Globe, Lock, Cpu, Check, Plus, Share2,
+  ChevronDown, Check, Plus, Share2,
   Pencil, Trash2, Star, Loader2, MoreHorizontal, AlertTriangle,
+  X, Search, Settings, LayoutList,
 } from 'lucide-react';
 import type { ViewDefinition } from '../../types/view';
 import {
@@ -23,18 +24,6 @@ interface ViewSelectorProps {
   onShareView: (view: ViewDefinition) => void;
 }
 
-const VIEW_TYPE_ICON: Record<string, React.ReactNode> = {
-  system:   <Cpu size={11} className="text-slate-400" />,
-  public:   <Globe size={11} className="text-blue-500" />,
-  personal: <Lock size={11} className="text-amber-500" />,
-};
-
-const VIEW_TYPE_LABEL: Record<string, string> = {
-  system: 'System',
-  public: 'Public',
-  personal: 'Personal',
-};
-
 export default function ViewSelector({
   entityDefinitionId,
   activeViewId,
@@ -49,6 +38,7 @@ export default function ViewSelector({
   const [open, setOpen] = useState(false);
   const [views, setViews] = useState<ViewDefinition[]>([]);
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
   const [actionMenuId, setActionMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -59,7 +49,6 @@ export default function ViewSelector({
   const actionRef = useRef<HTMLDivElement>(null);
 
   const activeView = views.find((v) => v.view_id === activeViewId) ?? null;
-
   const initialLoadDone = useRef(false);
 
   const load = async () => {
@@ -75,12 +64,10 @@ export default function ViewSelector({
           data.find((v) => v.view_type === 'public') ??
           data[0] ??
           null;
-        if (defaultView) {
-          await onDefaultViewLoaded(defaultView);
-        }
+        if (defaultView) await onDefaultViewLoaded(defaultView);
       }
     } catch {
-      // silently fail — views are optional
+      // silently fail
     } finally {
       if (isInitial) {
         setLoading(false);
@@ -106,12 +93,6 @@ export default function ViewSelector({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
-
-  const grouped = {
-    system:   views.filter((v) => v.view_type === 'system'),
-    public:   views.filter((v) => v.view_type === 'public'),
-    personal: views.filter((v) => v.view_type === 'personal'),
-  };
 
   const handleSelect = (view: ViewDefinition) => {
     onViewChange(view);
@@ -176,144 +157,250 @@ export default function ViewSelector({
     }
   };
 
-  const renderGroup = (label: string, groupViews: ViewDefinition[]) => {
-    if (groupViews.length === 0) return null;
+  const q = search.toLowerCase();
+  const matches = (v: ViewDefinition) => !q || v.name.toLowerCase().includes(q);
+
+  // MY VIEWS = personal + public  |  SYSTEM VIEWS = system
+  const myViews     = views.filter((v) => v.view_type !== 'system' && matches(v));
+  const systemViews = views.filter((v) => v.view_type === 'system' && matches(v));
+
+  const renderRow = (view: ViewDefinition, showStar: boolean) => {
+    const isActive  = view.view_id === activeViewId;
+    const canManage = view.created_by === currentUserId && !view.is_system;
+    const isOwner   = view.created_by === currentUserId || view.view_type === 'system';
+
     return (
-      <div key={label}>
-        <div className="px-3 pt-2.5 pb-1 text-[10px] font-semibold text-[var(--ink-400)] uppercase tracking-wider">
-          {label}
-        </div>
-        {groupViews.map((view) => {
-          const isActive = view.view_id === activeViewId;
-          const isOwner = view.created_by === currentUserId || view.view_type === 'system';
-          const canManage = view.created_by === currentUserId && !view.is_system;
-          return (
-            <div
-              key={view.view_id}
-              onClick={() => handleSelect(view)}
-              className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-[var(--ink-50)] group ${isActive ? 'bg-[#e5efff]' : ''}`}
-            >
-              {VIEW_TYPE_ICON[view.view_type]}
-              {renamingId === view.view_id ? (
-                <input
-                  autoFocus
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitRename(view.view_id);
-                    if (e.key === 'Escape') setRenamingId(null);
-                    e.stopPropagation();
-                  }}
-                  onBlur={() => commitRename(view.view_id)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex-1 min-w-0 px-1.5 py-0.5 text-[12px] border border-blue-300 rounded focus:outline-none"
-                />
-              ) : (
-                <span className={`flex-1 min-w-0 truncate text-[13px] ${isActive ? 'text-[var(--navy-accent)] font-semibold' : 'text-[var(--ink-700)]'}`}>
-                  {view.name}
+      <div
+        key={view.view_id}
+        onClick={() => handleSelect(view)}
+        className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors group"
+        style={{ background: isActive ? '#eef3ff' : undefined }}
+        onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
+        onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = ''; }}
+      >
+        {/* Star / default toggle */}
+        {showStar && (
+          <button
+            onClick={(e) => handleSetDefault(view, e)}
+            className="shrink-0 transition-transform hover:scale-110"
+            title={view.is_default ? 'Default view' : 'Set as default'}
+          >
+            <Star
+              size={13}
+              className={view.is_default ? 'text-amber-400 fill-amber-400' : 'text-[#d1d5db] group-hover:text-[#9ca3af]'}
+            />
+          </button>
+        )}
+
+        {/* Name + rename input */}
+        <div className="flex-1 min-w-0">
+          {renamingId === view.view_id ? (
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename(view.view_id);
+                if (e.key === 'Escape') setRenamingId(null);
+                e.stopPropagation();
+              }}
+              onBlur={() => commitRename(view.view_id)}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full px-1.5 py-0.5 text-[12px] border border-[#3b6fff] rounded focus:outline-none"
+            />
+          ) : (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span
+                className="truncate text-[13px] font-medium"
+                style={{ color: isActive ? '#3b6fff' : '#111827' }}
+              >
+                {view.name}
+              </span>
+              {view.is_default && (
+                <span
+                  className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
+                  style={{ background: '#eef3ff', color: '#3b6fff', border: '1px solid #c7d9ff' }}
+                >
+                  Default
                 </span>
               )}
-              {savingRename && renamingId === view.view_id && <Loader2 size={11} className="animate-spin text-slate-400 shrink-0" />}
-              {view.is_default && <Star size={10} className="text-amber-400 fill-amber-400 shrink-0" />}
-              {isActive && <Check size={12} className="text-blue-600 shrink-0" />}
-              {canManage && !renamingId && (
-                <div className="relative shrink-0" ref={actionRef}>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setActionMenuId(actionMenuId === view.view_id ? null : view.view_id); }}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-slate-200 transition"
-                  >
-                    <MoreHorizontal size={12} className="text-slate-500" />
-                  </button>
-                  {actionMenuId === view.view_id && (
-                    <div className="absolute right-0 top-6 z-50 w-40 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
-                      <button
-                        onClick={(e) => startRename(view, e)}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50"
-                      >
-                        <Pencil size={11} /> Rename
-                      </button>
-                      {!view.is_system && (
-                        <button
-                          onClick={(e) => handleSetDefault(view, e)}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50"
-                        >
-                          <Star size={11} /> Set as Default
-                        </button>
-                      )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onShareView(view); setActionMenuId(null); setOpen(false); }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50"
-                      >
-                        <Share2 size={11} /> Share
-                      </button>
-                      {view.is_deletable && (
-                        <button
-                          onClick={(e) => handleDelete(view, e)}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 size={11} /> Delete
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-              {!canManage && isOwner && view.view_type !== 'system' && !renamingId && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onShareView(view); setOpen(false); }}
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-slate-200 transition"
-                  title="Share view"
-                >
-                  <Share2 size={11} className="text-slate-400" />
-                </button>
-              )}
             </div>
-          );
-        })}
+          )}
+          {view.view_type === 'system' && (
+            <p className="text-[10px] text-[#9ca3af] mt-0.5 leading-none">Everyone can see this</p>
+          )}
+        </div>
+
+        {savingRename && renamingId === view.view_id && (
+          <Loader2 size={11} className="animate-spin text-slate-400 shrink-0" />
+        )}
+
+        {/* Active check */}
+        {isActive && <Check size={13} className="shrink-0" style={{ color: '#3b6fff' }} />}
+
+        {/* Action menu (owner, non-system) */}
+        {canManage && !renamingId && (
+          <div className="relative shrink-0" ref={actionRef}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setActionMenuId(actionMenuId === view.view_id ? null : view.view_id); }}
+              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#e5e7eb] transition"
+            >
+              <MoreHorizontal size={12} className="text-[#6b7280]" />
+            </button>
+            {actionMenuId === view.view_id && (
+              <div className="absolute right-0 top-6 z-50 w-40 bg-white rounded-xl shadow-xl py-1 overflow-hidden"
+                style={{ border: '1px solid #e7eaf1' }}>
+                <button onClick={(e) => startRename(view, e)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] hover:bg-[#f9fafb] transition">
+                  <Pencil size={11} className="text-[#6b7280]" /> Rename
+                </button>
+                {!view.is_system && (
+                  <button onClick={(e) => handleSetDefault(view, e)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] hover:bg-[#f9fafb] transition">
+                    <Star size={11} className="text-[#6b7280]" /> Set as Default
+                  </button>
+                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onShareView(view); setActionMenuId(null); setOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] hover:bg-[#f9fafb] transition">
+                  <Share2 size={11} className="text-[#6b7280]" /> Share
+                </button>
+                {view.is_deletable && (
+                  <button onClick={(e) => handleDelete(view, e)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-red-600 hover:bg-red-50 transition">
+                    <Trash2 size={11} /> Delete
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Share button for non-owner */}
+        {!canManage && isOwner && view.view_type !== 'system' && !renamingId && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onShareView(view); setOpen(false); }}
+            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#e5e7eb] transition"
+            title="Share view"
+          >
+            <Share2 size={11} className="text-[#9ca3af]" />
+          </button>
+        )}
       </div>
     );
   };
 
   return (
     <div ref={dropRef} className="relative">
+      {/* Trigger */}
       <button
-        onClick={() => {
-          const willOpen = !open;
-          setOpen(willOpen);
-          if (willOpen) load();
-        }}
+        onClick={() => { const w = !open; setOpen(w); if (w) load(); }}
         className="flex items-center gap-1.5 max-w-[220px] transition"
       >
-        <span className="text-[18px] font-semibold text-[var(--ink-900)] truncate">{activeView?.name ?? (loading ? '' : 'All Records')}</span>
-        {loading ? <Loader2 size={12} className="animate-spin text-[var(--ink-300)] shrink-0" /> : <ChevronDown size={13} className="text-[var(--ink-400)] shrink-0" />}
+        <span className="text-[18px] font-semibold text-[var(--ink-900)] truncate">
+          {activeView?.name ?? (loading ? '' : 'All Records')}
+        </span>
+        {loading
+          ? <Loader2 size={12} className="animate-spin text-[var(--ink-300)] shrink-0" />
+          : <ChevronDown size={13} className="text-[var(--ink-400)] shrink-0" />
+        }
       </button>
 
+      {/* Dropdown panel */}
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-50 w-64 bg-white rounded-lg shadow-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-          <div className="max-h-72 overflow-y-auto">
-            {renderGroup(VIEW_TYPE_LABEL.system, grouped.system)}
-            {renderGroup(VIEW_TYPE_LABEL.public, grouped.public)}
-            {renderGroup(VIEW_TYPE_LABEL.personal, grouped.personal)}
+        <div
+          className="absolute left-0 top-full mt-1.5 z-50 bg-white overflow-hidden"
+          style={{ width: 280, borderRadius: 14, border: '1px solid #e7eaf1', boxShadow: '0 8px 32px rgba(17,24,39,.12), 0 2px 8px rgba(17,24,39,.06)' }}
+        >
+          {/* Header */}
+          <div className="flex items-center gap-2.5 px-4 py-3" style={{ borderBottom: '1px solid #f3f4f6' }}>
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: '#eef3ff' }}>
+              <LayoutList size={13} style={{ color: '#3b6fff' }} />
+            </div>
+            <span className="flex-1 text-[13px] font-semibold text-[#111827]">Switch view</span>
+            <button
+              onClick={() => setOpen(false)}
+              className="w-6 h-6 flex items-center justify-center rounded-md text-[#9ca3af] hover:text-[#374151] hover:bg-[#f3f4f6] transition"
+            >
+              <X size={13} />
+            </button>
+          </div>
+
+          {/* Search */}
+          <div className="px-3 py-2.5" style={{ borderBottom: '1px solid #f3f4f6' }}>
+            <div className="relative">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#9ca3af' }} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search views..."
+                className="w-full text-[12px] pl-7 pr-3 py-1.5 focus:outline-none transition"
+                style={{
+                  background: '#f9fafb', border: '1px solid #e7eaf1',
+                  borderRadius: 8, color: '#374151',
+                }}
+                onFocus={(e) => { e.currentTarget.style.border = '1px solid #3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.12)'; }}
+                onBlur={(e) => { e.currentTarget.style.border = '1px solid #e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+              />
+            </div>
+          </div>
+
+          {/* Lists */}
+          <div className="max-h-60 overflow-y-auto">
+            {/* MY VIEWS */}
+            {myViews.length > 0 && (
+              <div>
+                <p className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: '#9ca3af' }}>
+                  My Views
+                </p>
+                {myViews.map((v) => renderRow(v, true))}
+              </div>
+            )}
+            {/* SYSTEM VIEWS */}
+            {systemViews.length > 0 && (
+              <div>
+                <p className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: '#9ca3af' }}>
+                  System Views
+                </p>
+                {systemViews.map((v) => renderRow(v, false))}
+              </div>
+            )}
             {views.length === 0 && !loading && (
               <div className="px-4 py-5 text-center text-[12px] text-slate-400">No views configured</div>
             )}
+            {views.length > 0 && myViews.length === 0 && systemViews.length === 0 && (
+              <div className="px-4 py-5 text-center text-[12px] text-slate-400">No results for "{search}"</div>
+            )}
           </div>
-          <div className="p-2" style={{ borderTop: '1px solid var(--divider)' }}>
+
+          {/* Footer */}
+          <div className="flex items-center gap-2 p-3" style={{ borderTop: '1px solid #e7eaf1' }}>
             <button
               onClick={() => { setOpen(false); onSaveAsNew(); }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-[12px] font-medium text-[var(--navy-accent)] hover:bg-[var(--ink-50)] rounded-lg transition"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold text-white transition"
+              style={{ background: 'linear-gradient(135deg,#3b6fff,#5b87ff)', borderRadius: 10, boxShadow: '0 4px 12px rgba(59,111,255,.3)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.08)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.filter = ''; }}
             >
-              <Plus size={12} />
-              Save Current View As…
+              <Plus size={13} />
+              Create view
+            </button>
+            <button
+              className="flex items-center gap-1.5 px-3 py-2 text-[12px] font-medium text-[#6b7280] hover:bg-[#f9fafb] transition"
+              style={{ border: '1px solid #e7eaf1', borderRadius: 10 }}
+            >
+              <Settings size={13} />
+              Manage
             </button>
           </div>
         </div>
       )}
 
-      {/* Delete confirmation dialog — centered toast-style */}
+      {/* Delete confirmation dialog */}
       {deleteTarget && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30 backdrop-blur-[1px]">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[360px] p-6 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[360px] p-6 flex flex-col gap-4">
             <div className="flex items-start gap-3">
               <span className="shrink-0 w-9 h-9 rounded-full bg-red-50 border border-red-100 flex items-center justify-center">
                 <AlertTriangle size={17} className="text-red-500" />

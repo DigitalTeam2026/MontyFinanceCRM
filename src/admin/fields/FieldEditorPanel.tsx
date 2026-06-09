@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, AlertCircle, Plus, Trash2, GripVertical, Shield, Lock, MoreHorizontal, ArrowUp, ArrowDown, Palette, Pencil, Star } from 'lucide-react';
+import { X, Save, AlertCircle, Plus, Trash2, GripVertical, Shield, Lock, MoreHorizontal, ArrowUp, ArrowDown, Palette, Pencil, Star, Calculator } from 'lucide-react';
 import SearchableSelect from '../../app/components/SearchableSelect';
-import type { FieldDefinition, FieldFormData, FieldType, ChoiceOption } from '../../types/field';
+import type { FieldDefinition, FieldFormData, FieldType, ChoiceOption, CalcFormula } from '../../types/field';
 import type { EntityDefinition } from '../../types/entity';
+import CalcBuilderModal, { buildFormulaPreview } from './CalcBuilderModal';
 import { useToast } from '../../app/context/ToastContext';
 import { supabase } from '../../lib/supabase';
 
@@ -733,6 +734,7 @@ function buildInitialForm(entityId: string, field?: FieldDefinition, defaultType
       is_active: field.is_active, is_secured: field.is_secured, sort_order: field.sort_order,
       validation_rules: field.validation_rules,
       inline_choices: (field.config_json as { choices?: ChoiceOption[] } | null)?.choices ?? [],
+      config_json: field.config_json,
     };
   }
   return {
@@ -742,6 +744,7 @@ function buildInitialForm(entityId: string, field?: FieldDefinition, defaultType
     max_length: null, min_value: null, max_value: null,
     is_required: false, is_searchable: true, is_sortable: true, is_filterable: true,
     is_active: true, is_secured: false, sort_order: 0, validation_rules: null, inline_choices: [],
+    config_json: null,
   };
 }
 
@@ -768,6 +771,10 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
   const selectedType = fieldTypes.find((t) => t.field_type_id === form.field_type_id);
   const typeName = selectedType?.name ?? '';
 
+  const initialFormula = (field?.config_json as { formula?: CalcFormula } | null)?.formula ?? null;
+  const [calcFormula, setCalcFormula] = useState<CalcFormula | null>(initialFormula);
+  const [showCalcBuilder, setShowCalcBuilder] = useState(false);
+
   useEffect(() => {
     if (!isEdit && form.field_type_id === '') setForm((f) => ({ ...f, field_type_id: defaultTypeId }));
   }, [defaultTypeId, isEdit, form.field_type_id]);
@@ -784,7 +791,19 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
 
   const handleTypeChange = (typeId: string) => {
     set('field_type_id', typeId);
-    set('inline_choices', []); set('lookup_entity_id', null);
+    set('inline_choices', []);
+    set('lookup_entity_id', null);
+    const newTypeName = fieldTypes.find(t => t.field_type_id === typeId)?.name ?? '';
+    if (newTypeName !== 'calculated') {
+      set('config_json', null);
+      setCalcFormula(null);
+    }
+  };
+
+  const handleFormulaSave = (f: CalcFormula) => {
+    setCalcFormula(f);
+    set('config_json', { formula: f });
+    setShowCalcBuilder(false);
   };
 
   const validate = (): boolean => {
@@ -822,6 +841,7 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-40 flex">
       <div className="absolute inset-0 bg-black/20" onClick={onClose} />
       <div className="relative ml-auto h-full w-full max-w-xl bg-white shadow-2xl flex flex-col border-l border-slate-200">
@@ -920,6 +940,35 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
                     placeholder="Select entity..."
                     className={fieldErrors.lookup_entity_id ? 'ring-2 ring-red-400 rounded-lg' : ''}
                   />
+                </F>
+              )}
+
+              {typeName === 'calculated' && (
+                <F label="Calculation Formula">
+                  {calcFormula && calcFormula.tokens.length > 0 ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 bg-[#f0f4ff] border border-[#c7d9ff] rounded-lg">
+                      <Calculator size={13} className="text-[#3b6fff] shrink-0" />
+                      <span className="text-[12px] text-[#1e3a8a] font-medium flex-1 truncate">
+                        {buildFormulaPreview(calcFormula)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowCalcBuilder(true)}
+                        className="text-[11px] text-[#3b6fff] hover:text-[#1d4ed8] font-semibold shrink-0 transition"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowCalcBuilder(true)}
+                      className="flex items-center justify-center gap-2 w-full px-3 py-3 border-2 border-dashed border-[#c7d9ff] rounded-lg text-[#3b6fff] hover:border-[#3b6fff] hover:bg-[#f0f4ff] transition text-[12px] font-semibold"
+                    >
+                      <Calculator size={14} />
+                      Configure Calculation
+                    </button>
+                  )}
                 </F>
               )}
 
@@ -1035,6 +1084,18 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
         </div>
       </div>
     </div>
+
+    {showCalcBuilder && (
+      <CalcBuilderModal
+        entityId={entityId}
+        currentFieldLogicalName={field?.logical_name}
+        formula={calcFormula}
+        fieldDisplayName={form.display_name}
+        onSave={handleFormulaSave}
+        onClose={() => setShowCalcBuilder(false)}
+      />
+    )}
+    </>
   );
 }
 

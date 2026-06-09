@@ -70,7 +70,6 @@ import { fetchCrmUsers, updateRowFields } from '../services/listService';
 import { fetchCurrencies, fetchBaseCurrency, getCurrencyById, hasCurrencyLock, isStatusLocked, type CurrencyRecord } from '../services/currencyService';
 import ChangeCurrencyModal from '../components/form/ChangeCurrencyModal';
 import { FormDensityProvider, useFormDensity, densityStyles } from '../context/FormDensityContext';
-import type { FormDensity } from '../context/FormDensityContext';
 import { useToast, toFriendlyError } from '../context/ToastContext';
 import QualifyLeadModal from '../components/form/QualifyLeadModal';
 import ReQualifyLeadModal from '../components/form/ReQualifyLeadModal';
@@ -502,6 +501,7 @@ interface CollapsibleSectionProps {
   /** Maps field logical_name → entity slug for lookup fields (DB-driven) */
   lookupEntitySlugMap?: Record<string, string>;
   subgridRefreshCounter?: number;
+  fieldConfigMap?: Record<string, Record<string, unknown>>;
 }
 
 function CollapsibleSection({
@@ -527,6 +527,7 @@ function CollapsibleSection({
   entityDefinitionId,
   lookupEntitySlugMap,
   subgridRefreshCounter,
+  fieldConfigMap,
 }: CollapsibleSectionProps) {
   const { getFieldRestriction, getEntityPrivilege } = usePermissions();
   const { density } = useFormDensity();
@@ -656,9 +657,11 @@ function CollapsibleSection({
               const lookupSlug = control.field_type_name === 'lookup'
                 ? ((lookupEntitySlugMap ?? LOOKUP_FIELD_ENTITY_SLUG)[control.field_logical_name] ?? LOOKUP_FIELD_ENTITY_SLUG[control.field_logical_name] ?? null)
                 : null;
-              const enrichedControl = lookupSlug
+              const baseEnriched = lookupSlug
                 ? { ...control, lookup_entity_slug: lookupSlug }
                 : control;
+              const fieldCfg = control.field_logical_name ? (fieldConfigMap?.[control.field_logical_name] ?? null) : null;
+              const enrichedControl = fieldCfg ? { ...baseEnriched, config_json: fieldCfg } : baseEnriched;
               const fieldValue = isOwnerField
                 ? (values['owner_id'] ?? '')
                 : (values[control.field_logical_name] ?? '');
@@ -995,6 +998,7 @@ export default function RecordFormPage({
   const [fieldInlineChoicesMap, setFieldInlineChoicesMap] = useState<Record<string, { value: string; label: string }[]>>({});
   const [fieldTypeMap, setFieldTypeMap] = useState<Record<string, string>>({});
   const [fieldRequiredMap, setFieldRequiredMap] = useState<Record<string, boolean>>({});
+  const [fieldConfigMap, setFieldConfigMap] = useState<Record<string, Record<string, unknown>>>({});
   // Maps field logical_name -> entity slug for lookup fields (built from DB on load)
   const [lookupEntitySlugMap, setLookupEntitySlugMap] = useState<Record<string, string>>(LOOKUP_FIELD_ENTITY_SLUG);
   // Maps field logical_name -> physical_column_name for lookup fields (built from DB on load)
@@ -1266,6 +1270,7 @@ export default function RecordFormPage({
       const inlineMap: Record<string, { value: string; label: string }[]> = {};
       const ftMap: Record<string, string> = {};
       const reqMap: Record<string, boolean> = {};
+      const cfgMap: Record<string, Record<string, unknown>> = {};
       // Start with the hardcoded fallbacks, then override with DB-sourced slugs
       const slugMap: Record<string, string> = { ...LOOKUP_FIELD_ENTITY_SLUG };
       const physMap: Record<string, string> = {};
@@ -1273,6 +1278,7 @@ export default function RecordFormPage({
       for (const fd of ((fieldDefsRes as { data: FDRow[] | null }).data ?? [])) {
         if (!fd.logical_name) continue;
         const cfg = fd.config_json;
+        if (cfg && typeof cfg === 'object') cfgMap[fd.logical_name] = cfg;
         if (fd.field_type?.name) ftMap[fd.logical_name] = fd.field_type.name;
         if (fd.is_required) reqMap[fd.logical_name] = true;
         if (fd.field_type?.name === 'lookup') {
@@ -1302,6 +1308,7 @@ export default function RecordFormPage({
       setFieldInlineChoicesMap(inlineMap);
       setFieldTypeMap(ftMap);
       setFieldRequiredMap(reqMap);
+      setFieldConfigMap(cfgMap);
       setLookupEntitySlugMap(slugMap);
       setLookupPhysicalMap(physMap);
 
@@ -2480,6 +2487,7 @@ export default function RecordFormPage({
     <RecordFormInner
       entity={entity}
       recordId={resolvedRecordId}
+      isRedesign={entity === 'accounts'}
       formReadonly={formReadonly}
       canCreate={canCreate}
       canWrite={canWrite}
@@ -2570,6 +2578,7 @@ export default function RecordFormPage({
       roleCanWrite={roleCanWrite}
       sharePerms={sharePerms}
       formAccessResult={formAccessResult}
+      fieldConfigMap={fieldConfigMap}
     />
     {activeTransformationRule && resolvedRecordId && (
       <TransformRecordModal
@@ -2807,6 +2816,8 @@ interface RecordFormInnerProps {
   roleCanWrite: boolean;
   sharePerms: SharePermissions | null;
   formAccessResult: { level: FormAccessLevel; message: string | null } | null;
+  isRedesign?: boolean;
+  fieldConfigMap?: Record<string, Record<string, unknown>>;
 }
 
 function ReadOnlyBanner({ reason }: { reason: 'write' | 'create' | 'share-read' }) {
@@ -2901,9 +2912,9 @@ function RecordFormInner({
   stageGateErrors, onStageViolation, onFieldNavigate, onClearStageGateErrors,
   transformationRules, onTransform, relatedRecordLabel, subgridRelDefMap, onLookupLabelChange, lookupEntitySlugMap,
   onNewRecord, onDelete, subgridRefreshCounter, leadHasRelatedOpp,
-  roleCanWrite, sharePerms, formAccessResult,
+  roleCanWrite, sharePerms, formAccessResult, isRedesign = false, fieldConfigMap,
 }: RecordFormInnerProps) {
-  const { density, setDensity } = useFormDensity();
+  const { density } = useFormDensity();
   const { getSectionRestriction, getEntityPrivilege } = usePermissions();
   const innerStateCode = String(values.state_code ?? values.statecode ?? '');
   const isLeadQualified = entity === 'leads' && innerStateCode === '2';
@@ -2945,49 +2956,117 @@ function RecordFormInner({
   }, [closeLostOpen]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
+    <div className={`flex-1 flex flex-col overflow-hidden${isRedesign ? '' : ' bg-slate-50'}`} style={isRedesign ? { background: '#eef1f7', fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif" } : undefined}>
+      {isRedesign && (
+        <style>{`
+          .rd-save-btn{border-radius:10px !important;box-shadow:0 4px 12px rgba(59,111,255,.25) !important;}
+          .rd-save-btn:hover:not(:disabled){filter:brightness(1.07);}
+        `}</style>
+      )}
       {/* ── Sticky Header ── */}
-      <div className="bg-white border-b border-slate-200 shrink-0 shadow-sm">
+      <div className="shrink-0 shadow-sm bg-white border-b border-[#e7eaf1]">
+        <div style={{ height: 3, background: 'linear-gradient(135deg,#3b6fff,#22d3ee)' }} />
         {/* Top bar: breadcrumb + title + actions */}
-        <div className="px-5 py-3 flex items-center gap-3">
+        <div className="px-5 py-2.5 flex items-center gap-3">
           {/* Back */}
           <button
             onClick={onBack}
-            className="flex items-center gap-1 text-[12px] text-slate-500 hover:text-slate-800 transition shrink-0 group"
+            className="flex items-center gap-1 text-[12px] text-[#6b7280] hover:text-[#3b6fff] transition shrink-0 group"
           >
             <ChevronLeft size={15} className="group-hover:-translate-x-0.5 transition-transform" />
             <span className="hidden sm:inline">Back</span>
           </button>
 
-          <div className="h-5 w-px bg-slate-200 shrink-0" />
+          <div className="h-8 w-px bg-[#e7eaf1] shrink-0" />
 
-          {/* Record name + entity label */}
-          <div className="flex-1 min-w-0 flex items-center gap-2.5">
-            <div className="min-w-0">
-              <h1 className="text-[15px] font-semibold text-slate-800 truncate leading-tight">
-                {getRecordTitle()}
-              </h1>
-              <p className="text-[10px] text-slate-400 capitalize leading-none mt-0.5">
-                {recordId ? entity.slice(0, -1) : `New ${entity.slice(0, -1)}`}
-              </p>
+          {/* Record name + entity label + metadata chips */}
+          <div className="flex-1 min-w-0">
+            <p className="text-[9px] text-[#3b6fff] font-semibold tracking-widest uppercase leading-none mb-0.5">
+              {recordId ? entity.slice(0, -1) : `New ${entity.slice(0, -1)}`}
+            </p>
+            <h1 className="text-[15px] font-bold text-[#111827] truncate leading-tight mb-1.5">
+              {getRecordTitle()}
+            </h1>
+            {/* Metadata chips row — left aligned (currency only; owner+status moved to header right) */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Currency selector / lock indicator (not shown for leads or accounts) */}
+              {!isRedesign && entity !== 'leads' && currencies.length > 0 && (values.currency_id !== undefined) && (
+                <div className="shrink-0 flex items-center gap-1">
+                  {isCurrencyLocked ? (
+                    <>
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold ${
+                          currencyLockReason === 'status_threshold'
+                            ? 'bg-orange-50 border border-orange-200 text-orange-700'
+                            : 'bg-slate-100 border border-slate-200 text-slate-600'
+                        }`}
+                        title={
+                          currencyLockReason === 'status_threshold'
+                            ? 'Currency locked by status threshold — record has passed a business process milestone'
+                            : 'Currency is locked — monetary values have been saved'
+                        }
+                      >
+                        <Lock size={10} className={currencyLockReason === 'status_threshold' ? 'text-orange-400' : 'text-slate-400'} />
+                        {activeCurrency?.code ?? '—'}
+                        {currencyLockReason === 'status_threshold' && (
+                          <span className="text-orange-500 text-[9px] font-medium">Status</span>
+                        )}
+                      </span>
+                      {isSystemAdmin && recordId && !formReadonly && (
+                        <button
+                          onClick={onOpenChangeCurrencyModal}
+                          title="Change record currency (admin)"
+                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition"
+                        >
+                          <ShieldAlert size={10} />
+                          Change
+                        </button>
+                      )}
+                    </>
+                  ) : formReadonly ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 border border-slate-200 text-[11px] font-semibold text-slate-600">
+                      {activeCurrency?.code ?? '—'}
+                    </span>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={String(values.currency_id ?? '')}
+                        onChange={(e) => onChange('currency_id', e.target.value)}
+                        className="text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                        title="Select record currency (will lock after first monetary save)"
+                      >
+                        {currencies.map((c) => (
+                          <option key={c.currency_id} value={c.currency_id}>
+                            {c.code} ({c.symbol})
+                          </option>
+                        ))}
+                      </select>
+                      <span title="Currency will lock once a monetary value is saved" className="text-slate-300 cursor-help">
+                        <RefreshCw size={10} className="text-slate-400" />
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+          </div>
 
-            {/* Status pill — inline quick-change */}
+          {/* Right-side actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Status Reason — moved to header right */}
             {(values.status_reason || values.statusreason || values.state_code) && (
               <div className="shrink-0">
                 <StatusDropdown
                   entityDefinitionId={entityDefId ?? undefined}
                   statecodeValue={innerStateCode}
                   value={String(values.status_reason ?? values.statusreason ?? '')}
-                  onChange={(val) => {
-                    onChange('status_reason', val);
-                  }}
+                  onChange={(val) => { onChange('status_reason', val); }}
                   readonly={formReadonly || (entity === 'leads' && (isLeadQualified || isLeadDisqualified))}
                 />
               </div>
             )}
 
-            {/* Owner chip — clickable to open assign popover */}
+            {/* Owner chip — moved to header right */}
             {recordId && crmUsers.length > 0 && (
               <div className="shrink-0">
                 {(() => {
@@ -2999,107 +3078,32 @@ function RecordFormInner({
                   return canAssign && !formReadonly ? (
                     <button
                       onClick={() => onSetShowAssignPopover(!showAssignPopover)}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 transition group"
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-[#e7eaf1] bg-[#f7f9fc] hover:bg-[#eff6ff] hover:border-[#3b6fff] transition group"
                       title="Click to reassign"
                     >
-                      <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold flex items-center justify-center shrink-0 uppercase">
+                      <span
+                        className="w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center shrink-0 uppercase text-white"
+                        style={{ background: 'linear-gradient(135deg,#3b6fff,#22d3ee)' }}
+                      >
                         {initials}
                       </span>
-                      <span className="text-[11px] text-slate-600 group-hover:text-blue-700 font-medium truncate max-w-[100px]">{shortName}</span>
-                      <UserCheck size={10} className="text-slate-400 group-hover:text-blue-500 shrink-0" />
+                      <span className="text-[11px] font-medium truncate max-w-[100px] text-[#374151] group-hover:text-[#3b6fff]">{shortName}</span>
+                      <UserCheck size={10} className="shrink-0 text-[#9ca3af] group-hover:text-[#3b6fff]" />
                     </button>
                   ) : (
-                    <span className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-slate-200 bg-slate-50">
-                      <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-600 text-[9px] font-bold flex items-center justify-center shrink-0 uppercase">
+                    <span className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-[#e7eaf1] bg-[#f7f9fc]">
+                      <span
+                        className="w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center shrink-0 uppercase text-white"
+                        style={{ background: 'linear-gradient(135deg,#3b6fff,#22d3ee)' }}
+                      >
                         {initials}
                       </span>
-                      <span className="text-[11px] text-slate-500 truncate max-w-[100px]">{shortName}</span>
+                      <span className="text-[11px] truncate max-w-[100px] text-[#374151] font-medium">{shortName}</span>
                     </span>
                   );
                 })()}
               </div>
             )}
-
-            {/* Currency selector / lock indicator (not shown for leads) */}
-            {entity !== 'leads' && currencies.length > 0 && (values.currency_id !== undefined) && (
-              <div className="shrink-0 flex items-center gap-1">
-                {isCurrencyLocked ? (
-                  <>
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold ${
-                        currencyLockReason === 'status_threshold'
-                          ? 'bg-orange-50 border border-orange-200 text-orange-700'
-                          : 'bg-slate-100 border border-slate-200 text-slate-600'
-                      }`}
-                      title={
-                        currencyLockReason === 'status_threshold'
-                          ? 'Currency locked by status threshold — record has passed a business process milestone'
-                          : 'Currency is locked — monetary values have been saved'
-                      }
-                    >
-                      <Lock size={10} className={currencyLockReason === 'status_threshold' ? 'text-orange-400' : 'text-slate-400'} />
-                      {activeCurrency?.code ?? '—'}
-                      {currencyLockReason === 'status_threshold' && (
-                        <span className="text-orange-500 text-[9px] font-medium">Status</span>
-                      )}
-                    </span>
-                    {isSystemAdmin && recordId && !formReadonly && (
-                      <button
-                        onClick={onOpenChangeCurrencyModal}
-                        title="Change record currency (admin)"
-                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition"
-                      >
-                        <ShieldAlert size={10} />
-                        Change
-                      </button>
-                    )}
-                  </>
-                ) : formReadonly ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 border border-slate-200 text-[11px] font-semibold text-slate-600">
-                    {activeCurrency?.code ?? '—'}
-                  </span>
-                ) : (
-                  <div className="flex items-center gap-1">
-                    <select
-                      value={String(values.currency_id ?? '')}
-                      onChange={(e) => onChange('currency_id', e.target.value)}
-                      className="text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-                      title="Select record currency (will lock after first monetary save)"
-                    >
-                      {currencies.map((c) => (
-                        <option key={c.currency_id} value={c.currency_id}>
-                          {c.code} ({c.symbol})
-                        </option>
-                      ))}
-                    </select>
-                    <span title="Currency will lock once a monetary value is saved" className="text-slate-300 cursor-help">
-                      <RefreshCw size={10} className="text-slate-400" />
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Right-side actions */}
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Density toggle */}
-            <div className="flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5 border border-slate-200">
-              {(['comfortable', 'compact'] as FormDensity[]).map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setDensity(d)}
-                  title={d.charAt(0).toUpperCase() + d.slice(1)}
-                  className={`px-2 py-1 rounded text-[10px] font-semibold transition ${
-                    density === d
-                      ? 'bg-white text-slate-700 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-600'
-                  }`}
-                >
-                  {d === 'comfortable' ? 'Comfy' : 'Compact'}
-                </button>
-              ))}
-            </div>
 
             {/* Pin */}
             {recordId && (
@@ -3109,7 +3113,7 @@ function RecordFormInner({
                 className={`flex items-center justify-center w-7 h-7 rounded-md border transition ${
                   isPinned
                     ? 'border-amber-300 bg-amber-50 text-amber-500 hover:bg-amber-100'
-                    : 'border-slate-200 bg-white text-slate-400 hover:text-amber-500 hover:border-amber-200 hover:bg-amber-50'
+                    : 'border-[#e7eaf1] bg-white text-[#9ca3af] hover:text-amber-500 hover:border-amber-200 hover:bg-amber-50'
                 }`}
               >
                 <Star size={13} className={isPinned ? 'fill-amber-400 text-amber-400' : ''} />
@@ -3128,7 +3132,7 @@ function RecordFormInner({
             <button
               onClick={onBack}
               title="Close"
-              className="flex items-center justify-center w-7 h-7 rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+              className="flex items-center justify-center w-7 h-7 rounded-md transition text-[#9ca3af] hover:bg-[#f3f4f6] hover:text-[#374151]"
             >
               <X size={15} />
             </button>
@@ -3137,18 +3141,23 @@ function RecordFormInner({
 
       {/* ── Command Bar ── */}
       {!formReadonly && (
-        <div className="bg-white border-b border-slate-200 px-4 py-1.5 flex items-center gap-1.5 shrink-0">
+        <div className="px-4 py-1.5 flex items-center gap-1.5 shrink-0 bg-white border-b border-[#e7eaf1]">
           {/* Save */}
           <button
             onClick={onSave}
             disabled={saveStatus === 'saving'}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition border ${
+            className={`rd-save-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition border ${
               saveStatus === 'saved'
                 ? 'bg-emerald-600 text-white border-emerald-600'
                 : saveStatus === 'error'
                 ? 'bg-red-600 text-white border-red-600'
-                : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-60'
+                : 'text-white border-transparent disabled:opacity-60'
             }`}
+            style={saveStatus === 'idle' || saveStatus === 'saving'
+              ? isRedesign
+                ? { background: 'linear-gradient(135deg,#3b6fff,#22d3ee)' }
+                : { background: '#2563eb' }
+              : undefined}
           >
             {saveStatus === 'saving' ? (
               <Loader2 size={12} className="animate-spin" />
@@ -3487,7 +3496,7 @@ function RecordFormInner({
 
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="bg-white border-b border-slate-200 px-6 flex gap-0 shrink-0 overflow-x-auto">
+          <div className={`px-6 flex gap-0 shrink-0 overflow-x-auto ${isRedesign ? 'bg-white border-b border-[#e7eaf1]' : 'bg-white border-b border-slate-200'}`}>
             {formTabs
               .filter((tab) => {
                 if (recordId) return true;
@@ -3506,7 +3515,9 @@ function RecordFormInner({
                   onClick={() => onChangeTab(tabId)}
                   className={`relative flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
                     isActive
-                      ? 'border-blue-500 text-blue-600'
+                      ? isRedesign
+                        ? 'border-[#3b6fff] text-[#3b6fff]'
+                        : 'border-blue-500 text-blue-600'
                       : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                   }`}
                 >
@@ -3527,7 +3538,9 @@ function RecordFormInner({
                   onClick={() => onChangeTab(HISTORY_TAB_ID)}
                   className={`relative flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
                     isHistoryTab
-                      ? 'border-blue-500 text-blue-600'
+                      ? isRedesign
+                        ? 'border-[#3b6fff] text-[#3b6fff]'
+                        : 'border-blue-500 text-blue-600'
                       : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                   }`}
                 >
@@ -3542,7 +3555,9 @@ function RecordFormInner({
                       onClick={() => onChangeTab(tabId)}
                       className={`relative flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
                         isActive
-                          ? 'border-blue-500 text-blue-600'
+                          ? isRedesign
+                            ? 'border-[#3b6fff] text-[#3b6fff]'
+                            : 'border-blue-500 text-blue-600'
                           : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
                     >
@@ -3554,7 +3569,7 @@ function RecordFormInner({
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className={`flex-1 overflow-y-auto ${isRedesign ? 'p-5' : 'p-6'}`}>
             {isFormTab && currentFormTab && stageGateErrors && (
               <StageGateBanner
                 stageLabel={stageGateErrors.stageLabel}
@@ -3595,6 +3610,7 @@ function RecordFormInner({
                       entityDefinitionId={entityDefId ?? undefined}
                       lookupEntitySlugMap={lookupEntitySlugMap}
                       subgridRefreshCounter={subgridRefreshCounter}
+                      fieldConfigMap={fieldConfigMap}
                     />
                   ))}
               </>

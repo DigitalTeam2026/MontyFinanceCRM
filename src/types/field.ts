@@ -60,6 +60,15 @@ export interface FieldDefinition {
   } | null;
 }
 
+export type CalcToken =
+  | { type: 'field'; fieldName: string; displayName: string }
+  | { type: 'operator'; op: '+' | '-' | '*' | '/' }
+  | { type: 'number'; value: number };
+
+export interface CalcFormula {
+  tokens: CalcToken[];
+}
+
 export type FieldFormData = {
   entity_definition_id: string;
   field_type_id: string;
@@ -82,4 +91,5 @@ export type FieldFormData = {
   sort_order: number;
   validation_rules: ValidationRules | null;
   inline_choices: ChoiceOption[];
+  config_json?: Record<string, unknown> | null;
 };

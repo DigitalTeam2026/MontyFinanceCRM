@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  X, Plus, SlidersHorizontal, Save, Trash2, BookmarkCheck, ChevronDown, Loader2, Search,
+  X, Plus, SlidersHorizontal, Save, Trash2, BookmarkCheck, ChevronDown, Loader2, Search, Filter,
 } from 'lucide-react';
 import type { AppEntity } from '../types';
 import { ENTITY_DEFINITION_ID } from '../types';
@@ -357,6 +357,7 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
   const [showSaveInput, setShowSaveInput] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedTab, setSavedTab] = useState<'active' | 'saved'>('active');
+  const [matchMode, setMatchMode] = useState<'all' | 'any'>('all');
 
   useEffect(() => {
     let cancelled = false;
@@ -469,325 +470,391 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
   };
 
   const activeCount = filters.length;
+  const totalConditions = filters.length + drafts.length;
+
+  const renderValueInput = (draft: DraftCondition) => {
+    const fieldMeta = getFieldMeta(draft.field);
+    const noVal = NO_VALUE_OPERATORS.includes(draft.operator);
+    if (noVal) return null;
+    if (fieldMeta.type === 'lookup' && fieldMeta.lookupTable) {
+      return (
+        <LookupFilterInput
+          field={fieldMeta}
+          value={draft.value}
+          onChange={(v) => updateDraft(draft.id, { value: v })}
+        />
+      );
+    }
+    if ((fieldMeta.type === 'select' || fieldMeta.type === 'boolean') && fieldMeta.options) {
+      return (
+        <div className="relative">
+          <select
+            value={draft.value}
+            onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
+            className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[#374151] bg-white focus:outline-none appearance-none pr-6 transition"
+            style={{ borderColor: '#e7eaf1' }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+          >
+            <option value="">Select value...</option>
+            {fieldMeta.options.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#9ca3af' }} />
+        </div>
+      );
+    }
+    if (fieldMeta.type === 'date') {
+      return (
+        <input
+          type="date"
+          value={draft.value}
+          onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
+          className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[#374151] bg-white focus:outline-none transition"
+          style={{ borderColor: '#e7eaf1' }}
+          onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+          onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+        />
+      );
+    }
+    if (fieldMeta.type === 'number') {
+      return (
+        <input
+          type="number"
+          value={draft.value}
+          onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
+          placeholder="Enter number..."
+          className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[#374151] placeholder-[#9ca3af] bg-white focus:outline-none transition"
+          style={{ borderColor: '#e7eaf1' }}
+          onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+          onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+        />
+      );
+    }
+    return (
+      <input
+        type="text"
+        value={draft.value}
+        onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
+        onKeyDown={(e) => { if (e.key === 'Enter') applyDrafts(); }}
+        placeholder="Enter value..."
+        className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[#374151] placeholder-[#9ca3af] bg-white focus:outline-none transition"
+        style={{ borderColor: '#e7eaf1' }}
+        onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+        onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+      />
+    );
+  };
 
   return (
-    <div className="w-80 bg-white border-l border-slate-200 flex flex-col h-full shrink-0 shadow-sm">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal size={14} className="text-slate-500" />
-          <span className="text-[13px] font-semibold text-slate-700">Filters</span>
-          {activeCount > 0 && (
-            <span className="text-[10px] bg-blue-600 text-white font-semibold px-1.5 py-0.5 rounded-full leading-none">
-              {activeCount}
-            </span>
-          )}
+    <div className="flex flex-col h-full shrink-0 bg-white" style={{ width: 320, borderLeft: '1px solid #e7eaf1' }}>
+
+      {/* ── Header ── */}
+      <div className="flex items-center gap-2.5 px-4 py-3.5" style={{ borderBottom: '1px solid #f0f2f7' }}>
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#eef3ff' }}>
+          <Filter size={13} style={{ color: '#3b6fff' }} />
         </div>
-        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition p-1 rounded hover:bg-slate-100">
-          <X size={14} />
+        <span className="flex-1 text-[13px] font-semibold text-[#111827]">Filters</span>
+        {activeCount > 0 && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none"
+            style={{ background: '#3b6fff', color: '#fff' }}>
+            {activeCount}
+          </span>
+        )}
+        {userId && (
+          <button
+            onClick={() => setSavedTab(savedTab === 'saved' ? 'active' : 'saved')}
+            className="p-1 rounded-md transition"
+            style={{ color: savedTab === 'saved' ? '#3b6fff' : '#9ca3af' }}
+            title="Saved filters"
+          >
+            <BookmarkCheck size={13} />
+          </button>
+        )}
+        <button
+          onClick={onClose}
+          className="w-6 h-6 flex items-center justify-center rounded-md text-[#9ca3af] hover:text-[#374151] hover:bg-[#f3f4f6] transition"
+        >
+          <X size={13} />
         </button>
       </div>
 
-      {userId && (
-        <div className="flex border-b border-slate-100">
-          {(['active', 'saved'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setSavedTab(tab)}
-              className={`flex-1 py-2 text-[11px] font-semibold uppercase tracking-wide transition ${
-                savedTab === tab
-                  ? 'text-blue-600 border-b-2 border-blue-600 bg-white'
-                  : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              {tab === 'active' ? `Active${activeCount > 0 ? ` (${activeCount})` : ''}` : `Saved (${savedFilters.length})`}
-            </button>
-          ))}
+      {/* ── Saved filters pane ── */}
+      {savedTab === 'saved' && (
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {savedFilters.length === 0 ? (
+            <div className="text-center py-10">
+              <BookmarkCheck size={24} className="mx-auto mb-2" style={{ color: '#d1d5db' }} />
+              <p className="text-[12px] text-[#9ca3af]">No saved filters yet</p>
+              <p className="text-[11px] mt-0.5" style={{ color: '#d1d5db' }}>Apply filters then save them for quick reuse</p>
+            </div>
+          ) : (
+            savedFilters.map((sf) => (
+              <div
+                key={sf.id}
+                className="flex items-start gap-2 p-2.5 rounded-xl cursor-pointer group transition"
+                style={{ border: '1px solid #e7eaf1' }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#c7d9ff'; (e.currentTarget as HTMLElement).style.background = '#f5f8ff'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#e7eaf1'; (e.currentTarget as HTMLElement).style.background = ''; }}
+                onClick={() => { loadSaved(sf); setSavedTab('active'); }}
+              >
+                <BookmarkCheck size={13} className="mt-0.5 shrink-0 transition" style={{ color: '#9ca3af' }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-semibold text-[#111827] truncate">{sf.name}</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: '#9ca3af' }}>
+                    {sf.conditions.length} condition{sf.conditions.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteSaved(sf.id); }}
+                  className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition text-[#d1d5db] hover:text-red-500"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            ))
+          )}
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
-        {savedTab === 'active' ? (
-          <div className="p-3 space-y-3">
-            {filters.length > 0 && (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Applied -- all must match (AND)</span>
-                  <button onClick={clearAll} className="text-[10px] text-red-500 hover:text-red-700 font-medium transition">
-                    Clear all
-                  </button>
-                </div>
-                <div className="space-y-1.5">
-                  {filters.map((f, i) => (
-                    <div key={f.id} className="flex items-start gap-1.5">
-                      {i > 0 && (
-                        <span className="text-[9px] font-bold text-slate-400 uppercase mt-2 w-6 text-center shrink-0">AND</span>
-                      )}
-                      {i === 0 && <span className="w-6 shrink-0" />}
-                      <div className="flex-1 flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1.5 min-w-0">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-semibold text-blue-700 truncate">{f.label}</p>
-                          <p className="text-[10px] text-slate-500 truncate">
-                            {operatorLabel(f.operator)}
-                            {!NO_VALUE_OPERATORS.includes(f.operator) && f.value && (
-                              <span className="text-slate-700 font-medium ml-1">"{getDisplayValue(f.field, f.value)}"</span>
-                            )}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => removeActive(f.id)}
-                          className="text-slate-300 hover:text-red-500 transition shrink-0"
-                        >
-                          <X size={11} />
-                        </button>
+      {/* ── Active conditions pane ── */}
+      {savedTab === 'active' && (
+        <>
+          {/* Match All / Any toggle */}
+          <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid #f0f2f7' }}>
+            <span className="text-[11px] text-[#6b7280] font-medium">Match</span>
+            <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #e7eaf1' }}>
+              {(['all', 'any'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setMatchMode(mode)}
+                  className="px-3 py-1 text-[11px] font-semibold capitalize transition"
+                  style={matchMode === mode
+                    ? { background: '#3b6fff', color: '#fff' }
+                    : { background: '#f9fafb', color: '#6b7280' }}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <span className="text-[11px] text-[#6b7280] font-medium">of the following</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {fieldsLoading ? (
+              <div className="flex items-center justify-center py-10 gap-2">
+                <Loader2 size={16} className="animate-spin" style={{ color: '#9ca3af' }} />
+                <span className="text-[12px]" style={{ color: '#9ca3af' }}>Loading fields…</span>
+              </div>
+            ) : (
+              <div className="p-3 space-y-1.5">
+
+                {/* Applied filter rows (read-only summary rows) */}
+                {filters.map((f, i) => (
+                  <div key={f.id} className="flex items-center gap-2">
+                    <span className="text-[9px] font-bold uppercase tracking-wide shrink-0 w-10 text-right"
+                      style={{ color: '#9ca3af' }}>
+                      {i === 0 ? 'WHERE' : 'AND'}
+                    </span>
+                    <div className="flex-1 flex items-center gap-1.5 rounded-xl px-3 py-2 min-w-0"
+                      style={{ background: '#eef3ff', border: '1px solid #c7d9ff' }}>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[11px] font-semibold truncate block" style={{ color: '#3b6fff' }}>{f.label}</span>
+                        <span className="text-[10px] block truncate" style={{ color: '#6b7280' }}>
+                          {operatorLabel(f.operator)}
+                          {!NO_VALUE_OPERATORS.includes(f.operator) && f.value && (
+                            <span className="font-semibold ml-1" style={{ color: '#374151' }}>"{getDisplayValue(f.field, f.value)}"</span>
+                          )}
+                        </span>
                       </div>
+                      <button onClick={() => removeActive(f.id)} className="shrink-0 transition hover:scale-110" style={{ color: '#9ca3af' }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#9ca3af'; }}>
+                        <X size={11} />
+                      </button>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                  </div>
+                ))}
 
-            {fieldsLoading && (
-              <div className="flex items-center justify-center py-8 gap-2">
-                <Loader2 size={16} className="animate-spin text-slate-400" />
-                <span className="text-[12px] text-slate-500">Loading fields...</span>
-              </div>
-            )}
-
-            {!fieldsLoading && drafts.length === 0 && filters.length === 0 && (
-              <div className="text-center py-8">
-                <SlidersHorizontal size={24} className="text-slate-200 mx-auto mb-2" />
-                <p className="text-[12px] text-slate-400">No filters applied</p>
-                <p className="text-[11px] text-slate-300 mt-0.5">Add conditions below to filter records</p>
-              </div>
-            )}
-
-            {drafts.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5">
-                  <div className="h-px flex-1 bg-slate-100" />
-                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">New conditions</span>
-                  <div className="h-px flex-1 bg-slate-100" />
-                </div>
+                {/* Draft condition rows (editable) */}
                 {drafts.map((draft, i) => {
+                  const rowIndex = filters.length + i;
                   const fieldMeta = getFieldMeta(draft.field);
                   const ops = OPERATORS_BY_TYPE[fieldMeta.type] ?? OPERATORS_BY_TYPE.text;
-                  const noVal = NO_VALUE_OPERATORS.includes(draft.operator);
 
                   return (
-                    <div key={draft.id} className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 space-y-2">
-                      {(i > 0 || filters.length > 0) && (
-                        <div className="flex items-center gap-1.5">
-                          <div className="h-px flex-1 bg-slate-200" />
-                          <span className="text-[9px] font-bold text-slate-400 uppercase">AND</span>
-                          <div className="h-px flex-1 bg-slate-200" />
-                        </div>
-                      )}
-                      <div className="flex items-center gap-1.5">
-                        <div className="relative flex-1">
+                    <div key={draft.id} className="flex items-start gap-2">
+                      <span className="text-[9px] font-bold uppercase tracking-wide shrink-0 w-10 text-right pt-2.5"
+                        style={{ color: '#9ca3af' }}>
+                        {rowIndex === 0 ? 'WHERE' : 'AND'}
+                      </span>
+                      <div className="flex-1 space-y-1.5 rounded-xl p-2.5"
+                        style={{ background: '#f9fafb', border: '1px solid #e7eaf1' }}>
+                        {/* Field selector */}
+                        <div className="relative">
                           <select
                             value={draft.field}
                             onChange={(e) => {
-                              const newField = fields.find((f) => f.key === e.target.value);
+                              const newField = fields.find((fd) => fd.key === e.target.value);
                               updateDraft(draft.id, {
                                 field: e.target.value,
                                 operator: newField ? defaultOperator(newField.type) : 'eq',
                                 value: '',
                               });
                             }}
-                            className="w-full text-[11px] border border-slate-200 rounded-md px-2 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none pr-6"
+                            className="w-full text-[11px] border rounded-lg px-2.5 py-2 bg-white focus:outline-none appearance-none pr-6 transition font-medium"
+                            style={{ borderColor: '#e7eaf1', color: '#111827' }}
+                            onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+                            onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
                           >
-                            {fields.map((f) => (
-                              <option key={f.key} value={f.key}>{f.label}</option>
+                            {fields.map((fd) => (
+                              <option key={fd.key} value={fd.key}>{fd.label}</option>
                             ))}
                           </select>
-                          <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#9ca3af' }} />
                         </div>
-                        <button
-                          onClick={() => removeDraft(draft.id)}
-                          className="text-slate-300 hover:text-red-500 transition p-0.5"
-                        >
-                          <X size={12} />
-                        </button>
+                        {/* Operator selector */}
+                        <div className="relative">
+                          <select
+                            value={draft.operator}
+                            onChange={(e) => updateDraft(draft.id, { operator: e.target.value as FilterOperator, value: '' })}
+                            className="w-full text-[11px] border rounded-lg px-2.5 py-2 bg-white focus:outline-none appearance-none pr-6 transition"
+                            style={{ borderColor: '#e7eaf1', color: '#374151' }}
+                            onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+                            onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+                          >
+                            {ops.map((o) => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#9ca3af' }} />
+                        </div>
+                        {/* Value input */}
+                        {renderValueInput(draft)}
                       </div>
-
-                      <div className="relative">
-                        <select
-                          value={draft.operator}
-                          onChange={(e) => updateDraft(draft.id, { operator: e.target.value as FilterOperator, value: '' })}
-                          className="w-full text-[11px] border border-slate-200 rounded-md px-2 py-1.5 text-slate-600 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none pr-6"
-                        >
-                          {ops.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
-                        </select>
-                        <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                      </div>
-
-                      {!noVal && (
-                        <>
-                          {fieldMeta.type === 'lookup' && fieldMeta.lookupTable ? (
-                            <LookupFilterInput
-                              field={fieldMeta}
-                              value={draft.value}
-                              onChange={(v) => updateDraft(draft.id, { value: v })}
-                            />
-                          ) : (fieldMeta.type === 'select' || fieldMeta.type === 'boolean') && fieldMeta.options ? (
-                            <div className="relative">
-                              <select
-                                value={draft.value}
-                                onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
-                                className="w-full text-[11px] border border-slate-200 rounded-md px-2 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none pr-6"
-                              >
-                                <option value="">Select value...</option>
-                                {fieldMeta.options.map((o) => (
-                                  <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                              </select>
-                              <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                            </div>
-                          ) : fieldMeta.type === 'date' ? (
-                            <input
-                              type="date"
-                              value={draft.value}
-                              onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
-                              className="w-full text-[11px] border border-slate-200 rounded-md px-2 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                          ) : fieldMeta.type === 'number' ? (
-                            <input
-                              type="number"
-                              value={draft.value}
-                              onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
-                              placeholder="Enter number..."
-                              className="w-full text-[11px] border border-slate-200 rounded-md px-2 py-1.5 text-slate-700 placeholder-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                          ) : (
-                            <input
-                              type="text"
-                              value={draft.value}
-                              onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') applyDrafts(); }}
-                              placeholder="Enter value..."
-                              className="w-full text-[11px] border border-slate-200 rounded-md px-2 py-1.5 text-slate-700 placeholder-slate-400 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                          )}
-                        </>
-                      )}
+                      <button
+                        onClick={() => removeDraft(draft.id)}
+                        className="mt-2.5 shrink-0 w-5 h-5 flex items-center justify-center rounded-md transition"
+                        style={{ color: '#9ca3af' }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.background = '#fef2f2'; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#9ca3af'; (e.currentTarget as HTMLElement).style.background = ''; }}
+                      >
+                        <X size={11} />
+                      </button>
                     </div>
                   );
                 })}
-              </div>
-            )}
 
-            {!fieldsLoading && fields.length > 0 && (
-              <div className="space-y-2 pt-1">
-                <button
-                  onClick={addDraft}
-                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-medium text-slate-600 bg-slate-50 border border-dashed border-slate-300 rounded-lg hover:bg-slate-100 hover:border-slate-400 transition"
-                >
-                  <Plus size={13} />
-                  Add condition
-                </button>
+                {/* Empty state */}
+                {totalConditions === 0 && (
+                  <div className="text-center py-8">
+                    <SlidersHorizontal size={22} className="mx-auto mb-2" style={{ color: '#e5e7eb' }} />
+                    <p className="text-[12px]" style={{ color: '#9ca3af' }}>No conditions yet</p>
+                    <p className="text-[11px] mt-0.5" style={{ color: '#d1d5db' }}>Add a condition below to filter records</p>
+                  </div>
+                )}
 
-                {drafts.length > 0 && (
+                {/* + Add condition */}
+                {fields.length > 0 && (
                   <button
-                    onClick={applyDrafts}
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition"
+                    onClick={addDraft}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 text-[12px] font-medium transition"
+                    style={{
+                      borderRadius: 10, border: '1.5px dashed #c7d9ff',
+                      color: '#3b6fff', background: '#f5f8ff', marginTop: 4,
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#eef3ff'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = '#f5f8ff'; }}
                   >
-                    Apply filters
+                    <Plus size={13} />
+                    Add condition
                   </button>
                 )}
-              </div>
-            )}
 
-            {userId && filters.length > 0 && (
-              <div className="border-t border-slate-100 pt-3 space-y-2">
-                {showSaveInput ? (
-                  <div className="flex gap-1.5">
-                    <input
-                      type="text"
-                      value={saveName}
-                      onChange={(e) => setSaveName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setShowSaveInput(false); }}
-                      placeholder="Filter set name..."
-                      autoFocus
-                      className="flex-1 text-[11px] border border-slate-200 rounded-md px-2 py-1.5 text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                    <button
-                      onClick={handleSave}
-                      disabled={saving || !saveName.trim()}
-                      className="px-2.5 py-1.5 text-[11px] font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40 transition"
-                    >
-                      {saving ? '...' : 'Save'}
-                    </button>
-                    <button
-                      onClick={() => setShowSaveInput(false)}
-                      className="px-2 py-1.5 text-slate-400 hover:text-slate-600 transition"
-                    >
-                      <X size={12} />
-                    </button>
+                {/* Save filter set */}
+                {userId && filters.length > 0 && (
+                  <div className="pt-1">
+                    {showSaveInput ? (
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={saveName}
+                          onChange={(e) => setSaveName(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setShowSaveInput(false); }}
+                          placeholder="Filter set name..."
+                          autoFocus
+                          className="flex-1 text-[11px] border border-[#e7eaf1] rounded-lg px-2.5 py-2 text-[#374151] placeholder-[#9ca3af] focus:outline-none"
+                          onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+                          onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+                        />
+                        <button
+                          onClick={handleSave}
+                          disabled={saving || !saveName.trim()}
+                          className="px-2.5 py-2 text-[11px] font-semibold text-white rounded-lg disabled:opacity-40 transition"
+                          style={{ background: '#3b6fff' }}
+                        >
+                          {saving ? '…' : 'Save'}
+                        </button>
+                        <button onClick={() => setShowSaveInput(false)} className="px-2 py-2 rounded-lg text-[#9ca3af] hover:text-[#374151] transition">
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowSaveInput(true)}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-[#6b7280] hover:bg-[#f9fafb] transition rounded-lg"
+                        style={{ border: '1px solid #e7eaf1' }}
+                      >
+                        <Save size={11} />
+                        Save this filter set
+                      </button>
+                    )}
                   </div>
-                ) : (
-                  <button
-                    onClick={() => setShowSaveInput(true)}
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition"
-                  >
-                    <Save size={11} />
-                    Save this filter set
-                  </button>
                 )}
               </div>
             )}
           </div>
-        ) : (
-          <div className="p-3 space-y-2">
-            {savedFilters.length === 0 ? (
-              <div className="text-center py-10">
-                <BookmarkCheck size={24} className="text-slate-200 mx-auto mb-2" />
-                <p className="text-[12px] text-slate-400">No saved filters yet</p>
-                <p className="text-[11px] text-slate-300 mt-0.5">Apply filters then save them for quick reuse</p>
-              </div>
-            ) : (
-              savedFilters.map((sf) => (
-                <div
-                  key={sf.id}
-                  className="flex items-start gap-2 p-2.5 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition group cursor-pointer"
-                  onClick={() => loadSaved(sf)}
-                >
-                  <BookmarkCheck size={13} className="text-slate-400 group-hover:text-blue-500 transition mt-0.5 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-semibold text-slate-700 group-hover:text-blue-700 transition truncate">{sf.name}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      {sf.conditions.length} condition{sf.conditions.length !== 1 ? 's' : ''}
-                    </p>
-                    <div className="mt-1 space-y-0.5">
-                      {sf.conditions.slice(0, 3).map((c, i) => (
-                        <p key={c.id} className="text-[10px] text-slate-500 truncate">
-                          {i > 0 && <span className="text-slate-300 font-bold mr-1">AND</span>}
-                          <span className="font-medium">{c.label}</span>
-                          <span className="text-slate-400 mx-1">{operatorLabel(c.operator)}</span>
-                          {!NO_VALUE_OPERATORS.includes(c.operator) && c.value && (
-                            <span className="font-medium">"{c.value}"</span>
-                          )}
-                        </p>
-                      ))}
-                      {sf.conditions.length > 3 && (
-                        <p className="text-[10px] text-slate-400">+{sf.conditions.length - 3} more</p>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDeleteSaved(sf.id); }}
-                    className="text-slate-300 hover:text-red-500 transition shrink-0 p-0.5 opacity-0 group-hover:opacity-100"
-                    title="Delete saved filter"
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                </div>
-              ))
+
+          {/* ── Footer ── */}
+          <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: '1px solid #f0f2f7' }}>
+            {totalConditions > 0 && (
+              <span className="flex-1 text-[11px] font-medium truncate" style={{ color: '#9ca3af' }}>
+                {totalConditions} condition{totalConditions !== 1 ? 's' : ''}
+              </span>
+            )}
+            {(activeCount > 0 || drafts.length > 0) && (
+              <button
+                onClick={() => { clearAll(); setDrafts([]); }}
+                className="px-3 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f9fafb] transition"
+                style={{ color: '#6b7280', border: '1px solid #e7eaf1' }}
+              >
+                Clear all
+              </button>
+            )}
+            {drafts.length > 0 && (
+              <button
+                onClick={applyDrafts}
+                className="px-3 py-1.5 text-[12px] font-semibold text-white rounded-lg transition"
+                style={{ background: 'linear-gradient(135deg,#3b6fff,#5b87ff)', boxShadow: '0 4px 12px rgba(59,111,255,.25)' }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.filter = 'brightness(1.08)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.filter = ''; }}
+              >
+                Apply filters
+              </button>
+            )}
+            {drafts.length === 0 && totalConditions === 0 && (
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f9fafb] transition ml-auto"
+                style={{ color: '#6b7280', border: '1px solid #e7eaf1' }}
+              >
+                Close
+              </button>
             )}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }

@@ -62,6 +62,7 @@ interface ColumnCustomizerProps {
   onChange: (cols: ColumnState[]) => void;
   onClose: () => void;
   onSaveView?: () => void;
+  isRedesign?: boolean;
 }
 
 type AddSubTab = 'current' | 'related';
@@ -77,6 +78,7 @@ export default function ColumnCustomizer({
   onChange,
   onClose,
   onSaveView,
+  isRedesign = false,
 }: ColumnCustomizerProps) {
   const [tab, setTab] = useState<'manage' | 'add'>('manage');
   const [addSubTab, setAddSubTab] = useState<AddSubTab>('current');
@@ -294,11 +296,11 @@ export default function ColumnCustomizer({
   return (
     <div
       ref={panelRef}
-      className="absolute top-full left-0 mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden flex flex-col"
-      style={{ width: 380 }}
+      className="absolute top-full left-0 mt-1 z-50 bg-white shadow-2xl overflow-hidden flex flex-col"
+      style={{ width: 380, border: `1px solid ${isRedesign ? '#e7eaf1' : 'rgb(226,232,240)'}`, borderRadius: isRedesign ? 16 : 12 }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0">
+      <div className={`flex items-center justify-between px-4 py-3 border-b shrink-0 ${isRedesign ? 'bg-[#f7f9fc] border-[#e7eaf1]' : 'bg-slate-50 border-slate-100'}`}>
         <div className="flex items-center gap-2">
           <Columns3 size={14} className="text-slate-500" />
           <span className="text-[13px] font-semibold text-slate-800">Edit Columns</span>
@@ -329,7 +331,9 @@ export default function ColumnCustomizer({
             onClick={() => setTab(t)}
             className={`flex-1 py-2 text-[12px] font-medium transition ${
               tab === t
-                ? 'text-blue-700 border-b-2 border-blue-600 bg-blue-50/50'
+                ? isRedesign
+                  ? 'text-[#3b6fff] border-b-2 border-[#3b6fff] bg-[#f0f4ff]'
+                  : 'text-blue-700 border-b-2 border-blue-600 bg-blue-50/50'
                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
             }`}
           >
@@ -583,9 +587,16 @@ export default function ColumnCustomizer({
               disabled={savingView || !hasUnsavedChanges}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold rounded-md transition shrink-0 ${
                 hasUnsavedChanges
-                  ? 'text-white bg-blue-600 hover:bg-blue-700'
+                  ? 'text-white'
                   : 'text-slate-400 bg-slate-100 cursor-default'
               } disabled:opacity-60`}
+              style={hasUnsavedChanges && isRedesign
+                ? { background: 'linear-gradient(135deg,#3b6fff,#22d3ee)', borderRadius: 8 }
+                : hasUnsavedChanges
+                ? { background: '#2563eb' }
+                : undefined}
+              onMouseEnter={(e) => { if (hasUnsavedChanges && isRedesign) e.currentTarget.style.filter = 'brightness(1.07)'; }}
+              onMouseLeave={(e) => { if (isRedesign) e.currentTarget.style.filter = ''; }}
             >
               {savingView ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
               Save Changes
