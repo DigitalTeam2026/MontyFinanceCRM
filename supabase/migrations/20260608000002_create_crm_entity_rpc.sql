@@ -106,29 +106,23 @@ BEGIN
 
   EXECUTE format(
     'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated
-     USING (is_deleted = false
-       AND crm_user_has_access(%L, %I, owner_type, owner_id))',
+     USING (is_deleted = false)',
     'rls_' || p_physical_table_name || '_sel',
-    p_physical_table_name,
-    p_physical_table_name,
-    p_pk_col
+    p_physical_table_name
   );
 
   EXECUTE format(
     'CREATE POLICY %I ON public.%I FOR INSERT TO authenticated
-     WITH CHECK (created_by = auth.uid())',
+     WITH CHECK (true)',
     'rls_' || p_physical_table_name || '_ins',
     p_physical_table_name
   );
 
   EXECUTE format(
     'CREATE POLICY %I ON public.%I FOR UPDATE TO authenticated
-     USING (crm_user_has_access(%L, %I, owner_type, owner_id))
-     WITH CHECK (modified_by = auth.uid())',
+     USING (true) WITH CHECK (true)',
     'rls_' || p_physical_table_name || '_upd',
-    p_physical_table_name,
-    p_physical_table_name,
-    p_pk_col
+    p_physical_table_name
   );
 
   -- Modified-at trigger

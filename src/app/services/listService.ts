@@ -804,9 +804,10 @@ async function resolveEntityMeta(entity: AppEntity): Promise<{ table: string; pk
 
   const table = data.physical_table_name;
   // Use the DB to find the real PK — avoids wrong guesses when the table name
-  // has a prefix (e.g. crm_source → source_id, not crm_source_id).
+  // has a prefix (e.g. crm_partners → partners_id, not crm_partners_id).
+  // Fallback uses logical_name (not physical table name) because the PK is always logical_name + '_id'.
   const { data: pkCol } = await supabase.rpc('get_table_pk_column', { p_table: table });
-  const pk = (pkCol as string | null) ?? `${table}_id`;
+  const pk = (pkCol as string | null) ?? `${logicalName}_id`;
 
   const meta = { table, pk, entityDefinitionId: data.entity_definition_id as string | undefined };
   dynamicEntityMetaCache.set(entity, meta);

@@ -340,8 +340,8 @@ export async function resolveRelationshipConfig(
       relationship_definition_id,
       display_name,
       relationship_storage_type,
-      source_entity:source_entity_id(logical_name),
-      target_entity:target_entity_id(logical_name),
+      source_entity:source_entity_id(logical_name, physical_table_name),
+      target_entity:target_entity_id(logical_name, physical_table_name),
       lookup_field:source_lookup_field_id(physical_column_name)
     `)
     .eq('relationship_definition_id', relationshipDefinitionId)
@@ -355,6 +355,7 @@ export async function resolveRelationshipConfig(
 
   const sourceEntityLogical = (data.source_entity as { logical_name: string } | null)?.logical_name ?? '';
   const targetEntityLogical = (data.target_entity as { logical_name: string } | null)?.logical_name ?? '';
+  const targetEntityPhysical = (data.target_entity as { physical_table_name: string } | null)?.physical_table_name ?? '';
   const fkColumn = (data.lookup_field as { physical_column_name: string } | null)?.physical_column_name ?? '';
 
   if (!fkColumn || !targetEntityLogical) {
@@ -366,7 +367,8 @@ export async function resolveRelationshipConfig(
     relationshipDefinitionId,
     sourceEntityLogical,
     targetEntityLogical,
-    targetEntityTable: ENTITY_TABLE_MAP[targetEntityLogical] ?? targetEntityLogical,
+    // For custom entities ENTITY_TABLE_MAP has no entry — use physical_table_name from entity_definition
+    targetEntityTable: ENTITY_TABLE_MAP[targetEntityLogical] ?? targetEntityPhysical ?? targetEntityLogical,
     targetEntityPk: ENTITY_PK_MAP[targetEntityLogical] ?? `${targetEntityLogical}_id`,
     fkColumn,
     displayName: (data as { display_name: string }).display_name,

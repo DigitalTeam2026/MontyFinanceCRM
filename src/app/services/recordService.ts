@@ -64,9 +64,10 @@ async function resolveEntityMeta(entity: AppEntity): Promise<{ table: string; pk
 
   const table = data.physical_table_name;
   // Use the DB to find the real PK — avoids wrong guesses when the table name
-  // has a prefix (e.g. crm_source → source_id, not crm_source_id).
+  // has a prefix (e.g. crm_partners → partners_id, not crm_partners_id).
+  // Fallback uses logical_name (not physical table name) because the PK is always logical_name + '_id'.
   const { data: pkCol } = await supabase.rpc('get_table_pk_column', { p_table: table });
-  const pk = (pkCol as string | null) ?? `${table}_id`;
+  const pk = (pkCol as string | null) ?? `${entity}_id`;
   const meta = { table, pk };
   dynamicEntityMetaCache.set(entity, meta);
   return meta;
@@ -384,12 +385,17 @@ export async function saveRecord(
 
   await assertProductAccess(entity, values);
 
+  // Custom entities (not in static ENTITY_TABLE) always have created_by/owner_id/modified_by
+  // columns from _crm_entity_create_table_ddl. Inject unconditionally so RLS passes even when
+  // getTableColumns returns empty (auth.uid() null inside its SECURITY DEFINER context).
+  const isCustomEntity = !(ENTITY_TABLE[entity] && ENTITY_PK[entity]);
+
   if (id) {
     const prevRecord = await fetchRecord(entity, id).catch(() => null);
 
     const updatePayload: Record<string, unknown> = { ...physicalValues };
-    if (tableCols.has('modified_at')) updatePayload.modified_at = new Date().toISOString();
-    if (tableCols.has('modified_by')) updatePayload.modified_by = userId;
+    if (isCustomEntity || tableCols.has('modified_at')) updatePayload.modified_at = new Date().toISOString();
+    if (isCustomEntity || tableCols.has('modified_by')) updatePayload.modified_by = userId;
     const { data, error } = await supabase
       .from(table)
       .update(updatePayload)
@@ -456,10 +462,10 @@ export async function saveRecord(
     return saved;
   } else {
     const insertPayload: Record<string, unknown> = { ...physicalValues };
-    if (tableCols.has('created_by')) insertPayload.created_by = userId;
-    if (tableCols.has('owner_id')) insertPayload.owner_id = userId;
-    if (tableCols.has('owner_type')) insertPayload.owner_type = 'user';
-    if (tableCols.has('state_code') && insertPayload.state_code == null) {
+    if (isCustomEntity || tableCols.has('created_by')) insertPayload.created_by = userId;
+    if (isCustomEntity || tableCols.has('owner_id'))   insertPayload.owner_id = userId;
+    if (isCustomEntity || tableCols.has('owner_type')) insertPayload.owner_type = 'user';
+    if ((isCustomEntity || tableCols.has('state_code')) && insertPayload.state_code == null) {
       const defId = ENTITY_DEFINITION_ID[entity];
       if (defId) {
         const defaults = await getDefaultStatusForState(defId, 1);
