@@ -743,16 +743,19 @@ export default function FormField({
 
       case 'boolean':
         return (
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={Boolean(value)}
-              onChange={(e) => handleChange(e.target.checked)}
-              disabled={readonly}
-              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed"
-            />
-            <span className={`${ds.label} text-slate-600`}>{label}</span>
-          </label>
+          <select
+            value={value === null || value === undefined ? '' : String(Boolean(value))}
+            onChange={(e) => {
+              if (e.target.value === '') handleChange(null);
+              else handleChange(e.target.value === 'true');
+            }}
+            disabled={readonly}
+            className={inputBase}
+          >
+            <option value="">-- Select --</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
         );
 
       case 'date':
@@ -1038,9 +1041,13 @@ export default function FormField({
   if (fieldType === 'boolean') {
     return (
       <div className={`flex flex-col ${ds.fieldGap} ${control.column_span === 2 ? 'col-span-2' : ''}`}>
-        <div className="flex items-center gap-2">
-          {renderInput()}
+        <label className={`flex items-center gap-1.5 ${ds.label} font-medium`}>
+          <span className="text-slate-500">{label}</span>
+          {required && <span className="text-red-500">*</span>}
           {isPermissionLocked && <Lock size={10} className="text-slate-300" title="Read-only (restricted by your security role)" />}
+        </label>
+        <div className="relative">
+          {renderInput()}
         </div>
         {activeError && !isPermissionLocked && (
           <p className="flex items-center gap-1 text-[11px] text-red-500">
