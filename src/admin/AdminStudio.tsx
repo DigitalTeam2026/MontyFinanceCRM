@@ -29,6 +29,7 @@ import DigitalRulesPage from './digitalrules/DigitalRulesPage';
 import RelationshipListPage from './relationships/RelationshipListPage';
 import RelationshipEditorPage from './relationships/RelationshipEditorPage';
 import DatabaseValidationPage from './validation/DatabaseValidationPage';
+import ApiIntegrationsPage from './integrations/ApiIntegrationsPage';
 import type { EntityDefinition } from '../types/entity';
 import type { RelationshipDefinitionWithEntities } from '../types/relationship';
 
@@ -261,6 +262,9 @@ export default function AdminStudio() {
     if (activeModule === 'dbvalidation') {
       return { title: 'Database Validation', subtitle: 'Scan all entity field definitions and verify physical database columns exist and are correctly mapped' };
     }
+    if (activeModule === 'integrations') {
+      return { title: 'API Integrations', subtitle: 'Configure HTTP integrations triggered by CRM entity events — webhooks, automation tools, and external APIs' };
+    }
     return { title: 'Admin Studio' };
   };
 
@@ -384,6 +388,7 @@ export default function AdminStudio() {
     if (activeModule === 'merges') return <MergeCenterPage />;
     if (activeModule === 'columnsecurity') return <ColumnSecurityPage />;
     if (activeModule === 'dbvalidation') return <DatabaseValidationPage />;
+    if (activeModule === 'integrations') return <ApiIntegrationsPage />;
 
     return (
       <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
