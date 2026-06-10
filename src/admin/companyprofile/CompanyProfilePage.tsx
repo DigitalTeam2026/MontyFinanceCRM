@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Building2, Save, Upload, Loader2, X } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
+import SearchableSelect from '../../app/components/SearchableSelect';
 import {
   fetchCompanyProfile,
   saveCompanyProfile,
@@ -178,21 +179,21 @@ export default function CompanyProfilePage() {
             {/* Details grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-5">
               <Field label="Industry" hint="From the shared Industry list.">
-                <Select value={form.industry_id ?? ''} onChange={(v) => set('industry_id', v || null)}>
-                  <option value="">— Select —</option>
-                  {industries.map((i) => (
-                    <option key={i.id} value={i.id}>{i.name}</option>
-                  ))}
-                </Select>
+                <SearchableSelect
+                  value={form.industry_id ?? ''}
+                  onChange={(v) => set('industry_id', v || null)}
+                  options={industries.map((i) => ({ value: i.id, label: i.name }))}
+                  placeholder="Select industry…"
+                />
               </Field>
 
               <Field label="Country" hint="From the shared Country list.">
-                <Select value={form.country_id ?? ''} onChange={(v) => set('country_id', v || null)}>
-                  <option value="">— Select —</option>
-                  {countries.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </Select>
+                <SearchableSelect
+                  value={form.country_id ?? ''}
+                  onChange={(v) => set('country_id', v || null)}
+                  options={countries.map((c) => ({ value: c.id, label: c.name }))}
+                  placeholder="Select country…"
+                />
               </Field>
 
               <Field label="Website" hint="">
@@ -224,12 +225,12 @@ export default function CompanyProfilePage() {
               </Field>
 
               <Field label="Company size" hint="">
-                <Select value={form.company_size} onChange={(v) => set('company_size', v)}>
-                  <option value="">— Select —</option>
-                  {COMPANY_SIZE_OPTIONS.map((s) => (
-                    <option key={s} value={s}>{s} employees</option>
-                  ))}
-                </Select>
+                <SearchableSelect
+                  value={form.company_size}
+                  onChange={(v) => set('company_size', v)}
+                  options={COMPANY_SIZE_OPTIONS.map((s) => ({ value: s, label: `${s} employees` }))}
+                  placeholder="Select size…"
+                />
               </Field>
 
               <Field label="Primary contact" hint="">
@@ -251,11 +252,12 @@ export default function CompanyProfilePage() {
               </Field>
 
               <Field label="Status" hint="">
-                <Select value={form.status} onChange={(v) => set('status', v)}>
-                  {STATUS_OPTIONS.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </Select>
+                <SearchableSelect
+                  value={form.status}
+                  onChange={(v) => set('status', v || 'Active')}
+                  options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
+                  placeholder="Select status…"
+                />
               </Field>
             </div>
 
@@ -348,25 +350,5 @@ function Field({ label, hint, children }: { label: string; hint: string; childre
       {children}
       {hint && <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">{hint}</p>}
     </div>
-  );
-}
-
-function Select({
-  value,
-  onChange,
-  children,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-    >
-      {children}
-    </select>
   );
 }
