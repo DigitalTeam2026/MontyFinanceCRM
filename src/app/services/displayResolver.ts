@@ -277,6 +277,10 @@ export async function resolveDisplayValue(
       const num = Number(rawValue);
       return isNaN(num) ? str : num.toLocaleString();
     }
+    case 'whole_number': {
+      const num = Number(rawValue);
+      return isNaN(num) ? str : `${num.toLocaleString()}%`;
+    }
     default:
       if (isUUID(rawValue)) return str;
       return str;

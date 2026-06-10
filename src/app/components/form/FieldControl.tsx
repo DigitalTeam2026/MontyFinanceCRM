@@ -67,24 +67,23 @@ export default function FieldControl({
     }
 
     if (typeName === 'boolean') {
+      const boolStr = value === true || value === 'true' ? 'true'
+        : value === false || value === 'false' ? 'false'
+        : '';
       return (
-        <div className="flex items-center gap-2 h-8">
-          <button
-            type="button"
-            disabled={isReadonly}
-            onClick={() => !isReadonly && onChange(!value)}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
-              value ? 'bg-blue-600' : 'bg-slate-200'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            <span
-              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow ${
-                value ? 'translate-x-4' : 'translate-x-1'
-              }`}
-            />
-          </button>
-          <span className="text-[12px] text-slate-600">{value ? 'Yes' : 'No'}</span>
-        </div>
+        <select
+          value={boolStr}
+          onChange={(e) => {
+            if (e.target.value === '') onChange(null);
+            else onChange(e.target.value === 'true');
+          }}
+          disabled={isReadonly}
+          className={INPUT_BASE}
+        >
+          <option value="">-- Select --</option>
+          <option value="true">Yes</option>
+          <option value="false">No</option>
+        </select>
       );
     }
 
@@ -125,6 +124,23 @@ export default function FieldControl({
           className={INPUT_BASE}
           placeholder={field.placeholder ?? ''}
         />
+      );
+    }
+
+    if (typeName === 'whole_number') {
+      return (
+        <div className="relative">
+          <input
+            type="number"
+            step="any"
+            value={strVal}
+            onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+            disabled={isReadonly}
+            className={`${INPUT_BASE} pr-7`}
+            placeholder={field.placeholder ?? '0'}
+          />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-400 pointer-events-none select-none">%</span>
+        </div>
       );
     }
 

@@ -9,6 +9,7 @@ import type { EntityDefinition } from '../../types/entity';
 import type { BusinessRule } from '../../types/businessRule';
 import {
   saveFormLayout,
+  renameForm,
   publishForm,
   unpublishForm,
   fetchScripts,
@@ -60,6 +61,8 @@ export default function FormDesignerPage({
   const [saving, setSaving] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameName, setRenameName] = useState(form.name);
+  const [renameLoading, setRenameLoading] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [activeTabId, setActiveTabId] = useState('');
   const [activeSectionId, setActiveSectionId] = useState('');
   const [showNewColumn, setShowNewColumn] = useState(false);
@@ -192,6 +195,45 @@ export default function FormDesignerPage({
       showSuccess(`Rule "${rule.name}" created — configure it now`);
     } catch (e) {
       showError(e instanceof Error ? e.message : 'Failed to create rule');
+    }
+  };
+
+  const handleRename = async () => {
+    const trimmedName = renameName.trim();
+    if (!trimmedName) {
+      setRenameError('Form name cannot be empty');
+      return;
+    }
+    if (trimmedName === form.name) {
+      setRenaming(false);
+      setRenameError(null);
+      return;
+    }
+    setRenameLoading(true);
+    setRenameError(null);
+    try {
+      const { data: existing } = await supabase
+        .from('form_definition')
+        .select('form_id')
+        .eq('entity_definition_id', entityId)
+        .ilike('name', trimmedName)
+        .is('deleted_at', null)
+        .neq('form_id', form.form_id)
+        .maybeSingle();
+      if (existing) {
+        setRenameError(`A form named "${trimmedName}" already exists for this entity`);
+        return;
+      }
+      const updated = await renameForm(form.form_id, trimmedName);
+      setForm(updated);
+      onFormUpdate(updated);
+      showSuccess(`Form renamed to "${trimmedName}"`);
+      setRenaming(false);
+      setRenameError(null);
+    } catch (e) {
+      setRenameError(e instanceof Error ? e.message : 'Failed to rename form');
+    } finally {
+      setRenameLoading(false);
     }
   };
 
@@ -330,7 +372,7 @@ export default function FormDesignerPage({
         onSave={handleSave}
         onPublish={handlePublish}
         onBack={onBack}
-        onRenameClick={() => setRenaming(true)}
+        onRenameClick={() => { setRenameName(form.name); setRenameError(null); setRenaming(true); }}
       />
 
       {formUsageInfo.length > 0 && (
@@ -411,26 +453,40 @@ export default function FormDesignerPage({
       {/* Rename modal */}
       {renaming && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setRenaming(false)} />
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => { if (!renameLoading) { setRenaming(false); setRenameError(null); } }}
+          />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
             <h3 className="text-sm font-semibold text-slate-800 mb-4">Rename Form</h3>
             <input
               type="text"
               value={renameName}
-              onChange={(e) => setRenameName(e.target.value)}
-              className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+              onChange={(e) => { setRenameName(e.target.value); setRenameError(null); }}
+              className={`w-full px-3 py-2.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-1 ${renameError ? 'border-red-400' : 'border-slate-200'}`}
               autoFocus
-              onKeyDown={(e) => e.key === 'Enter' && setRenaming(false)}
+              disabled={renameLoading}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); }}
             />
+            {renameError && (
+              <p className="text-xs text-red-600 mb-3">{renameError}</p>
+            )}
+            {!renameError && <div className="mb-3" />}
             <div className="flex gap-3">
-              <button onClick={() => setRenaming(false)} className="flex-1 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+              <button
+                onClick={() => { if (!renameLoading) { setRenaming(false); setRenameError(null); } }}
+                disabled={renameLoading}
+                className="flex-1 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
                 Cancel
               </button>
               <button
-                onClick={() => { store.mark(); setRenaming(false); }}
-                className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                onClick={handleRename}
+                disabled={renameLoading}
+                className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2"
               >
-                OK
+                {renameLoading && <RefreshCw size={12} className="animate-spin" />}
+                {renameLoading ? 'Saving…' : 'OK'}
               </button>
             </div>
           </div>

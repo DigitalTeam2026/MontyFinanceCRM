@@ -91,6 +91,7 @@ export const OPERATORS_BY_TYPE: Record<string, FilterOperator[]> = {
   text: ['eq', 'neq', 'contains', 'not_contains', 'begins_with', 'ends_with', 'is_null', 'is_not_null'],
   textarea: ['contains', 'not_contains', 'is_null', 'is_not_null'],
   number: ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'is_null', 'is_not_null'],
+  whole_number: ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'is_null', 'is_not_null'],
   decimal: ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'is_null', 'is_not_null'],
   currency: ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'is_null', 'is_not_null'],
   date: ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'between', 'is_null', 'is_not_null'],

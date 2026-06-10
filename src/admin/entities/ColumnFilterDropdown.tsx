@@ -84,7 +84,7 @@ function getFieldCategory(field: FieldDefinition): FieldCategory {
   if (t === 'boolean') return 'boolean';
   if (t === 'lookup') return 'lookup';
   if (t === 'datetime') return 'date';
-  if (['number', 'integer', 'decimal', 'currency'].includes(t)) return 'number';
+  if (['number', 'integer', 'decimal', 'currency', 'whole_number'].includes(t)) return 'number';
   return 'text';
 }
 
@@ -281,21 +281,21 @@ export default function ColumnFilterDropdown({
 }
 
 function BooleanInput({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
+  const boolStr = value === true || value === 'true' ? 'true'
+    : value === false || value === 'false' ? 'false'
+    : '';
   return (
-    <div className="flex gap-2">
-      {[{ v: 'true', label: 'Yes' }, { v: 'false', label: 'No' }].map((opt) => (
-        <button
-          key={opt.v}
-          onClick={() => onChange(opt.v)}
-          className={`flex-1 px-3 py-1.5 text-[12px] font-medium rounded border transition-colors ${
-            String(value) === opt.v
-              ? 'bg-[#e5efff] border-[var(--navy-accent)] text-[var(--navy-accent)]'
-              : 'border-[var(--border)] text-[var(--ink-600)] hover:bg-[var(--ink-50)]'
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
+    <div className="relative">
+      <select
+        value={boolStr}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-2.5 py-1.5 text-[12px] border border-[var(--border)] rounded bg-white pr-7 appearance-none focus:outline-none focus:ring-1 focus:ring-[var(--navy-accent)] text-[var(--ink-700)]"
+      >
+        <option value="">Any</option>
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+      <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ink-300)] pointer-events-none" />
     </div>
   );
 }

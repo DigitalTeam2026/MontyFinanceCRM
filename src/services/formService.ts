@@ -115,6 +115,18 @@ export async function saveFormLayout(
   return saved;
 }
 
+export async function renameForm(formId: string, newName: string): Promise<FormDefinition> {
+  const { data, error } = await supabase
+    .from('form_definition')
+    .update({ name: newName, modified_at: new Date().toISOString() })
+    .eq('form_id', formId)
+    .select()
+    .single();
+  if (error) throw error;
+  if (!data) throw new Error('Rename returned no data — check RLS permissions');
+  return data as FormDefinition;
+}
+
 export async function publishForm(formId: string): Promise<FormDefinition> {
   const { data, error } = await supabase
     .from('form_definition')

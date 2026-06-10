@@ -138,26 +138,23 @@ function StagePopup({
     } disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed disabled:hover:border-slate-200`;
 
     if (typeName === 'boolean') {
+      const boolStr = (val === true || strVal === 'true') ? 'true'
+        : (val === false || strVal === 'false') ? 'false'
+        : '';
       return (
-        <div className="flex items-center gap-3 py-0.5">
-          <button
-            type="button"
-            disabled={fieldReadonly}
-            onClick={() => {
-              const newVal = val === true || strVal === 'true' ? 'false' : 'true';
-              onChange(sf.field_logical_name, newVal);
-              setValidationErrors((prev) => { const s = new Set(prev); s.delete(sf.field_logical_name); return s; });
-            }}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-              (val === true || strVal === 'true') ? 'bg-blue-600' : 'bg-slate-300'
-            } disabled:opacity-50`}
-          >
-            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-              (val === true || strVal === 'true') ? 'translate-x-4' : 'translate-x-1'
-            }`} />
-          </button>
-          <span className="text-[12px] text-slate-700 font-medium">{(val === true || strVal === 'true') ? 'Yes' : 'No'}</span>
-        </div>
+        <select
+          value={boolStr}
+          disabled={fieldReadonly}
+          onChange={(e) => {
+            onChange(sf.field_logical_name, e.target.value);
+            setValidationErrors((prev) => { const s = new Set(prev); s.delete(sf.field_logical_name); return s; });
+          }}
+          className={inputBase}
+        >
+          <option value="">-- Select --</option>
+          <option value="true">Yes</option>
+          <option value="false">No</option>
+        </select>
       );
     }
 

@@ -60,6 +60,7 @@ export interface FieldDefinition {
   } | null;
 }
 
+// ── Legacy numeric token formula (still read for backward compatibility) ───────
 export type CalcToken =
   | { type: 'field'; fieldName: string; displayName: string }
   | { type: 'operator'; op: '+' | '-' | '*' | '/' }
@@ -67,6 +68,59 @@ export type CalcToken =
 
 export interface CalcFormula {
   tokens: CalcToken[];
+}
+
+// ── Dynamics-365-style IF / THEN / ELSE calculation definition (v2) ────────────
+
+/** Data type the calculated column produces — drives the physical column type. */
+export type CalcResultType = 'text' | 'number' | 'currency' | 'date' | 'boolean' | 'choice';
+
+export type CalcOperator =
+  | 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte'
+  | 'contains' | 'starts_with' | 'ends_with'
+  | 'is_empty' | 'is_not_empty';
+
+export type CalcArithOp = '+' | '-' | '*' | '/';
+
+/** One condition row: <field> <operator> <value>. */
+export interface CalcConditionRow {
+  id: string;
+  field: string;        // source field logical name (form values are keyed by logical name)
+  column: string;       // source field physical column (DB rows are keyed by physical name)
+  fieldType: string;    // 'text' | 'number' | 'currency' | 'date' | 'boolean' | 'choice' | …
+  displayName: string;
+  operator: CalcOperator;
+  value: string;        // raw string; coerced by fieldType at evaluation (unused for is_empty/is_not_empty)
+}
+
+export interface CalcConditionGroup {
+  logic: 'and' | 'or';
+  rows: CalcConditionRow[];
+}
+
+/** A single operand in a result expression — either a field or a literal value. */
+export type CalcOperand =
+  | { kind: 'field'; field: string; column: string; fieldType: string; displayName: string }
+  | { kind: 'value'; value: string };
+
+/** Result expression: operands folded left-to-right with arithmetic operators (numeric results only). */
+export interface CalcExpression {
+  operands: CalcOperand[];     // length >= 1
+  operators: CalcArithOp[];    // length = operands.length - 1 (meaningful only for numeric/currency)
+}
+
+/** One IF/ELSE-IF/ELSE branch. The first branch whose condition matches wins. */
+export interface CalcBranch {
+  id: string;
+  isDefault: boolean;            // true => ELSE branch (condition ignored)
+  condition: CalcConditionGroup;
+  result: CalcExpression;
+}
+
+export interface CalculationConfig {
+  version: 2;
+  resultType: CalcResultType;
+  branches: CalcBranch[];
 }
 
 export type FieldFormData = {

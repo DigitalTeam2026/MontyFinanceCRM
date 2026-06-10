@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Save, AlertCircle, Plus, Trash2, GripVertical, Shield, Lock, MoreHorizontal, ArrowUp, ArrowDown, Palette, Pencil, Star, Calculator } from 'lucide-react';
 import SearchableSelect from '../../app/components/SearchableSelect';
-import type { FieldDefinition, FieldFormData, FieldType, ChoiceOption, CalcFormula } from '../../types/field';
+import type { FieldDefinition, FieldFormData, FieldType, ChoiceOption, CalcFormula, CalculationConfig } from '../../types/field';
 import type { EntityDefinition } from '../../types/entity';
-import CalcBuilderModal, { buildFormulaPreview } from './CalcBuilderModal';
+import CalcBuilderModal, { summarizeCalculation } from './CalcBuilderModal';
 import { useToast } from '../../app/context/ToastContext';
 import { supabase } from '../../lib/supabase';
 
@@ -771,8 +771,9 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
   const selectedType = fieldTypes.find((t) => t.field_type_id === form.field_type_id);
   const typeName = selectedType?.name ?? '';
 
-  const initialFormula = (field?.config_json as { formula?: CalcFormula } | null)?.formula ?? null;
-  const [calcFormula, setCalcFormula] = useState<CalcFormula | null>(initialFormula);
+  const initialCalc = (field?.config_json as { calculation?: CalculationConfig } | null)?.calculation ?? null;
+  const initialLegacyFormula = (field?.config_json as { formula?: CalcFormula } | null)?.formula ?? null;
+  const [calcConfig, setCalcConfig] = useState<CalculationConfig | null>(initialCalc);
   const [showCalcBuilder, setShowCalcBuilder] = useState(false);
 
   useEffect(() => {
@@ -796,13 +797,13 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
     const newTypeName = fieldTypes.find(t => t.field_type_id === typeId)?.name ?? '';
     if (newTypeName !== 'calculated') {
       set('config_json', null);
-      setCalcFormula(null);
+      setCalcConfig(null);
     }
   };
 
-  const handleFormulaSave = (f: CalcFormula) => {
-    setCalcFormula(f);
-    set('config_json', { formula: f });
+  const handleCalcSave = (c: CalculationConfig) => {
+    setCalcConfig(c);
+    set('config_json', { calculation: c });
     setShowCalcBuilder(false);
   };
 
@@ -944,12 +945,14 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
               )}
 
               {typeName === 'calculated' && (
-                <F label="Calculation Formula">
-                  {calcFormula && calcFormula.tokens.length > 0 ? (
-                    <div className="flex items-center gap-2 px-3 py-2.5 bg-[#f0f4ff] border border-[#c7d9ff] rounded-lg">
-                      <Calculator size={13} className="text-[#3b6fff] shrink-0" />
-                      <span className="text-[12px] text-[#1e3a8a] font-medium flex-1 truncate">
-                        {buildFormulaPreview(calcFormula)}
+                <F label="Calculation">
+                  {calcConfig || initialLegacyFormula ? (
+                    <div className="flex items-start gap-2 px-3 py-2.5 bg-[#f0f4ff] border border-[#c7d9ff] rounded-lg">
+                      <Calculator size={13} className="text-[#3b6fff] shrink-0 mt-0.5" />
+                      <span className="text-[12px] text-[#1e3a8a] font-medium flex-1 leading-relaxed">
+                        {calcConfig
+                          ? summarizeCalculation(calcConfig)
+                          : 'Legacy formula — open the designer to review and upgrade.'}
                       </span>
                       <button
                         type="button"
@@ -969,6 +972,9 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
                       Configure Calculation
                     </button>
                   )}
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                    Calculated columns are read-only and recalculated automatically whenever a referenced field changes.
+                  </p>
                 </F>
               )}
 
@@ -1089,9 +1095,10 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
       <CalcBuilderModal
         entityId={entityId}
         currentFieldLogicalName={field?.logical_name}
-        formula={calcFormula}
+        calculation={calcConfig}
+        legacyFormula={initialLegacyFormula}
         fieldDisplayName={form.display_name}
-        onSave={handleFormulaSave}
+        onSave={handleCalcSave}
         onClose={() => setShowCalcBuilder(false)}
       />
     )}

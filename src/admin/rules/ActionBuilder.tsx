@@ -961,15 +961,17 @@ function FieldValueInput({
 
   if (fieldType === 'boolean') {
     return (
-      <ToggleButtons
-        options={[
-          { value: 'true',  label: 'Yes' },
-          { value: 'false', label: 'No' },
-        ]}
-        value={value || 'true'}
-        onChange={onChange}
-        activeClass="bg-blue-600 text-white"
-      />
+      <div className="relative w-full">
+        <select
+          value={value === 'false' ? 'false' : 'true'}
+          onChange={(e) => onChange(e.target.value)}
+          className={selectCls}
+        >
+          <option value="true">Yes</option>
+          <option value="false">No</option>
+        </select>
+        <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+      </div>
     );
   }
 

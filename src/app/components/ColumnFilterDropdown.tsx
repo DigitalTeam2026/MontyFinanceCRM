@@ -523,21 +523,18 @@ export default function ColumnFilterDropdown({
 
           {/* ── BOOLEAN ── */}
           {colType === 'boolean' && (
-            <div className="flex gap-2">
-              {(['true', 'false'] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setBoolValue(boolValue === v ? '' : v)}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold rounded-lg transition"
-                  style={boolValue === v
-                    ? { background: '#eef3ff', color: '#3b6fff', border: '1px solid #c7d9ff' }
-                    : { background: '#f9fafb', color: '#374151', border: '1px solid #e7eaf1' }}
-                >
-                  {boolValue === v && <Check size={12} />}
-                  {v === 'true' ? 'Yes' : 'No'}
-                </button>
-              ))}
-            </div>
+            <select
+              value={boolValue}
+              onChange={(e) => setBoolValue(e.target.value as 'true' | 'false' | '')}
+              className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[#374151] focus:outline-none transition"
+              style={{ borderColor: '#e7eaf1' }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+            >
+              <option value="">Any</option>
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
           )}
 
           {/* ── CHOICE / STATUS ── */}

@@ -1,5 +1,30 @@
 import { supabase } from '../lib/supabase';
-import type { FieldDefinition, FieldFormData, FieldType, ChoiceOption } from '../types/field';
+import type {
+  FieldDefinition, FieldFormData, FieldType, ChoiceOption, CalculationConfig, CalcResultType,
+} from '../types/field';
+
+// A calculated column's physical type is driven by the chosen result type.
+const CALC_RESULT_SQL_TYPE: Record<CalcResultType, string> = {
+  number: 'decimal',
+  currency: 'currency',
+  date: 'date',
+  boolean: 'boolean',
+  text: 'text',
+  choice: 'text',
+};
+
+/** SQL field-type name to provision the physical column with for a given field. */
+function resolveColumnTypeName(form: FieldFormData, fieldTypeName: string): string {
+  if (fieldTypeName !== 'calculated') return fieldTypeName;
+  const calc = (form.config_json as { calculation?: CalculationConfig } | null)?.calculation;
+  const rt = calc?.resultType ?? 'text';
+  return CALC_RESULT_SQL_TYPE[rt] ?? 'text';
+}
+
+/** Ensure the calculation trigger is attached to the entity's table (best-effort). */
+async function ensureCalcTrigger(table: string): Promise<void> {
+  try { await supabase.rpc('ensure_calc_trigger', { p_table: table }); } catch { /* non-fatal */ }
+}
 
 export async function fetchFieldTypes(): Promise<FieldType[]> {
   const { data, error } = await supabase
@@ -63,6 +88,9 @@ export async function createField(
   // Get the field type name for SQL type mapping
   const fieldType = fieldTypes.find((t) => t.field_type_id === payload.field_type_id);
   const fieldTypeName = fieldType?.name ?? 'text';
+  // For calculated fields the physical column type follows the chosen result type.
+  const columnTypeName = resolveColumnTypeName(form, fieldTypeName);
+  const isCalculated = fieldTypeName === 'calculated';
 
   // Check if a soft-deleted field with the same logical_name exists for this entity
   const { data: existing } = await supabase
@@ -75,7 +103,7 @@ export async function createField(
 
   if (existing) {
     // Ensure the physical column exists (may have been dropped or field was JSONB previously)
-    await addPhysicalColumn(table, physicalColumn, fieldTypeName);
+    await addPhysicalColumn(table, physicalColumn, columnTypeName);
 
     const { data, error } = await supabase
       .from('field_definition')
@@ -91,11 +119,12 @@ export async function createField(
       .select('*, field_type(*)')
       .single();
     if (error) throw error;
+    if (isCalculated) await ensureCalcTrigger(table);
     return data as FieldDefinition;
   }
 
   // Create the physical column first — metadata only becomes active after column exists
-  await addPhysicalColumn(table, physicalColumn, fieldTypeName);
+  await addPhysicalColumn(table, physicalColumn, columnTypeName);
 
   const { data, error } = await supabase
     .from('field_definition')
@@ -107,6 +136,7 @@ export async function createField(
     .select('*, field_type(*)')
     .single();
   if (error) throw error;
+  if (isCalculated) await ensureCalcTrigger(table);
   return data as FieldDefinition;
 }
 
@@ -123,7 +153,13 @@ export async function updateField(
     .select('*, field_type(*)')
     .single();
   if (error) throw error;
-  return data as FieldDefinition;
+  const saved = data as FieldDefinition;
+  // Make sure the calculation trigger is attached to this entity's table.
+  if (saved.field_type?.name === 'calculated') {
+    const table = await resolveEntityTable(saved.entity_definition_id);
+    if (table) await ensureCalcTrigger(table);
+  }
+  return saved;
 }
 
 export async function softDeleteField(id: string): Promise<void> {
