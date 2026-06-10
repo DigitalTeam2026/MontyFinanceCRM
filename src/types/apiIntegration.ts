@@ -2,14 +2,33 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 export type TriggerEvent = 'created' | 'updated' | 'deleted' | 'manual';
 export type AuthType = 'none' | 'api_key' | 'bearer' | 'basic' | 'custom_header';
 
-/** One field mapped into the JSON request body. */
+/** Whether the integration sends data out of the CRM or receives data into it. */
+export type IntegrationDirection = 'outgoing' | 'incoming';
+
+/** What an incoming call does to the resolved CRM record. */
+export type InboundOperation = 'create' | 'update' | 'upsert';
+
+/** How a lookup value is sent out (outgoing) — the "Value to Send" option. */
+export type LookupValueType = 'id' | 'primary_name' | 'field';
+
+/** How an incoming lookup value is matched back to a related record. */
+export type LookupMatchBy = 'id' | 'primary_name' | 'field';
+
+// ── Outgoing request-body mapping ───────────────────────────────────────────────
+
+/** One node mapped into the outgoing JSON request body. */
 export interface BodyFieldMapping {
   id: string;                              // client-side UUID for React key
 
   /** Dot-notation path in the output JSON, e.g. "customer.email" */
   json_key: string;
 
-  value_type: 'field' | 'static';
+  /**
+   * - field  : value pulled from a CRM field on the record
+   * - static : a fixed string value
+   * - raw    : a literal JSON value (object/array/number/etc.) typed by the admin
+   */
+  value_type: 'field' | 'static' | 'raw';
 
   // ── CRM field ──────────────────────────────────────────────────────────────
   field_definition_id?: string;
@@ -17,9 +36,9 @@ export interface BodyFieldMapping {
   field_display_name?: string;
   field_type_name?: string;                // 'text', 'lookup', 'email', …
 
-  // ── Lookup resolution ──────────────────────────────────────────────────────
+  // ── Lookup resolution (Value to Send) ───────────────────────────────────────
   is_lookup?: boolean;
-  lookup_value_type?: 'id' | 'primary_name' | 'field';
+  lookup_value_type?: LookupValueType;
   lookup_field_physical_column?: string;   // which column in the related entity
   lookup_field_display_name?: string;
   lookup_entity_id?: string;
@@ -27,8 +46,8 @@ export interface BodyFieldMapping {
   lookup_entity_pk?: string;               // e.g. "account_id"
   lookup_entity_primary_field?: string;    // e.g. "account_name"
 
-  // ── Static value ──────────────────────────────────────────────────────────
-  static_value?: string;
+  // ── Static / raw value ──────────────────────────────────────────────────────
+  static_value?: string;                   // static text, or raw JSON when value_type === 'raw'
 
   is_required?: boolean;
 }
@@ -38,13 +57,52 @@ export interface BodyConfig {
   exclude_null_fields: boolean;
 }
 
+// ── Incoming property → CRM field mapping ───────────────────────────────────────
+
+export interface InboundFieldMapping {
+  id: string;                              // client-side UUID for React key
+
+  /** Dot-notation path read from the incoming JSON body, e.g. "customer.email" */
+  json_path: string;
+
+  // Target CRM field
+  field_definition_id?: string;
+  target_physical_column?: string;
+  target_display_name?: string;
+  target_field_type?: string;
+
+  is_required?: boolean;
+
+  // Lookup resolution — how to turn an incoming value into a related record FK
+  is_lookup?: boolean;
+  lookup_match_by?: LookupMatchBy;
+  lookup_match_field_physical_column?: string; // when lookup_match_by === 'field'
+  lookup_match_field_display_name?: string;
+  lookup_entity_id?: string;
+  lookup_entity_physical_table?: string;
+  lookup_entity_pk?: string;
+  lookup_entity_primary_field?: string;
+}
+
+export interface InboundConfig {
+  fields: InboundFieldMapping[];
+  /** Physical column used to locate an existing record for update / upsert. */
+  match_field: string | null;
+}
+
+// ── Main entity ─────────────────────────────────────────────────────────────────
+
 export interface ApiIntegration {
   api_integration_id: string;
   name: string;
   description: string | null;
+  direction: IntegrationDirection;
+  operation: InboundOperation;
   entity_id: string;
   http_method: HttpMethod;
   endpoint_url: string;
+  /** Backend-generated unique key for the incoming endpoint (not a secret). */
+  endpoint_key: string;
   is_active: boolean;
   trigger_event: TriggerEvent;
   auth_type: AuthType;
@@ -53,6 +111,8 @@ export interface ApiIntegration {
   auth_key_name: string | null;
   auth_username: string | null;
   body_config: BodyConfig;
+  inbound_config: InboundConfig;
+  last_request_at: string | null;
   created_at: string;
   modified_at: string;
   created_by: string | null;
@@ -82,6 +142,7 @@ export interface ApiIntegrationLog {
   triggered_by: string | null;
   triggered_at: string;
   trigger_event: string | null;
+  direction?: string | null;
   request_url: string | null;
   request_method: string | null;
   request_headers_json: Record<string, string> | null;
@@ -106,6 +167,8 @@ export interface ApiIntegrationHeaderForm {
 export interface ApiIntegrationFormData {
   name: string;
   description: string;
+  direction: IntegrationDirection;
+  operation: InboundOperation;
   entity_id: string;
   http_method: HttpMethod;
   endpoint_url: string;
@@ -117,6 +180,7 @@ export interface ApiIntegrationFormData {
   auth_key_name: string;
   auth_username: string;
   body_config: BodyConfig;
+  inbound_config: InboundConfig;
   headers: ApiIntegrationHeaderForm[];
 }
 
@@ -128,6 +192,7 @@ export interface EntityFieldInfo {
   display_name: string;
   physical_column_name: string;
   is_required: boolean;
+  is_system?: boolean;
   field_type: { name: string } | null;
   lookup_entity: {
     entity_definition_id: string;

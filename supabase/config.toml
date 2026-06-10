@@ -1,0 +1,12 @@
+project_id = "ruzfzebjvikfslbyjsrm"
+
+# The incoming-API endpoint is called by EXTERNAL systems that do not carry a
+# Supabase JWT. Authentication for these calls is enforced inside the function
+# itself (endpoint key in the URL + the integration's configured auth/headers),
+# so platform-level JWT verification must be disabled for this function only.
+[functions.api-integration-inbound]
+verify_jwt = false
+
+# Outgoing executor is only ever invoked by authenticated admins from the app.
+[functions.execute-api-integration]
+verify_jwt = true

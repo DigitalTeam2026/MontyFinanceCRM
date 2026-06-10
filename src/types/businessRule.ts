@@ -124,9 +124,50 @@ export interface BusinessRule {
   modified_at: string;
 }
 
-export interface RuleActionSet {
+/**
+ * A single condition block: its own IF condition group plus the THEN/ELSE
+ * actions that belong exclusively to it. Multiple blocks are evaluated
+ * independently — actions in one block never affect another.
+ */
+export interface RuleConditionBlock {
+  id: string;
+  name?: string;
+  condition_group: RuleConditionGroup | null;
   if_actions: RuleAction[];
   else_actions: RuleAction[];
+}
+
+export interface RuleActionSet {
+  // Legacy / mirror of the first condition block (kept for backwards compat
+  // with rules and consumers that only read these fields).
+  if_actions: RuleAction[];
+  else_actions: RuleAction[];
+  // Multiple condition blocks. When present and non-empty this is the source
+  // of truth; the first block is mirrored to if_actions/else_actions above.
+  condition_blocks?: RuleConditionBlock[];
+}
+
+/**
+ * Normalize a rule's trigger + action JSON into the canonical list of
+ * condition blocks. Rules saved before multi-block support are migrated on
+ * the fly into a single block built from the legacy condition_group +
+ * if_actions/else_actions, so all consumers can treat every rule uniformly.
+ */
+export function getRuleConditionBlocks(
+  trigger: RuleTrigger | null | undefined,
+  actionSet: RuleActionSet | null | undefined,
+): RuleConditionBlock[] {
+  const blocks = actionSet?.condition_blocks;
+  if (blocks && blocks.length > 0) return blocks;
+  return [
+    {
+      id: 'block_1',
+      name: 'Condition 1',
+      condition_group: trigger?.condition_group ?? null,
+      if_actions: actionSet?.if_actions ?? [],
+      else_actions: actionSet?.else_actions ?? [],
+    },
+  ];
 }
 
 export const ACTION_META: Record<

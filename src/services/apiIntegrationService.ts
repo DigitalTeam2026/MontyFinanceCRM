@@ -10,13 +10,34 @@ import type {
 } from '../types/apiIntegration';
 
 // auth_secret is intentionally excluded from every SELECT — it must only be
-// read by the execute-api-integration edge function via service_role.
+// read by the edge functions via service_role. endpoint_key is NOT a secret
+// (it lives in the public incoming URL), so it is safe to return.
 const INTEGRATION_COLS = `
-  api_integration_id, name, description, entity_id, http_method, endpoint_url,
-  is_active, trigger_event, auth_type, auth_key_name, auth_username,
-  body_config, created_at, modified_at, created_by, is_deleted,
+  api_integration_id, name, description, direction, operation, entity_id,
+  http_method, endpoint_url, endpoint_key, is_active, trigger_event,
+  auth_type, auth_key_name, auth_username, body_config, inbound_config,
+  last_request_at, created_at, modified_at, created_by, is_deleted,
   entity:entity_definition(logical_name, display_name, physical_table_name, primary_field_name)
 `;
+
+/**
+ * Build the public incoming-endpoint URL for an integration from its key.
+ * Points at the `api-integration-inbound` edge function.
+ */
+export function buildInboundEndpointUrl(endpointKey: string): string {
+  const base = (import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
+  return `${base}/functions/v1/api-integration-inbound/${endpointKey}`;
+}
+
+/** Rotate the endpoint key — the previous URL stops working immediately. */
+export async function regenerateEndpointKey(id: string): Promise<string> {
+  const { data, error } = await supabase.rpc(
+    'regenerate_api_integration_endpoint_key',
+    { p_id: id }
+  );
+  if (error) throw error;
+  return data as string;
+}
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 

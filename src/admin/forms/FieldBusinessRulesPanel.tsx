@@ -4,6 +4,7 @@ import {
   ChevronDown, ChevronRight, FileText,
 } from 'lucide-react';
 import type { BusinessRule, RuleConditionGroup, RuleAction } from '../../types/businessRule';
+import { getRuleConditionBlocks } from '../../types/businessRule';
 import { fetchRulesForEntity } from '../../services/businessRuleService';
 
 interface FieldBusinessRulesPanelProps {
@@ -41,15 +42,13 @@ function fieldUsedInActions(actions: RuleAction[], fieldName: string): boolean {
 
 function isRuleRelatedToField(rule: BusinessRule, fieldName: string): boolean {
   const trigger = rule.trigger_json;
-  if (trigger) {
-    if (trigger.watch_fields?.includes(fieldName)) return true;
-    if (fieldUsedInConditionGroup(trigger.condition_group, fieldName)) return true;
-  }
+  if (trigger?.watch_fields?.includes(fieldName)) return true;
 
-  const actions = rule.action_json;
-  if (actions) {
-    if (fieldUsedInActions(actions.if_actions ?? [], fieldName)) return true;
-    if (fieldUsedInActions(actions.else_actions ?? [], fieldName)) return true;
+  // Scan every condition block — its conditions and its THEN/ELSE actions.
+  for (const block of getRuleConditionBlocks(rule.trigger_json, rule.action_json)) {
+    if (fieldUsedInConditionGroup(block.condition_group, fieldName)) return true;
+    if (fieldUsedInActions(block.if_actions ?? [], fieldName)) return true;
+    if (fieldUsedInActions(block.else_actions ?? [], fieldName)) return true;
   }
 
   return false;
@@ -246,9 +245,8 @@ function RuleCard({
   const borderColor = variant === 'active' ? 'border-emerald-100 hover:border-emerald-200' : 'border-slate-100 hover:border-slate-200';
   const dotColor = variant === 'active' ? 'bg-emerald-400' : 'bg-slate-300';
 
-  const actionCount =
-    (rule.action_json?.if_actions?.length ?? 0) +
-    (rule.action_json?.else_actions?.length ?? 0);
+  const actionCount = getRuleConditionBlocks(rule.trigger_json, rule.action_json)
+    .reduce((n, b) => n + (b.if_actions?.length ?? 0) + (b.else_actions?.length ?? 0), 0);
   const triggerLabel = rule.trigger_json?.trigger_on === 'onLoad' ? 'On Load' :
     rule.trigger_json?.trigger_on === 'onChange' ? 'On Change' : 'Always';
 

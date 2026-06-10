@@ -6,7 +6,7 @@ import {
 import type { BusinessRule } from '../../types/businessRule';
 import type { FieldDefinition } from '../../types/field';
 import type { ProcessFlow, ProcessStage } from '../../types/processFlow';
-import { STAGE_CATEGORY_OPTIONS } from '../../types/businessRule';
+import { STAGE_CATEGORY_OPTIONS, getRuleConditionBlocks } from '../../types/businessRule';
 import { evaluateRules, applyRuleStateToValues, getRuleMessages } from '../../app/services/businessRulesEngine';
 import type { ProcessRuleContext } from '../../app/services/businessRulesEngine';
 import type { RecordData } from '../../app/services/businessRulesEngine';
@@ -82,9 +82,8 @@ export default function RulePreviewPanel({
     setFlowStages([]);
   };
 
-  const hasConditions = !!(
-    rule.trigger_json?.condition_group?.conditions?.length ||
-    rule.trigger_json?.condition_group?.groups?.length
+  const hasConditions = getRuleConditionBlocks(rule.trigger_json, rule.action_json).some(
+    (b) => (b.condition_group?.conditions?.length ?? 0) + (b.condition_group?.groups?.length ?? 0) > 0,
   );
 
   const conditionMet = hasConditions

@@ -177,7 +177,7 @@ export default function ApiIntegrationList({ onNew, onEdit }: Props) {
           title="Delete Integration"
           message={`Delete "${confirmDelete.name}"? This action cannot be undone and will also delete all execution logs.`}
           confirmLabel="Delete"
-          variant="danger"
+          danger
           onConfirm={() => handleDelete(confirmDelete)}
           onCancel={() => setConfirmDelete(null)}
         />

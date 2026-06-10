@@ -1,4 +1,5 @@
 import type { BusinessRule, RuleCondition, RuleConditionGroup, RuleAction } from '../../types/businessRule';
+import { getRuleConditionBlocks } from '../../types/businessRule';
 import type { RecordData } from './recordService';
 
 export interface ProcessRuleContext {
@@ -355,17 +356,19 @@ export function evaluateRules(
       if (!rule.target_process_stage_id || rule.target_process_stage_id !== context?.currentStageId) continue;
     }
 
-    const trigger = rule.trigger_json;
-    const actions = rule.action_json;
+    // Each condition block is evaluated independently with its own THEN/ELSE
+    // actions. Legacy single-condition rules normalize to one block.
+    const blocks = getRuleConditionBlocks(rule.trigger_json, rule.action_json);
+    for (const block of blocks) {
+      const conditionMet = block.condition_group
+        ? evaluateGroup(block.condition_group, values, context)
+        : true;
 
-    const conditionMet = trigger.condition_group
-      ? evaluateGroup(trigger.condition_group, values, context)
-      : true;
-
-    if (conditionMet) {
-      applyActions(actions.if_actions ?? [], state, values, labels);
-    } else {
-      applyActions(actions.else_actions ?? [], state, values, labels);
+      if (conditionMet) {
+        applyActions(block.if_actions ?? [], state, values, labels);
+      } else {
+        applyActions(block.else_actions ?? [], state, values, labels);
+      }
     }
   }
 

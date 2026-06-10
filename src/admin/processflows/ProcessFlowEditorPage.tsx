@@ -14,6 +14,7 @@ import type {
   ProcessStageFormData, StageType, ProcessFlowScope, ComponentType,
   ProcessStageField, StageCategory, ProcessFlowEntityConfig,
   ProcessFlowEntityConfigFormData, LinkBehavior, ConditionGroup, ConditionLeaf,
+  ProcessFlowDraft,
 } from '../../types/processFlow';
 import { STAGE_TYPE_META, STAGE_CATEGORIES, CONDITION_OPERATORS, LINK_BEHAVIOR_OPTIONS, isConditionGroup } from '../../types/processFlow';
 import {
@@ -24,6 +25,7 @@ import {
   updateStageField, deleteStageField, reorderStageFields,
   fetchEntityConfigs, upsertEntityConfig, deleteEntityConfig,
   ensurePrimaryEntityConfig,
+  saveDraft, publishProcessFlowDraft, fetchStageFieldsForFlow,
 } from '../../services/processFlowService';
 import type { EntityDefinition } from '../../types/entity';
 import { fetchEntities } from '../../services/entityService';
@@ -475,6 +477,9 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<Tab>('designer');
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   const draggingType = useRef<ComponentType | null>(null);
   const [dropTarget, setDropTarget] = useState<'canvas' | null>(null);
@@ -503,6 +508,65 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
   useEffect(() => { loadFlow(); }, [loadFlow]);
 
   const entity = entities.find((e) => e.entity_definition_id === flow.entity_definition_id);
+
+  const markDirty = () => setIsDirty(true);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  const handleSavePublish = async () => {
+    setPublishing(true);
+    try {
+      const [stageFieldMap, entityConfigsRaw] = await Promise.all([
+        fetchStageFieldsForFlow(flow.process_flow_id),
+        fetchEntityConfigs(flow.process_flow_id),
+      ]);
+      const allStageFields = Object.values(stageFieldMap).flat();
+      const snapshot: ProcessFlowDraft = {
+        version: 1,
+        flow: {
+          name: flow.name,
+          description: flow.description ?? '',
+          entity_definition_id: flow.entity_definition_id,
+          lob_id: flow.lob_id ?? null,
+          product_id: flow.product_id ?? null,
+          form_id: flow.form_id ?? null,
+          stage_field: flow.stage_field ?? '',
+          is_active: flow.is_active ?? true,
+          default_stage_id: flow.default_stage_id ?? null,
+        },
+        stages,
+        transitions,
+        stageFields: allStageFields,
+        entityConfigs: entityConfigsRaw.map((c) => ({
+          config_id: c.config_id,
+          entity_definition_id: c.entity_definition_id,
+          is_primary: c.is_primary,
+          form_id: c.form_id,
+          relationship_definition_id: c.relationship_definition_id,
+          relationship_column: c.relationship_column,
+          link_behavior: c.link_behavior,
+          display_order: c.display_order,
+        })),
+      };
+      await publishProcessFlowDraft(flow.process_flow_id, snapshot);
+      setIsDirty(false);
+      showSuccess('Published successfully');
+      await loadFlow();
+    } catch (e: unknown) {
+      showError(e instanceof Error ? e.message : 'Publish failed');
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   // Next display_order = after the current maximum (robust to gaps from deletes/reorders,
   // so a newly-added stage always sorts last and lands in the right column).
@@ -548,6 +612,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
       setStages((prev) => [...prev, created]);
       setSelectedStageId(created.process_stage_id);
       setDropTarget(null);
+      markDirty();
 
       // After dropping any component (stage OR condition — conditions can nest inside a
       // branch), if a condition has an empty Yes/No slot, prompt which branch it belongs to.
@@ -575,6 +640,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
     try {
       const updated = await updateProcessStage(conditionId, updates);
       setStages((prev) => prev.map((s) => s.process_stage_id === conditionId ? updated : s));
+      markDirty();
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Failed to assign branch');
     }
@@ -622,6 +688,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
     try {
       const updated = await updateProcessStage(conditionId, updates);
       setStages((prev) => prev.map((s) => s.process_stage_id === conditionId ? updated : s));
+      markDirty();
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Failed to disconnect branch');
     }
@@ -640,6 +707,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
         created,
       ]);
       setSelectedStageId(created.process_stage_id);
+      markDirty();
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Failed to add to branch');
     }
@@ -662,6 +730,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
       setStages((prev) => prev.filter((s) => s.process_stage_id !== stageId));
       if (selectedStageId === stageId) setSelectedStageId(null);
       setTransitions((prev) => prev.filter((t) => t.from_stage_id !== stageId && t.to_stage_id !== stageId));
+      markDirty();
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Failed to delete');
     }
@@ -671,14 +740,15 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
     try {
       const updated = await updateProcessStage(stageId, updates);
       setStages((prev) => prev.map((s) => s.process_stage_id === stageId ? updated : s));
+      markDirty();
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Failed to update');
     }
   };
 
   const handleRenameStage = async (stageId: string, name: string) => {
-    // Optimistic update
     setStages((prev) => prev.map((s) => s.process_stage_id === stageId ? { ...s, name } : s));
+    markDirty();
     try {
       await updateProcessStage(stageId, { name });
     } catch (e: unknown) {
@@ -691,6 +761,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
       await setDefaultStage(flow.process_flow_id, stageId);
       setFlow((prev) => ({ ...prev, default_stage_id: stageId }));
       setStages((prev) => prev.map((s) => ({ ...s, is_default: s.process_stage_id === stageId })));
+      markDirty();
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Failed');
     }
@@ -717,6 +788,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
     const terminalStages = stages.filter((s) => s.stage_type !== 'active');
     const terminalWithOrder = terminalStages.map((s, i) => ({ ...s, display_order: withOrder.length + i }));
     setStages([...withOrder, ...terminalWithOrder]);
+    markDirty();
     try {
       await reorderProcessStages([...withOrder, ...terminalWithOrder].map((s) => ({
         process_stage_id: s.process_stage_id,
@@ -739,6 +811,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
         is_default: x.is_default ?? false,
       })));
       setTransitions(t);
+      markDirty();
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Failed');
     }
@@ -779,7 +852,10 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-white shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors">
+          <button
+            onClick={() => { if (isDirty) { setConfirmLeave(true); } else { onBack(); } }}
+            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+          >
             <ArrowLeft size={15} /> Back
           </button>
           <div className="w-px h-5 bg-gray-200" />
@@ -800,23 +876,54 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
               {flow.is_active ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
               {flow.is_active ? 'Active' : 'Inactive'}
             </span>
+            {isDirty && (
+              <span className="flex items-center gap-1 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5">
+                <AlertTriangle size={10} /> Unsaved changes
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="flex border border-gray-200 rounded-lg overflow-hidden bg-white">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === t.id ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              {t.icon} {t.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex border border-gray-200 rounded-lg overflow-hidden bg-white">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  tab === t.id ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleSavePublish}
+            disabled={publishing || !isDirty}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+              isDirty && !publishing
+                ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
+                : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+            }`}
+          >
+            {publishing ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+            {publishing ? 'Publishing…' : 'Save & Publish'}
+          </button>
         </div>
       </div>
+
+      {/* Leave confirmation */}
+      {confirmLeave && (
+        <ConfirmDialog
+          title="Unsaved changes"
+          message="You have unsaved changes. If you leave now, your changes will be lost. Are you sure you want to leave?"
+          confirmLabel="Leave without saving"
+          cancelLabel="Stay"
+          onConfirm={() => { setConfirmLeave(false); onBack(); }}
+          onCancel={() => setConfirmLeave(false)}
+        />
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center h-48 text-gray-400 text-sm gap-2">
@@ -1714,17 +1821,25 @@ function BpfCanvas({
                 );
               })}
 
-              {/* Drop zone indicator */}
+              {/* Add stage button / drop zone */}
               {activeStages.length > 0 && (
                 <div
                   className="absolute"
                   style={{ left: dropZoneX + 8, top: BASELINE_Y + NODE_HEIGHT / 2 - 34 }}
                 >
-                  <div className={`w-[72px] h-[68px] border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors ${
-                    dropTarget === 'canvas' ? 'border-blue-400 bg-blue-50/80' : 'border-gray-300 bg-white/60'
-                  }`}>
-                    <Plus size={14} className="text-gray-400" />
-                    <span className="text-[9px] text-gray-400 mt-0.5 font-medium">Drop</span>
+                  <div
+                    className={`w-[72px] h-[68px] border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors cursor-pointer select-none ${
+                      dropTarget === 'canvas'
+                        ? 'border-blue-400 bg-blue-50/80 text-blue-600'
+                        : 'border-blue-300 bg-blue-50/30 text-blue-400 hover:border-blue-400 hover:bg-blue-50/70'
+                    }`}
+                    onClick={() => onDropType('stage')}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <Plus size={14} />
+                    <span className="text-[9px] mt-0.5 font-semibold">
+                      {dropTarget === 'canvas' ? 'Drop' : 'Add stage'}
+                    </span>
                   </div>
                 </div>
               )}

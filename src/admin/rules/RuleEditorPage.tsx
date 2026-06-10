@@ -17,9 +17,12 @@ import {
   Database,
   GitBranch,
   Milestone,
+  Plus,
+  Layers,
+  Trash2,
 } from 'lucide-react';
-import type { BusinessRule, RuleTrigger, RuleActionSet, RuleScope, RuleConditionGroup, RuleCondition } from '../../types/businessRule';
-import { validateProcessFlowCondition } from '../../types/businessRule';
+import type { BusinessRule, RuleTrigger, RuleActionSet, RuleScope, RuleConditionGroup, RuleCondition, RuleConditionBlock, RuleAction } from '../../types/businessRule';
+import { validateProcessFlowCondition, getRuleConditionBlocks } from '../../types/businessRule';
 import type { FieldDefinition } from '../../types/field';
 import type { FormDefinition } from '../../types/form';
 import type { ProcessFlow, ProcessStage } from '../../types/processFlow';
@@ -68,9 +71,38 @@ interface RuleEditorPageProps {
   onRuleUpdate: (r: BusinessRule) => void;
 }
 
-function ensureActionIds(rule: BusinessRule): BusinessRule {
+let blockCtr = 0;
+const newBlockId = () => `cb_${Date.now()}_${blockCtr++}`;
+
+/**
+ * Build the action_json + trigger_json payload from the canonical block list,
+ * mirroring the first block into the legacy if_actions/else_actions/
+ * condition_group fields so older consumers keep working.
+ */
+function blocksToRule(rule: BusinessRule, blocks: RuleConditionBlock[]): BusinessRule {
+  const first = blocks[0];
+  return {
+    ...rule,
+    trigger_json: {
+      ...(rule.trigger_json ?? { trigger_on: 'onChange', watch_fields: [], condition_group: null }),
+      condition_group: first?.condition_group ?? null,
+    },
+    action_json: {
+      ...(rule.action_json ?? {}),
+      if_actions: first?.if_actions ?? [],
+      else_actions: first?.else_actions ?? [],
+      condition_blocks: blocks,
+    },
+  };
+}
+
+/**
+ * Normalize a loaded rule into multi-block form: guarantee at least one block,
+ * stable block ids, positional names, and unique action ids across all blocks.
+ */
+function normalizeRule(rule: BusinessRule): BusinessRule {
   const seen = new Set<string>();
-  const fix = (a: import('../../types/businessRule').RuleAction) => {
+  const fixAction = (a: RuleAction): RuleAction => {
     if (!a.id || seen.has(a.id)) {
       const id = `a_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
       seen.add(id);
@@ -79,19 +111,21 @@ function ensureActionIds(rule: BusinessRule): BusinessRule {
     seen.add(a.id);
     return a;
   };
-  if (!rule.action_json) return rule;
-  return {
-    ...rule,
-    action_json: {
-      if_actions: rule.action_json.if_actions.map(fix),
-      else_actions: rule.action_json.else_actions.map(fix),
-    },
-  };
+
+  const blocks = getRuleConditionBlocks(rule.trigger_json, rule.action_json).map((b, i) => ({
+    ...b,
+    id: b.id || newBlockId(),
+    name: b.name || `Condition ${i + 1}`,
+    if_actions: (b.if_actions ?? []).map(fixAction),
+    else_actions: (b.else_actions ?? []).map(fixAction),
+  }));
+
+  return blocksToRule(rule, blocks);
 }
 
 export default function RuleEditorPage({ rule: initRule, entityId, entityName, onBack, onRuleUpdate }: RuleEditorPageProps) {
   const { showSuccess, showError } = useToast();
-  const [rule, setRule] = useState<BusinessRule>(() => ensureActionIds(initRule));
+  const [rule, setRule] = useState<BusinessRule>(() => normalizeRule(initRule));
   const [fields, setFields] = useState<FieldDefinition[]>([]);
   const [processFlows, setProcessFlows] = useState<ProcessFlow[]>([]);
   const [stageCache, setStageCache] = useState<Record<string, ProcessStage[]>>({});
@@ -106,6 +140,11 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
     condition_group: null,
   };
   const actionSet: RuleActionSet = rule.action_json ?? { if_actions: [], else_actions: [] };
+
+  // ── Condition blocks (normalizeRule guarantees at least one) ──────────────
+  const blocks: RuleConditionBlock[] = actionSet.condition_blocks ?? [];
+  const [activeBlockId, setActiveBlockId] = useState<string>(() => blocks[0]?.id ?? '');
+  const activeBlock = blocks.find((b) => b.id === activeBlockId) ?? blocks[0];
 
   useEffect(() => {
     Promise.all([
@@ -136,14 +175,34 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
     markDirty();
   };
 
-  const setConditions = (group: RuleConditionGroup | null) => {
-    setRule((r) => ({ ...r, trigger_json: { ...trigger, condition_group: group } }));
+  // Persist a new block list, keeping the legacy mirror fields in sync.
+  const setBlocks = (next: RuleConditionBlock[]) => {
+    setRule((r) => blocksToRule(r, next));
     markDirty();
   };
 
-  const setActionSet = (a: RuleActionSet) => {
-    setRule((r) => ({ ...r, action_json: a }));
-    markDirty();
+  const updateBlock = (id: string, patch: Partial<RuleConditionBlock>) => {
+    setBlocks(blocks.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+  };
+
+  const addBlock = () => {
+    const id = newBlockId();
+    const next: RuleConditionBlock = {
+      id,
+      name: `Condition ${blocks.length + 1}`,
+      condition_group: null,
+      if_actions: [],
+      else_actions: [],
+    };
+    setBlocks([...blocks, next]);
+    setActiveBlockId(id);
+  };
+
+  const removeBlock = (id: string) => {
+    if (blocks.length <= 1) return;
+    const next = blocks.filter((b) => b.id !== id);
+    setBlocks(next);
+    if (activeBlockId === id) setActiveBlockId(next[0].id);
   };
 
   const collectProcessFlowConditions = (group: RuleConditionGroup | null): RuleCondition[] => {
@@ -154,7 +213,7 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
   };
 
   const handleSave = async () => {
-    const pfConds = collectProcessFlowConditions(trigger.condition_group);
+    const pfConds = blocks.flatMap((b) => collectProcessFlowConditions(b.condition_group));
     const errors = pfConds.map((c) => validateProcessFlowCondition(c)).filter(Boolean) as string[];
     if (errors.length > 0) {
       showError(`Incomplete process flow condition: ${errors[0]}`);
@@ -174,7 +233,11 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
         trigger_json: rule.trigger_json,
         action_json: rule.action_json,
       });
-      setRule(updated);
+      const normalized = normalizeRule(updated);
+      setRule(normalized);
+      if (!normalized.action_json.condition_blocks?.some((b) => b.id === activeBlockId)) {
+        setActiveBlockId(normalized.action_json.condition_blocks?.[0]?.id ?? '');
+      }
       onRuleUpdate(updated);
       setDirty(false);
       showSuccess('Rule saved');
@@ -183,15 +246,16 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
     }
   };
 
-  const condCount =
-    (trigger.condition_group?.conditions.length ?? 0) +
-    (trigger.condition_group?.groups.length ?? 0);
-  const actionCount =
-    actionSet.if_actions.length + actionSet.else_actions.length;
+  const blockCount = blocks.length;
+  const actionCount = blocks.reduce(
+    (n, b) => n + b.if_actions.length + b.else_actions.length,
+    0,
+  );
+  const activeBlockIndex = Math.max(0, blocks.findIndex((b) => b.id === activeBlock?.id));
 
   const TABS: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'trigger',    label: 'Trigger',    icon: <Zap size={13} /> },
-    { id: 'conditions', label: 'Conditions', icon: <Filter size={13} />,      badge: condCount || undefined },
+    { id: 'conditions', label: 'Conditions', icon: <Filter size={13} />,      badge: blockCount > 1 ? blockCount : undefined },
     { id: 'actions',    label: 'Actions',    icon: <Play size={13} />,        badge: actionCount || undefined },
     { id: 'settings',   label: 'Settings',   icon: <Settings size={13} /> },
     { id: 'preview',    label: 'Preview',    icon: <FlaskConical size={13} /> },
@@ -289,9 +353,15 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
               label="Scope"
               value={SCOPE_OPTIONS.find((s) => s.value === rule.scope)?.label ?? rule.scope}
             />
-            <SummaryRow label="Conditions" value={condCount > 0 ? `${condCount} defined` : 'Always runs'} active={condCount > 0} />
-            <SummaryRow label="IF Actions" value={actionSet.if_actions.length > 0 ? `${actionSet.if_actions.length}` : 'None'} active={actionSet.if_actions.length > 0} />
-            <SummaryRow label="ELSE Actions" value={actionSet.else_actions.length > 0 ? `${actionSet.else_actions.length}` : 'None'} active={actionSet.else_actions.length > 0} />
+            <SummaryRow label="Condition Blocks" value={`${blockCount}`} active={blockCount > 0} />
+            <SummaryRow label="Total Actions" value={actionCount > 0 ? `${actionCount}` : 'None'} active={actionCount > 0} />
+            {activeBlock && (
+              <SummaryRow
+                label={`Condition ${activeBlockIndex + 1} · THEN/ELSE`}
+                value={`${activeBlock.if_actions.length} / ${activeBlock.else_actions.length}`}
+                active={activeBlock.if_actions.length + activeBlock.else_actions.length > 0}
+              />
+            )}
           </div>
         </div>
 
@@ -312,31 +382,51 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
             <div>
               <SectionHeading
                 title="Conditions"
-                subtitle="Define when this rule should execute. Leave empty to always run."
+                subtitle="Each condition block has its own THEN / ELSE actions. Select a block to edit it."
                 icon={<Filter size={14} />}
               />
-              <ConditionBuilder
-                fields={fields}
-                group={trigger.condition_group}
-                onChange={setConditions}
-                processFlows={processFlows}
-                loadFlowStages={loadFlowStages}
+              <BlockTabs
+                blocks={blocks}
+                activeBlockId={activeBlock?.id ?? ''}
+                onSelect={setActiveBlockId}
+                onAdd={addBlock}
+                onRemove={removeBlock}
               />
+              {activeBlock && (
+                <ConditionBuilder
+                  key={activeBlock.id}
+                  fields={fields}
+                  group={activeBlock.condition_group}
+                  onChange={(g) => updateBlock(activeBlock.id, { condition_group: g })}
+                  processFlows={processFlows}
+                  loadFlowStages={loadFlowStages}
+                />
+              )}
             </div>
           )}
           {activeTab === 'actions' && (
             <div className="flex flex-col h-full min-h-0 p-5">
               <SectionHeading
                 title="Actions"
-                subtitle="Add actions from the Components panel. Select an action card to configure its properties."
+                subtitle="Actions belong to the selected condition block. Switch blocks to edit their THEN / ELSE actions."
                 icon={<Play size={14} />}
               />
+              <BlockTabs
+                blocks={blocks}
+                activeBlockId={activeBlock?.id ?? ''}
+                onSelect={setActiveBlockId}
+                onAdd={addBlock}
+                onRemove={removeBlock}
+              />
               <div className="flex-1 min-h-0">
-                <ActionBuilder
-                  fields={fields}
-                  actionSet={actionSet}
-                  onChange={setActionSet}
-                />
+                {activeBlock && (
+                  <ActionBuilder
+                    key={activeBlock.id}
+                    fields={fields}
+                    actionSet={{ if_actions: activeBlock.if_actions, else_actions: activeBlock.else_actions }}
+                    onChange={(set) => updateBlock(activeBlock.id, { if_actions: set.if_actions, else_actions: set.else_actions })}
+                  />
+                )}
               </div>
             </div>
           )}
@@ -707,6 +797,68 @@ function SummaryRow({ label, value, active }: { label: string; value: string; ac
     <div className="flex items-center justify-between">
       <span className="text-[10px] text-slate-400">{label}</span>
       <span className={`text-[10px] font-medium ${active ? 'text-blue-600' : 'text-slate-400'}`}>{value}</span>
+    </div>
+  );
+}
+
+// ─── Condition block selector (shared by Conditions & Actions tabs) ───────────
+function BlockTabs({
+  blocks,
+  activeBlockId,
+  onSelect,
+  onAdd,
+  onRemove,
+}: {
+  blocks: RuleConditionBlock[];
+  activeBlockId: string;
+  onSelect: (id: string) => void;
+  onAdd: () => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap mb-4">
+      {blocks.map((b, i) => {
+        const isActive = b.id === activeBlockId;
+        const count = b.if_actions.length + b.else_actions.length;
+        const condCount = (b.condition_group?.conditions.length ?? 0) + (b.condition_group?.groups.length ?? 0);
+        return (
+          <div
+            key={b.id}
+            onClick={() => onSelect(b.id)}
+            className={`group relative flex items-center gap-2 pl-3 pr-2 py-2 rounded-xl border-2 cursor-pointer transition-all ${
+              isActive
+                ? 'border-blue-500 bg-blue-50 shadow-sm'
+                : 'border-slate-200 bg-white hover:border-slate-300'
+            }`}
+          >
+            <Layers size={13} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
+            <div className="leading-tight">
+              <p className={`text-xs font-semibold ${isActive ? 'text-blue-700' : 'text-slate-600'}`}>
+                Condition {i + 1}
+              </p>
+              <p className="text-[10px] text-slate-400">
+                {condCount > 0 ? `${condCount} cond` : 'always'} · {count} action{count === 1 ? '' : 's'}
+              </p>
+            </div>
+            {blocks.length > 1 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRemove(b.id); }}
+                title="Remove this condition block"
+                className="ml-1 p-0.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <button
+        onClick={onAdd}
+        className="flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all text-xs font-semibold"
+      >
+        <Plus size={13} />
+        Add Condition Block
+      </button>
     </div>
   );
 }
