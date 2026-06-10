@@ -1,4 +1,4 @@
-import { Database, Settings, ChevronRight, GitBranch, ShieldCheck, Map, BarChart2, LogOut, ExternalLink, GitMerge, Milestone, ScanSearch, ClipboardCheck, FileWarning, KeyRound, ShieldAlert, Activity, Zap } from 'lucide-react';
+import { Database, Settings, ChevronRight, GitBranch, ShieldCheck, Map, BarChart2, LogOut, ExternalLink, GitMerge, Milestone, ScanSearch, ClipboardCheck, FileWarning, KeyRound, ShieldAlert, Activity, Zap, Building2 } from 'lucide-react';
 import { getInitials } from '../../app/utils/initials';
 
 interface SideNavItem {
@@ -16,6 +16,12 @@ interface StudioSidebarProps {
 }
 
 const SECTIONS: { label: string; items: SideNavItem[] }[] = [
+  {
+    label: 'Organization',
+    items: [
+      { id: 'companyprofile', label: 'Company Profile', icon: <Building2 size={14} /> },
+    ],
+  },
   {
     label: 'Customization',
     items: [

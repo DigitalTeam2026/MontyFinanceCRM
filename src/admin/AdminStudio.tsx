@@ -31,6 +31,7 @@ import RelationshipListPage from './relationships/RelationshipListPage';
 import RelationshipEditorPage from './relationships/RelationshipEditorPage';
 import DatabaseValidationPage from './validation/DatabaseValidationPage';
 import ApiIntegrationsPage from './integrations/ApiIntegrationsPage';
+import CompanyProfilePage from './companyprofile/CompanyProfilePage';
 import type { EntityDefinition } from '../types/entity';
 import type { RelationshipDefinitionWithEntities } from '../types/relationship';
 import { fetchEntities } from '../services/entityService';
@@ -316,6 +317,9 @@ export default function AdminStudio() {
     if (activeModule === 'integrations') {
       return { title: 'API Integrations', subtitle: 'Configure HTTP integrations triggered by CRM entity events — webhooks, automation tools, and external APIs' };
     }
+    if (activeModule === 'companyprofile') {
+      return { title: 'Company Profile', subtitle: 'Manage company details — logo, industry, country, contact info, status — and the branding shown on the login screen' };
+    }
     return { title: 'Admin Studio' };
   };
 
@@ -440,6 +444,7 @@ export default function AdminStudio() {
     if (activeModule === 'columnsecurity') return <ColumnSecurityPage />;
     if (activeModule === 'dbvalidation') return <DatabaseValidationPage />;
     if (activeModule === 'integrations') return <ApiIntegrationsPage />;
+    if (activeModule === 'companyprofile') return <CompanyProfilePage />;
 
     return (
       <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Eye, EyeOff, Lock, Mail, ArrowRight } from 'lucide-react';
 import { supabase } from './lib/supabase';
+import { fetchCompanyProfile, getCachedCompanyProfile, type CompanyProfile } from './services/companyProfileService';
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -12,6 +13,14 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Instant first paint from the cached branding, then refresh from the database.
+  const [brand, setBrand] = useState<CompanyProfile>(() => getCachedCompanyProfile());
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCompanyProfile().then((p) => { if (!cancelled) setBrand(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,15 +104,19 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           {/* LEFT BRAND PANEL */}
           <section className="lg-brand">
             <div className="lg-logo">
-              <div className="lg-mark">M</div>
+              <div className="lg-mark">
+                {brand.logo_url
+                  ? <img src={brand.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 'inherit' }} />
+                  : brand.logo_letter}
+              </div>
               <div>
-                <div className="lg-name">Monty CRM</div>
-                <div className="lg-sub">Sales Hub</div>
+                <div className="lg-name">{brand.company_name}</div>
+                <div className="lg-sub">{brand.tagline}</div>
               </div>
             </div>
 
             <div className="lg-mid">
-              <span className="lg-badge"><span className="lg-dot" /> Sales Hub</span>
+              <span className="lg-badge"><span className="lg-dot" /> {brand.tagline}</span>
               <h1 className="lg-headline">
                 The smarter way<br />to grow <span>your business.</span>
               </h1>
@@ -112,7 +125,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </p>
             </div>
 
-            <div className="lg-copy">&copy; 2026 Monty CRM. All rights reserved.</div>
+            <div className="lg-copy">&copy; 2026 {brand.company_name}. All rights reserved.</div>
           </section>
 
           {/* RIGHT FORM */}
