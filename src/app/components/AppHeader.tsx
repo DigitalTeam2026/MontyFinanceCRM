@@ -2,6 +2,7 @@ import { Search, Bell } from 'lucide-react';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { AppEntity, AppModule } from '../types';
 import { useNotifications } from '../context/NotificationContext';
+import { getInitials } from '../utils/initials';
 import NotificationPanel from './NotificationPanel';
 
 const ENTITY_META: Record<AppEntity, { label: string; plural: string }> = {
@@ -25,10 +26,14 @@ interface AppHeaderProps {
   onSearchChange: (v: string) => void;
   onGlobalSearch?: () => void;
   onNotificationNavigate?: (module: AppModule, entity: AppEntity, id: string) => void;
+  /** Logged-in user's display name + email — used for the avatar initials. */
+  userName?: string;
+  userEmail?: string;
 }
 
 export default function AppHeader({
   module, entity, search, onSearchChange, onGlobalSearch, onNotificationNavigate,
+  userName, userEmail,
 }: AppHeaderProps) {
   const fallbackLabel = entity.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   const meta = ENTITY_META[entity] ?? { label: fallbackLabel, plural: fallbackLabel };
@@ -140,10 +145,13 @@ export default function AppHeader({
           )}
         </div>
 
-        {/* Avatar */}
-        <div className="w-6 h-6 rounded-full bg-[#2b6cb0] flex items-center justify-center shrink-0 ml-1">
+        {/* Avatar — initials from the logged-in user's display name */}
+        <div
+          className="w-6 h-6 rounded-full bg-[#2b6cb0] flex items-center justify-center shrink-0 ml-1"
+          title={userName || userEmail || 'User'}
+        >
           <span className="text-[9px] font-bold text-white">
-            {(ENTITY_META[entity]?.label ?? 'U').slice(0, 2).toUpperCase()}
+            {getInitials(userName, userEmail)}
           </span>
         </div>
       </div>

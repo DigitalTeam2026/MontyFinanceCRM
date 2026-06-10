@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import AppSidebar from './components/AppSidebar';
 import AppHeader from './components/AppHeader';
+import { useCurrentUserName } from './hooks/useCurrentUserName';
 import EntityListPage from './pages/EntityListPage';
 import RecordFormPage from './pages/RecordFormPage';
 import type { AppEntity, AppModule } from './types';
@@ -18,27 +19,66 @@ import { saveRecord } from './services/recordService';
 import GlobalSearch from './components/GlobalSearch';
 import { fetchCreationControlRules, isCreationBlocked } from './services/lifecycleRuleEngine';
 import type { DigitalRule } from '../types/digitalRule';
+import type { ActiveFilter } from './services/listService';
+import { buildCrmHash, replaceHash } from '../lib/appRoute';
+import type { CrmRouteView } from '../lib/appRoute';
 
 type AppView =
   | { type: 'list' }
   | { type: 'record'; id: string }
   | { type: 'new' }
-  | { type: 'filtered-list'; filters: import('./services/listService').ActiveFilter[]; contextLabel: string; parentFilter?: { fkColumn: string; parentId: string; parentLabel: string; parentEntity: string } };
+  | { type: 'filtered-list'; filters: ActiveFilter[]; contextLabel: string; parentFilter?: { fkColumn: string; parentId: string; parentLabel: string; parentEntity: string } };
 
 interface CrmAppProps {
   initialEntity?: AppEntity;
   initialModule?: AppModule;
-  initialRecordId?: string;
+  /** Full initial view, parsed from the URL hash on (re)load. */
+  initialView?: CrmRouteView;
+  /** Active saved view id for an initial list view. */
+  initialViewId?: string;
+  /** Keyword search for an initial list view. */
+  initialSearch?: string;
 }
 
-export default function CrmApp({ initialEntity, initialModule, initialRecordId }: CrmAppProps = {}) {
+/** Map a URL-serialized view onto CrmApp's internal view state. */
+function routeViewToAppView(v: CrmRouteView | undefined): AppView {
+  if (!v) return { type: 'list' };
+  switch (v.type) {
+    case 'record':
+      return { type: 'record', id: v.id };
+    case 'new':
+      return { type: 'new' };
+    case 'filtered-list':
+      return {
+        type: 'filtered-list',
+        filters: v.data.filters as ActiveFilter[],
+        contextLabel: v.data.contextLabel,
+        parentFilter: v.data.parentFilter,
+      };
+    default:
+      return { type: 'list' };
+  }
+}
+
+export default function CrmApp({
+  initialEntity,
+  initialModule,
+  initialView,
+  initialViewId,
+  initialSearch,
+}: CrmAppProps = {}) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [isSystemAdmin, setIsSystemAdmin] = useState(false);
+  const userName = useCurrentUserName(session?.user?.id);
   const [activeModule, setActiveModule] = useState<AppModule>(initialModule ?? 'sales');
   const [activeEntity, setActiveEntity] = useState<AppEntity>(initialEntity ?? 'accounts');
-  const [search, setSearch] = useState('');
-  const [view, setView] = useState<AppView>(
-    initialRecordId ? { type: 'record', id: initialRecordId } : { type: 'list' }
+  const [search, setSearch] = useState(initialSearch ?? '');
+  const [view, setView] = useState<AppView>(() => routeViewToAppView(initialView));
+  // Active saved view id for the list (mirrored to the URL so a refresh reopens it).
+  const [activeViewId, setActiveViewId] = useState<string | undefined>(initialViewId);
+  // Active record tab (mirrored to the URL so a refresh reopens the same tab).
+  const [activeRecordTab, setActiveRecordTab] = useState<string | undefined>(
+    initialView?.type === 'record' ? initialView.tab : undefined
   );
   const [recentRefreshKey, setRecentRefreshKey] = useState(0);
   const [quickCreateType, setQuickCreateType] = useState<QuickCreateType | null>(null);
@@ -81,6 +121,10 @@ export default function CrmApp({ initialEntity, initialModule, initialRecordId }
     setIsSystemAdmin(data?.is_system_admin ?? false);
   };
 
+  const handleActiveViewChange = useCallback((id: string | null) => {
+    setActiveViewId(id ?? undefined);
+  }, []);
+
   const handleGlobalSearchNavigate = useCallback((entity: AppEntity, module: AppModule, id: string) => {
     setGlobalSearchOpen(false);
     setActiveModule(module);
@@ -107,17 +151,56 @@ export default function CrmApp({ initialEntity, initialModule, initialRecordId }
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Keep the URL hash in sync with the open record so a browser refresh
-  // restores the same entity + record instead of falling back to the list.
-  // Uses replaceState (no navigation/history churn); App.parseRoute reads it on reload.
+  // Keep the URL hash in sync with the full CRM context (module, entity, view,
+  // open record + tab, active saved view, keyword search, filtered-list context)
+  // so any browser refresh restores the exact same location. Uses replaceState
+  // (no history churn, never fires 'hashchange'); parseRoute reads it on reload.
   useEffect(() => {
-    const base = `${window.location.pathname}${window.location.search}`;
+    let routeView: CrmRouteView;
     if (view.type === 'record') {
-      window.history.replaceState(null, '', `${base}#/record/${activeEntity}/${view.id}`);
-    } else if (window.location.hash.startsWith('#/record/')) {
-      window.history.replaceState(null, '', base);
+      routeView = { type: 'record', id: view.id, tab: activeRecordTab };
+    } else if (view.type === 'new') {
+      routeView = { type: 'new' };
+    } else if (view.type === 'filtered-list') {
+      routeView = {
+        type: 'filtered-list',
+        data: { filters: view.filters, contextLabel: view.contextLabel, parentFilter: view.parentFilter },
+      };
+    } else {
+      routeView = { type: 'list' };
     }
-  }, [view, activeEntity]);
+    replaceHash(
+      buildCrmHash({
+        module: activeModule,
+        entity: activeEntity,
+        view: routeView,
+        viewId: view.type === 'list' ? activeViewId : undefined,
+        search: view.type === 'list' ? search : undefined,
+      })
+    );
+  }, [view, activeModule, activeEntity, activeViewId, activeRecordTab, search]);
+
+  // A saved-view id belongs to one entity; drop it when the entity changes so it
+  // never leaks onto the wrong list. The ref skips the initial mount so the
+  // view id parsed from the URL on reload is preserved.
+  const prevEntityRef = useRef(activeEntity);
+  useEffect(() => {
+    if (prevEntityRef.current !== activeEntity) {
+      prevEntityRef.current = activeEntity;
+      setActiveViewId(undefined);
+    }
+  }, [activeEntity]);
+
+  // The active tab belongs to one record; reset it when a different record opens
+  // so the new record lands on its default tab. Skips the initial mount.
+  const prevRecordIdRef = useRef(view.type === 'record' ? view.id : null);
+  useEffect(() => {
+    const id = view.type === 'record' ? view.id : null;
+    if (prevRecordIdRef.current !== id) {
+      prevRecordIdRef.current = id;
+      setActiveRecordTab(undefined);
+    }
+  }, [view]);
 
   if (session === undefined) {
     return (
@@ -279,6 +362,7 @@ export default function CrmApp({ initialEntity, initialModule, initialRecordId }
         onNavigateToRecord={handleSidebarNavigateToRecord}
         onNavigateAssignedToMe={handleNavigateAssignedToMe}
         userEmail={session.user.email}
+        userName={userName}
         onSignOut={handleSignOut}
         userId={session.user.id}
         recentRefreshKey={recentRefreshKey}
@@ -294,6 +378,8 @@ export default function CrmApp({ initialEntity, initialModule, initialRecordId }
               onSearchChange={setSearch}
               onGlobalSearch={() => setGlobalSearchOpen(true)}
               onNotificationNavigate={handleNotificationNavigate}
+              userName={userName}
+              userEmail={session.user.email}
             />
             <EntityListPage
               module={activeModule}
@@ -307,6 +393,8 @@ export default function CrmApp({ initialEntity, initialModule, initialRecordId }
               filterContextLabel={view.type === 'filtered-list' ? view.contextLabel : undefined}
               parentFilter={view.type === 'filtered-list' ? view.parentFilter : undefined}
               onClearParentFilter={() => setView({ type: 'list' })}
+              initialViewId={view.type === 'list' ? activeViewId : undefined}
+              onActiveViewChange={handleActiveViewChange}
               creationBlocked={creationCheck.blocked}
               creationBlockedMessage={creationCheck.message}
             />
@@ -318,6 +406,8 @@ export default function CrmApp({ initialEntity, initialModule, initialRecordId }
             module={activeModule}
             entity={activeEntity}
             recordId={view.type === 'record' ? view.id : null}
+            initialTab={view.type === 'record' ? activeRecordTab : undefined}
+            onTabChange={setActiveRecordTab}
             onBack={handleBack}
             onNavigate={(ent, id) => {
               setActiveEntity(ent);

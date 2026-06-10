@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { ToastProvider } from '../app/context/ToastContext';
 import LoginPage from '../LoginPage';
 import StudioSidebar from './components/StudioSidebar';
+import { useCurrentUserName } from '../app/hooks/useCurrentUserName';
 import StudioHeader from './components/StudioHeader';
 import EntityListPage from './entities/EntityListPage';
 import EntityDesignerPage from './entities/EntityDesignerPage';
@@ -32,8 +33,16 @@ import DatabaseValidationPage from './validation/DatabaseValidationPage';
 import ApiIntegrationsPage from './integrations/ApiIntegrationsPage';
 import type { EntityDefinition } from '../types/entity';
 import type { RelationshipDefinitionWithEntities } from '../types/relationship';
+import { fetchEntities } from '../services/entityService';
+import { parseRoute, buildStudioHash, replaceHash } from '../lib/appRoute';
 
 type EntityView = 'list' | 'new' | 'edit' | 'detail' | 'data';
+
+/** Read the Admin Studio module from the URL hash (defaults to 'entities'). */
+function initialStudioModule(): string {
+  const r = parseRoute();
+  return r.surface === 'studio' ? r.module : 'entities';
+}
 
 interface EntityState {
   view: EntityView;
@@ -50,8 +59,16 @@ interface RelationshipState {
 
 export default function AdminStudio() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [activeModule, setActiveModule] = useState('entities');
-  const [entityState, setEntityState] = useState<EntityState>({ view: 'list' });
+  const userName = useCurrentUserName(session?.user?.id);
+  const [activeModule, setActiveModule] = useState(initialStudioModule);
+  const [entityState, setEntityState] = useState<EntityState>(() => {
+    const r = parseRoute();
+    // selectedEntity is filled in asynchronously by the restore effect below.
+    if (r.surface === 'studio' && r.module === 'entities' && r.entityId) {
+      return { view: r.entityView ?? 'detail' };
+    }
+    return { view: 'list' };
+  });
   const [relationshipState, setRelationshipState] = useState<RelationshipState>({ view: 'list' });
 
   useEffect(() => {
@@ -84,6 +101,40 @@ export default function AdminStudio() {
     window.addEventListener('navigate-admin', handler);
     return () => window.removeEventListener('navigate-admin', handler);
   }, []);
+
+  // Restore the selected-entity sub-context from the URL after a refresh by
+  // refetching the entity definition by id (it can't be serialized in the hash).
+  useEffect(() => {
+    const r = parseRoute();
+    if (r.surface !== 'studio' || !r.entityId) return;
+    let cancelled = false;
+    fetchEntities()
+      .then((ents) => {
+        if (cancelled) return;
+        const found = ents.find((e) => e.entity_definition_id === r.entityId);
+        if (!found) return;
+        setEntityState((prev) => ({
+          ...prev,
+          selectedEntity: found,
+          editing: r.module === 'entities' && r.entityView === 'edit' ? found : prev.editing,
+          view: r.module === 'entities' ? (r.entityView ?? 'detail') : prev.view,
+        }));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Keep the URL hash in sync with the active Admin Studio page and the selected
+  // entity sub-context so a browser refresh reopens the exact same location.
+  useEffect(() => {
+    replaceHash(
+      buildStudioHash({
+        module: activeModule,
+        entityId: entityState.selectedEntity?.entity_definition_id,
+        entityView: activeModule === 'entities' ? entityState.view : undefined,
+      })
+    );
+  }, [activeModule, entityState.view, entityState.selectedEntity]);
 
   if (session === undefined) {
     return (
@@ -404,6 +455,7 @@ export default function AdminStudio() {
           activeModule={activeModule}
           onNavigate={handleNavigate}
           userEmail={session.user.email}
+          userName={userName}
           onSignOut={handleSignOut}
         />
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">

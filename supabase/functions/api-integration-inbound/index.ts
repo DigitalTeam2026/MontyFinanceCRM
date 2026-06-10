@@ -35,10 +35,28 @@ interface InboundFieldMapping {
   is_lookup?: boolean;
   lookup_match_by?: "id" | "primary_name" | "field";
   lookup_match_field_physical_column?: string;
+  lookup_match_field_display_name?: string;
   lookup_entity_physical_table?: string;
   lookup_entity_pk?: string;
   lookup_entity_primary_field?: string;
+  lookup_entity_display_name?: string;
+  lookup_match_type?: "exact" | "case_insensitive_exact";
+  lookup_not_found_behavior?: "reject" | "set_null" | "create";
+  lookup_multiple_match_behavior?: "reject";
 }
+
+interface FieldError {
+  field: string;
+  code: string;
+  message: string;
+}
+
+// The outcome of matching an incoming value against a related entity.
+type LookupMatch =
+  | { kind: "id"; id: string }        // direct FK value supplied by the caller
+  | { kind: "found"; id: string }     // exactly one related record matched
+  | { kind: "not_found" }
+  | { kind: "ambiguous" };
 
 interface InboundConfig {
   fields: InboundFieldMapping[];
@@ -148,7 +166,7 @@ Deno.serve(async (req: Request) => {
     return finalize(admin, integration, req, requestUrl, start, 413, {
       success: false,
       message: "Request body too large",
-    });
+    }, `(${raw.length} bytes — truncated) ` + raw.slice(0, 2000));
   }
   let payload: Record<string, unknown>;
   try {
@@ -160,7 +178,7 @@ Deno.serve(async (req: Request) => {
     return finalize(admin, integration, req, requestUrl, start, 400, {
       success: false,
       message: e instanceof Error ? e.message : "Invalid JSON body",
-    });
+    }, raw.slice(0, 4000));
   }
 
   // ── 6. Resolve the CRM entity ────────────────────────────────────────────────
@@ -168,15 +186,19 @@ Deno.serve(async (req: Request) => {
     return finalize(admin, integration, req, requestUrl, start, 500, {
       success: false,
       message: "Integration entity is not configured",
-    });
+    }, payload);
   }
   const table = integration.entity.physical_table_name;
   const pkCol = `${integration.entity.logical_name}_id`;
   const config = integration.inbound_config ?? { fields: [], match_field: null };
 
   // ── 7/8. Map + convert incoming values, resolve lookups, validate ────────────
+  // Validate EVERYTHING before any write. Lookups that need a related record to be
+  // created are deferred until validation fully passes, so a later failure never
+  // leaves a partially-applied request behind.
   const record: Record<string, unknown> = {};
-  const errors: { field: string; message: string }[] = [];
+  const errors: FieldError[] = [];
+  const deferredCreates: { column: string; m: InboundFieldMapping; value: unknown }[] = [];
 
   for (const m of config.fields ?? []) {
     if (!m.target_physical_column) continue;
@@ -187,26 +209,48 @@ Deno.serve(async (req: Request) => {
       if (m.is_required) {
         errors.push({
           field: m.json_path,
-          message: `${m.target_display_name ?? m.json_path} is required`,
+          code: "REQUIRED",
+          message: `${m.target_display_name ?? m.json_path} is required.`,
         });
       }
       continue;
     }
 
-    if (m.is_lookup) {
-      const fk = await resolveLookup(admin, m, rawVal);
-      if (fk === null) {
-        if (m.is_required) {
-          errors.push({
-            field: m.json_path,
-            message: `Could not resolve related record for ${m.target_display_name ?? m.json_path}`,
-          });
-        }
-        continue;
-      }
-      record[m.target_physical_column] = fk;
-    } else {
+    if (!m.is_lookup) {
       record[m.target_physical_column] = convertValue(rawVal, m.target_field_type);
+      continue;
+    }
+
+    // ── Lookup field: never store the raw business value; resolve to a FK GUID ──
+    const match = await matchLookup(admin, m, rawVal);
+
+    if (match.kind === "id" || match.kind === "found") {
+      record[m.target_physical_column] = match.id;
+      continue;
+    }
+
+    if (match.kind === "ambiguous") {
+      // Multiple-match behaviour is always "reject as ambiguous".
+      errors.push({
+        field: m.json_path,
+        code: "LOOKUP_AMBIGUOUS",
+        message: `Multiple ${relatedLabel(m)} records were found where ${matchFieldLabel(m)} equals '${rawVal}'.`,
+      });
+      continue;
+    }
+
+    // Not found → apply the configured not-found behaviour.
+    const behavior = m.lookup_not_found_behavior ?? "reject";
+    if (behavior === "set_null" && !m.is_required) {
+      record[m.target_physical_column] = null;
+    } else if (behavior === "create") {
+      deferredCreates.push({ column: m.target_physical_column, m, value: rawVal });
+    } else {
+      errors.push({
+        field: m.json_path,
+        code: "LOOKUP_NOT_FOUND",
+        message: `No ${relatedLabel(m)} record was found where ${matchFieldLabel(m)} equals '${rawVal}'.`,
+      });
     }
   }
 
@@ -214,7 +258,23 @@ Deno.serve(async (req: Request) => {
     return finalize(admin, integration, req, requestUrl, start, 422, {
       success: false,
       errors,
-    });
+    }, payload);
+  }
+
+  // Validation passed — now create any related records the mappings asked for.
+  for (const dc of deferredCreates) {
+    const createdId = await createRelatedRecord(admin, dc.m, dc.value);
+    if (createdId === null) {
+      return finalize(admin, integration, req, requestUrl, start, 422, {
+        success: false,
+        errors: [{
+          field: dc.m.json_path,
+          code: "LOOKUP_CREATE_FAILED",
+          message: `Could not create a ${relatedLabel(dc.m)} record for '${dc.value}'.`,
+        }],
+      }, payload);
+    }
+    record[dc.column] = createdId;
   }
 
   // ── 9. Create / Update / Upsert ──────────────────────────────────────────────
@@ -265,7 +325,7 @@ Deno.serve(async (req: Request) => {
     return finalize(admin, integration, req, requestUrl, start, opStatus, {
       success: false,
       message: opError,
-    });
+    }, payload);
   }
 
   // ── 10. Touch last_request_at + structured success response ──────────────────
@@ -339,32 +399,114 @@ async function checkCustomHeaders(
   return true;
 }
 
-async function resolveLookup(
+// Cache of table -> primary-key column (PKs are stable; safe to reuse across requests).
+const pkCache = new Map<string, string | null>();
+
+async function getPrimaryKey(admin: SupabaseClient, table: string): Promise<string | null> {
+  if (pkCache.has(table)) return pkCache.get(table)!;
+  const { data } = await admin.rpc("get_table_pk", { p_table: table });
+  const pk = (data as string | null) ?? null;
+  pkCache.set(table, pk);
+  return pk;
+}
+
+// Human-readable labels for validation messages. Never use caller-supplied names —
+// only the entity/field labels stored in the saved configuration.
+function relatedLabel(m: InboundFieldMapping): string {
+  return m.lookup_entity_display_name || m.lookup_entity_physical_table || "related";
+}
+function matchFieldLabel(m: InboundFieldMapping): string {
+  if (m.lookup_match_by === "primary_name") return m.lookup_entity_primary_field || "name";
+  return m.lookup_match_field_display_name || m.lookup_match_field_physical_column || "field";
+}
+
+// Escape ILIKE wildcards so a value matches literally (case-insensitively).
+function escapeLike(v: string): string {
+  return v.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Match an incoming value against a related entity and resolve it to a FK GUID.
+ * Entity + match column come ONLY from the saved configuration; the value is
+ * always passed through a parameterized query. Returns a discriminated result so
+ * the caller can apply the configured not-found / multiple-match behaviour.
+ */
+async function matchLookup(
   admin: SupabaseClient,
   m: InboundFieldMapping,
   value: unknown
-): Promise<string | null> {
-  // Direct FK value supplied
+): Promise<LookupMatch> {
+  // Direct FK value supplied by the caller — store as-is.
   if (m.lookup_match_by === "id" || !m.lookup_match_by) {
-    return value == null ? null : String(value);
+    return { kind: "id", id: String(value) };
   }
-  if (!m.lookup_entity_physical_table || !m.lookup_entity_pk) return null;
+  if (!m.lookup_entity_physical_table) return { kind: "not_found" };
 
   const matchCol =
     m.lookup_match_by === "primary_name"
       ? m.lookup_entity_primary_field
       : m.lookup_match_field_physical_column;
-  if (!matchCol) return null;
+  if (!matchCol) return { kind: "not_found" };
 
-  const { data } = await admin
+  // The related table's PK is read from the DB — the stored value may be wrong
+  // for entities whose PK does not follow the <logical_name>_id convention.
+  const pk = (await getPrimaryKey(admin, m.lookup_entity_physical_table)) ?? m.lookup_entity_pk;
+  if (!pk) return { kind: "not_found" };
+
+  const caseInsensitive = m.lookup_match_type === "case_insensitive_exact";
+
+  // Fetch up to 2 rows so we can distinguish "exactly one" from "ambiguous".
+  // Prefer excluding soft-deleted rows, but some lookup tables (e.g. crm_user)
+  // have no is_deleted column — fall back to an unfiltered match if that errors.
+  const buildQuery = (excludeDeleted: boolean) => {
+    let q = admin.from(m.lookup_entity_physical_table!).select(pk).limit(2);
+    q = caseInsensitive
+      ? q.ilike(matchCol!, escapeLike(String(value)))
+      : q.eq(matchCol!, value as never);
+    if (excludeDeleted) q = q.eq("is_deleted", false);
+    return q;
+  };
+
+  let res = await buildQuery(true);
+  if (res.error) res = await buildQuery(false);
+  if (res.error) return { kind: "not_found" };
+
+  const rows = (res.data as Record<string, unknown>[] | null) ?? [];
+  if (rows.length === 0) return { kind: "not_found" };
+  if (rows.length > 1) return { kind: "ambiguous" };
+  return { kind: "found", id: String(rows[0][pk]) };
+}
+
+/**
+ * Create a related record on demand (only when not_found_behavior === "create").
+ * Populates the matched column and the related primary-name field with the
+ * incoming value. Returns the new GUID, or null if the insert fails.
+ */
+async function createRelatedRecord(
+  admin: SupabaseClient,
+  m: InboundFieldMapping,
+  value: unknown
+): Promise<string | null> {
+  if (!m.lookup_entity_physical_table) return null;
+  const pk = (await getPrimaryKey(admin, m.lookup_entity_physical_table)) ?? m.lookup_entity_pk;
+  if (!pk) return null;
+
+  const row: Record<string, unknown> = {};
+  const matchCol =
+    m.lookup_match_by === "primary_name"
+      ? m.lookup_entity_primary_field
+      : m.lookup_match_field_physical_column;
+  if (matchCol) row[matchCol] = value;
+  if (m.lookup_entity_primary_field) row[m.lookup_entity_primary_field] = value;
+  if (Object.keys(row).length === 0) return null;
+
+  const { data, error } = await admin
     .from(m.lookup_entity_physical_table)
-    .select(m.lookup_entity_pk)
-    .eq(matchCol, value as never)
-    .eq("is_deleted", false)
-    .maybeSingle();
-
-  if (!data) return null;
-  return String((data as Record<string, unknown>)[m.lookup_entity_pk]);
+    .insert(row)
+    .select(pk)
+    .single();
+  if (error || !data) return null;
+  return String((data as Record<string, unknown>)[pk]);
 }
 
 function convertValue(value: unknown, type?: string): unknown {
@@ -467,7 +609,12 @@ async function finalize(
         response_status: status,
         response_body: JSON.stringify(responseBody),
         is_success: isSuccess,
-        error_message: isSuccess ? null : (responseBody.message as string) ?? "Failed",
+        error_message: isSuccess
+          ? null
+          : (responseBody.message as string)
+            ?? (Array.isArray(responseBody.errors)
+              ? (responseBody.errors as FieldError[]).map((e) => `${e.field}: ${e.message}`).join("; ")
+              : "Failed"),
         duration_ms: duration,
       });
     } catch {

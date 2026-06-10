@@ -1,4 +1,5 @@
 import { Database, Settings, ChevronRight, GitBranch, ShieldCheck, Map, BarChart2, LogOut, ExternalLink, GitMerge, Milestone, ScanSearch, ClipboardCheck, FileWarning, KeyRound, ShieldAlert, Activity, Zap } from 'lucide-react';
+import { getInitials } from '../../app/utils/initials';
 
 interface SideNavItem {
   id: string;
@@ -10,6 +11,7 @@ interface StudioSidebarProps {
   activeModule: string;
   onNavigate: (id: string) => void;
   userEmail?: string;
+  userName?: string;
   onSignOut?: () => void;
 }
 
@@ -51,10 +53,8 @@ const SECTIONS: { label: string; items: SideNavItem[] }[] = [
   },
 ];
 
-export default function StudioSidebar({ activeModule, onNavigate, userEmail, onSignOut }: StudioSidebarProps) {
-  const initials = userEmail
-    ? userEmail.split('@')[0].slice(0, 2).toUpperCase()
-    : 'SA';
+export default function StudioSidebar({ activeModule, onNavigate, userEmail, userName, onSignOut }: StudioSidebarProps) {
+  const initials = getInitials(userName, userEmail);
 
   return (
     <aside className="w-52 bg-[#1a2332] text-slate-300 flex flex-col h-full shrink-0 border-r border-[#0d1520]">

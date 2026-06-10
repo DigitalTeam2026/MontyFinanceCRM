@@ -29,6 +29,7 @@ import {
   fetchEntityFieldsForIntegration,
   fetchLookupEntityFields,
   fetchSampleRecords,
+  testLookupResolution,
   fetchIntegrationLogs,
   executeApiIntegration,
   regenerateEndpointKey,
@@ -667,6 +668,7 @@ export default function ApiIntegrationEditor({ integration, onBack, onSaved }: P
                     lookupLoading={lookupLoading}
                     onLoadLookup={loadLookupFields}
                     onChange={(c: InboundConfig) => set('inbound_config', c)}
+                    onTestLookup={testLookupResolution}
                   />
                   <FieldError msg={errors.match_field} />
                 </>

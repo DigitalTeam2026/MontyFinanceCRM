@@ -118,6 +118,10 @@ interface EntityListPageProps {
   filterContextLabel?: string;
   parentFilter?: ParentFilterContext;
   onClearParentFilter?: () => void;
+  /** Saved view to auto-select on mount (restored from the URL after a refresh). */
+  initialViewId?: string;
+  /** Fired whenever the active saved view changes, so the URL can track it. */
+  onActiveViewChange?: (viewId: string | null) => void;
   creationBlocked?: boolean;
   creationBlockedMessage?: string | null;
 }
@@ -161,7 +165,7 @@ function buildColumnState(entity: AppEntity): ColumnState[] {
   }));
 }
 
-export default function EntityListPage({ entity, search, onSearchChange, onNewRecord, onOpenRecord, userId, initialFilters, filterContextLabel, parentFilter, onClearParentFilter, creationBlocked, creationBlockedMessage }: EntityListPageProps) {
+export default function EntityListPage({ entity, search, onSearchChange, onNewRecord, onOpenRecord, userId, initialFilters, filterContextLabel, parentFilter, onClearParentFilter, initialViewId, onActiveViewChange, creationBlocked, creationBlockedMessage }: EntityListPageProps) {
   const { getEntityPrivilege, isActionAllowed, accessContext, permissions, ready: permissionsReady } = usePermissions();
   const { showError, showSuccess } = useToast();
   const entityName = ENTITY_LOGICAL_NAME[entity] ?? entity;
@@ -546,6 +550,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
       if (save) await handleSaveViewColumns();
     }
     setActiveView(view);
+    onActiveViewChange?.(view?.view_id ?? null);
     setSavedColumnSnapshot('');
     if (!view) {
       setColumnStates(buildColumnState(entity));
@@ -556,14 +561,15 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
       return;
     }
     await applyView(view);
-  }, [entity, applyView, handleSaveViewColumns]);
+  }, [entity, applyView, handleSaveViewColumns, onActiveViewChange]);
 
-  /** Called once on initial load for the default view — no unsaved-changes check */
+  /** Called once on initial load for the resolved view — no unsaved-changes check */
   const handleDefaultViewLoaded = useCallback(async (view: ViewDefinition) => {
     setActiveView(view);
+    onActiveViewChange?.(view.view_id);
     setSavedColumnSnapshot('');
     await applyView(view);
-  }, [applyView]);
+  }, [applyView, onActiveViewChange]);
 
   const handleViewsResolved = useCallback(() => {
     setViewsReady(true);
@@ -1080,6 +1086,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           <ViewSelector
             entityDefinitionId={entityDefinitionId}
             activeViewId={activeView?.view_id ?? null}
+            initialViewId={initialViewId}
             currentUserId={userId}
             onViewChange={handleViewChange}
             onDefaultViewLoaded={handleDefaultViewLoaded}

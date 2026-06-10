@@ -16,6 +16,8 @@ import { useToast, toFriendlyError } from '../context/ToastContext';
 interface ViewSelectorProps {
   entityDefinitionId: string | null;
   activeViewId: string | null;
+  /** View to auto-select on initial load (restored from the URL after a refresh). */
+  initialViewId?: string;
   currentUserId?: string;
   onViewChange: (view: ViewDefinition | null) => void;
   onDefaultViewLoaded?: (view: ViewDefinition) => void | Promise<void>;
@@ -27,6 +29,7 @@ interface ViewSelectorProps {
 export default function ViewSelector({
   entityDefinitionId,
   activeViewId,
+  initialViewId,
   currentUserId,
   onViewChange,
   onDefaultViewLoaded,
@@ -59,7 +62,10 @@ export default function ViewSelector({
       const data = await fetchAccessibleViews(entityDefinitionId);
       setViews(data);
       if (isInitial && activeViewId === null && onDefaultViewLoaded) {
+        // Prefer the view restored from the URL (refresh); otherwise the default.
+        const restored = initialViewId ? data.find((v) => v.view_id === initialViewId) : undefined;
         const defaultView =
+          restored ??
           data.find((v) => v.is_default) ??
           data.find((v) => v.view_type === 'public') ??
           data[0] ??

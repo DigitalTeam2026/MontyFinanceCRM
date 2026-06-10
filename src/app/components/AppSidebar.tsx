@@ -8,6 +8,7 @@ import {
 import { useState, useEffect, useRef } from 'react';
 import type { AppModule, AppEntity } from '../types';
 import { LOGICAL_NAME_TO_ENTITY } from '../types';
+import { getInitials } from '../utils/initials';
 import RecentPinsPanel from './RecentPinsPanel';
 import { fetchFullNavTree } from '../../services/navigationService';
 import type { NavArea, NavGroup, NavItem } from '../../services/navigationService';
@@ -66,6 +67,7 @@ interface AppSidebarProps {
   onNavigateToRecord: (module: AppModule, entity: AppEntity, recordId: string) => void;
   onNavigateAssignedToMe: (module: AppModule, entity: AppEntity) => void;
   userEmail?: string;
+  userName?: string;
   onSignOut?: () => void;
   userId: string;
   recentRefreshKey?: number;
@@ -240,6 +242,7 @@ export default function AppSidebar({
   onNavigateToRecord,
   onNavigateAssignedToMe,
   userEmail,
+  userName,
   onSignOut,
   userId,
   recentRefreshKey,
@@ -278,9 +281,7 @@ export default function AppSidebar({
     applySidebarCssVars(color);
   };
 
-  const initials = userEmail
-    ? userEmail.split('@')[0].slice(0, 2).toUpperCase()
-    : 'U';
+  const initials = getInitials(userName, userEmail);
 
   const getGroupItems = (groupId: string) => items.filter((i) => i.nav_group_id === groupId);
 

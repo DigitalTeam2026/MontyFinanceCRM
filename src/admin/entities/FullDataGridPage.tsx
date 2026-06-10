@@ -37,6 +37,8 @@ type RecordRow = Record<string, unknown> & { _pk: string };
 type SortDir = 'asc' | 'desc' | null;
 interface SortState { field: string; dir: SortDir }
 type EditMap = Map<string, Map<string, unknown>>;
+/** An unsaved row being created inline. localId is a client-side key (not the DB PK). */
+interface NewRow { localId: string; data: Record<string, unknown> }
 
 const ROWS_PER_PAGE_OPTIONS = [25, 50, 100, 200];
 const ALPHA = 'All,#,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z'.split(',');
@@ -58,7 +60,11 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
   const [editingCell, setEditingCell] = useState<{ pk: string; fieldId: string } | null>(null);
   const [showColumnSelector, setShowColumnSelector] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
-  const [newRowData, setNewRowData] = useState<Record<string, unknown> | null>(null);
+  const [newRows, setNewRows] = useState<NewRow[]>([]);
+  // localId -> error message for new rows whose insert failed (kept visible).
+  const [newRowErrors, setNewRowErrors] = useState<Map<string, string>>(new Map());
+  // Summary of the last save attempt's failures, shown as a dismissable banner.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(50);
@@ -229,7 +235,7 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
 
   const visibleFields = useMemo(() => orderFieldsByIds(allFields, visibleFieldIds), [allFields, visibleFieldIds]);
   const hiddenCount = allFields.length - visibleFieldIds.length;
-  const hasEdits = edits.size > 0 || newRowData !== null;
+  const hasEdits = edits.size > 0 || newRows.length > 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / rowsPerPage));
   const rangeStart = totalCount === 0 ? 0 : page * rowsPerPage + 1;
   const rangeEnd = Math.min((page + 1) * rowsPerPage, totalCount);
@@ -256,14 +262,40 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
     });
   };
 
+  const addNewRow = () => {
+    setNewRows((prev) => [...prev, { localId: crypto.randomUUID(), data: {} }]);
+  };
+
+  const updateNewRow = (localId: string, fieldId: string, value: unknown) => {
+    setNewRows((prev) => prev.map((r) => (r.localId === localId ? { ...r, data: { ...r.data, [fieldId]: value } } : r)));
+  };
+
+  const removeNewRow = (localId: string) => {
+    setNewRows((prev) => prev.filter((r) => r.localId !== localId));
+    setNewRowErrors((prev) => {
+      if (!prev.has(localId)) return prev;
+      const next = new Map(prev);
+      next.delete(localId);
+      return next;
+    });
+  };
+
   const handleSaveAll = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (newRowData) {
+      const tCols = await getTableColumns(table);
+      const failures: string[] = [];
+
+      // ── Insert each new row independently so one failure doesn't block the rest.
+      // Successfully inserted rows are dropped; failed rows stay visible with their error.
+      const remainingNewRows: NewRow[] = [];
+      const nextRowErrors = new Map<string, string>();
+      for (const nr of newRows) {
         const insertData: Record<string, unknown> = {};
         for (const f of visibleFields) {
-          const val = newRowData[f.field_definition_id];
+          const val = nr.data[f.field_definition_id];
           if (val !== undefined && val !== '') {
             if (f.physical_column_name.startsWith('custom_fields.')) {
               if (!insertData.custom_fields) insertData.custom_fields = {};
@@ -274,13 +306,20 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
             }
           }
         }
-        const tCols = await getTableColumns(table);
         if (user && tCols.has('created_by')) insertData.created_by = user.id;
         if (user && tCols.has('owner_id')) insertData.owner_id = user.id;
         if (user && tCols.has('owner_type')) insertData.owner_type = 'user';
-        await supabase.from(table).insert(insertData);
-        setNewRowData(null);
+
+        const { error } = await supabase.from(table).insert(insertData);
+        if (error) {
+          remainingNewRows.push(nr);
+          nextRowErrors.set(nr.localId, error.message);
+          failures.push(error.message);
+        }
       }
+
+      // ── Apply edits to existing rows; keep failed edits so they stay visible.
+      const remainingEdits: EditMap = new Map();
       for (const [rowPk, rowEdits] of edits.entries()) {
         const updateData: Record<string, unknown> = {};
         const cfPatch: Record<string, unknown> = {};
@@ -297,18 +336,35 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
           const existing = records.find((r) => r._pk === rowPk);
           updateData.custom_fields = { ...((existing?.custom_fields as Record<string, unknown>) ?? {}), ...cfPatch };
         }
-        const uCols = await getTableColumns(table);
-        if (uCols.has('modified_at')) updateData.modified_at = new Date().toISOString();
-        if (user && uCols.has('modified_by')) updateData.modified_by = user.id;
-        await supabase.from(table).update(updateData).eq(pk, rowPk);
+        if (tCols.has('modified_at')) updateData.modified_at = new Date().toISOString();
+        if (user && tCols.has('modified_by')) updateData.modified_by = user.id;
+
+        const { error } = await supabase.from(table).update(updateData).eq(pk, rowPk);
+        if (error) {
+          remainingEdits.set(rowPk, rowEdits);
+          failures.push(error.message);
+        }
       }
-      setEdits(new Map());
+
+      setNewRows(remainingNewRows);
+      setNewRowErrors(nextRowErrors);
+      setEdits(remainingEdits);
       setEditingCell(null);
+      setSaveError(failures.length ? failures.join(' · ') : null);
+
+      // Refresh so saved records (and the updated count) come straight from the DB.
+      // Any rows that failed remain in state and stay rendered above the grid.
       await loadData();
     } finally { setSaving(false); }
   };
 
-  const handleCancelEdits = () => { setEdits(new Map()); setNewRowData(null); setEditingCell(null); };
+  const handleCancelEdits = () => {
+    setEdits(new Map());
+    setNewRows([]);
+    setNewRowErrors(new Map());
+    setSaveError(null);
+    setEditingCell(null);
+  };
 
   const handleColumnSave = (newFieldIds: string[]) => {
     setVisibleFieldIds(newFieldIds);
@@ -421,7 +477,7 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
 
       {/* Command Bar */}
       <div className="bg-white border-b border-[var(--divider)] px-3 py-1.5 flex items-center gap-0.5 shrink-0">
-        <CmdBtn icon={<Plus size={13} />} onClick={() => setNewRowData(newRowData ? null : {})} active={!!newRowData}>
+        <CmdBtn icon={<Plus size={13} />} onClick={addNewRow} active={newRows.length > 0}>
           New
         </CmdBtn>
         <CmdSep />
@@ -467,6 +523,23 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
           </span>
         )}
       </div>
+
+      {/* Save error banner — keeps failed rows visible and explains why */}
+      {saveError && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-2 flex items-start gap-2 shrink-0">
+          <X size={14} className="text-red-500 shrink-0 mt-0.5" />
+          <span className="flex-1 text-[12px] text-red-700 leading-snug">
+            <span className="font-semibold">Some changes could not be saved. </span>{saveError}
+          </span>
+          <button
+            onClick={() => setSaveError(null)}
+            className="text-red-400 hover:text-red-600 shrink-0"
+            title="Dismiss"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
 
       {/* Sub-command bar: Edit columns, Edit filters, Keyword */}
       <div className="bg-white border-b border-[var(--divider)] px-4 py-1.5 flex items-center gap-3 shrink-0">
@@ -627,25 +700,40 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
             </tr>
           </thead>
           <tbody>
-            {newRowData && (
-              <tr className="bg-[#f0f6ff] border-b border-[#d0e0f5]">
-                <td className="w-10 px-2 py-0 text-center border-r border-[var(--divider)]" />
-                <td className="w-9 px-2 py-0 text-center text-[11px] text-[var(--navy-accent)] font-bold border-r border-[var(--divider)]">+</td>
-                {visibleFields.map((field) => (
-                  <td key={field.field_definition_id} className="px-0 py-0 border-r border-[var(--divider)]">
-                    <CellEditor
-                      field={field}
-                      value={newRowData[field.field_definition_id] ?? ''}
-                      onChange={(val) => setNewRowData((prev) => ({ ...prev!, [field.field_definition_id]: val }))}
-                      autoFocus={false}
-                      lookupMeta={lookupMeta}
-                      lookupCache={lookupCache}
-                    />
+            {newRows.map((nr) => {
+              const rowError = newRowErrors.get(nr.localId);
+              return (
+                <tr
+                  key={nr.localId}
+                  className={`border-b ${rowError ? 'bg-red-50 border-red-200' : 'bg-[#f0f6ff] border-[#d0e0f5]'}`}
+                  title={rowError ?? undefined}
+                >
+                  <td className="w-10 px-2 py-0 text-center border-r border-[var(--divider)]">
+                    <button
+                      onClick={() => removeNewRow(nr.localId)}
+                      className="text-[var(--ink-300)] hover:text-red-500 transition-colors"
+                      title="Discard this new row"
+                    >
+                      <X size={13} />
+                    </button>
                   </td>
-                ))}
-                <td />
-              </tr>
-            )}
+                  <td className={`w-9 px-2 py-0 text-center text-[11px] font-bold border-r border-[var(--divider)] ${rowError ? 'text-red-500' : 'text-[var(--navy-accent)]'}`}>+</td>
+                  {visibleFields.map((field) => (
+                    <td key={field.field_definition_id} className="px-0 py-0 border-r border-[var(--divider)]">
+                      <CellEditor
+                        field={field}
+                        value={nr.data[field.field_definition_id] ?? ''}
+                        onChange={(val) => updateNewRow(nr.localId, field.field_definition_id, val)}
+                        autoFocus={false}
+                        lookupMeta={lookupMeta}
+                        lookupCache={lookupCache}
+                      />
+                    </td>
+                  ))}
+                  <td />
+                </tr>
+              );
+            })}
 
             {loading && records.length === 0 ? (
               <tr>
@@ -654,7 +742,7 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
                   <p className="text-[12px] text-[var(--ink-300)] mt-2">Loading records...</p>
                 </td>
               </tr>
-            ) : records.length === 0 ? (
+            ) : records.length === 0 && newRows.length === 0 ? (
               <tr>
                 <td colSpan={visibleFields.length + 3} className="py-24 text-center">
                   <p className="text-[13px] text-[var(--ink-400)]">No records found</p>

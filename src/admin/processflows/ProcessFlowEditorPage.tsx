@@ -82,13 +82,23 @@ const getComponentDef = (type: ComponentType): ComponentDef =>
   COMPONENT_DEFS.find((c) => c.type === type) ?? COMPONENT_DEFS[0];
 
 // ─── Condition group builder (AND/OR + nested groups) ─────────────────────────
-function ConditionGroupEditor({ group, onChange, fields, entityId, depth = 0 }: {
+function ConditionGroupEditor({ group, onChange, fields, entityId, depth = 0, valueLabels: vlProp, registerLabel: rlProp }: {
   group: ConditionGroup;
   onChange: (g: ConditionGroup) => void;
   fields: FieldDefinition[];
   entityId: string;
   depth?: number;
+  // Shared registry mapping `${field}::${value}` → human-readable label so lookup/choice
+  // values can be shown as record names (not GUIDs) in the live IF preview.
+  valueLabels?: Record<string, string>;
+  registerLabel?: (key: string, label: string) => void;
 }) {
+  // The root (depth 0) owns the label registry; nested groups reuse the one passed down.
+  const [vlState, setVlState] = useState<Record<string, string>>({});
+  const valueLabels = vlProp ?? vlState;
+  const registerLabel = rlProp ?? ((key: string, label: string) =>
+    setVlState((prev) => (prev[key] === label ? prev : { ...prev, [key]: label })));
+
   const update = (rules: (ConditionLeaf | ConditionGroup)[]) => onChange({ ...group, rules });
   const setRule = (i: number, r: ConditionLeaf | ConditionGroup) => update(group.rules.map((x, idx) => (idx === i ? r : x)));
   const removeAt = (i: number) => update(group.rules.filter((_, idx) => idx !== i));
@@ -117,28 +127,31 @@ function ConditionGroupEditor({ group, onChange, fields, entityId, depth = 0 }: 
               <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wider">Group</span>
               <button type="button" onClick={() => removeAt(i)} className="text-gray-300 hover:text-red-500"><Trash2 size={11} /></button>
             </div>
-            <ConditionGroupEditor group={r} onChange={(g) => setRule(i, g)} fields={fields} entityId={entityId} depth={depth + 1} />
+            <ConditionGroupEditor group={r} onChange={(g) => setRule(i, g)} fields={fields} entityId={entityId} depth={depth + 1} valueLabels={valueLabels} registerLabel={registerLabel} />
           </div>
         ) : (
-          <div key={i} className="flex items-center gap-1">
-            <select value={r.field} onChange={(e) => setRule(i, { ...r, field: e.target.value })} className={`${selCls} flex-1 min-w-0`}>
+          <div key={i} className="flex items-center gap-1.5 flex-wrap">
+            {/* Field — dynamic dropdown of the selected entity's fields */}
+            <select value={r.field} onChange={(e) => setRule(i, { ...r, field: e.target.value, value: '' })} className={`${selCls} flex-1 min-w-[6.5rem]`}>
               <option value="">— field —</option>
               {fields.map((f) => <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>)}
             </select>
-            <select value={r.operator} onChange={(e) => setRule(i, { ...r, operator: e.target.value })} className={selCls}>
+            {/* Operator — fixed width so it can't squeeze the field/value out of view */}
+            <select value={r.operator} onChange={(e) => setRule(i, { ...r, operator: e.target.value })} className={`${selCls} w-[7.5rem] shrink-0`}>
               {CONDITION_OPERATORS.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
             </select>
+            {/* Value — type-aware control (lookup search / choice dropdown / plain input) */}
             {r.operator !== 'empty' && r.operator !== 'not_empty' && (() => {
               const f = fields.find((ff) => ff.logical_name === r.field);
               const ftype = f?.field_type?.name ?? 'text';
               const cfg = f?.config_json as Record<string, unknown> | null;
               if (f && (ftype === 'lookup' || ftype === 'owner')) {
-                return <div className="w-28 shrink-0"><ConditionLookupValueInput field={f} value={r.value} onChange={(v) => setRule(i, { ...r, value: v })} /></div>;
+                return <div className="flex-1 min-w-[9rem]"><ConditionLookupValueInput field={f} value={r.value} hideLabel onResolved={(val, label) => registerLabel(`${r.field}::${val}`, label)} onChange={(v) => setRule(i, { ...r, value: v })} /></div>;
               }
               if (f && (ftype === 'choice' || ftype === 'optionset') && (cfg?.is_statecode_field || cfg?.is_statusreason_field) && entityId) {
-                return <div className="w-28 shrink-0"><ConditionChoiceValueInput field={f} entityDefId={entityId} value={r.value} onChange={(v) => setRule(i, { ...r, value: v })} /></div>;
+                return <div className="flex-1 min-w-[9rem]"><ConditionChoiceValueInput field={f} entityDefId={entityId} value={r.value} hideLabel onResolved={(val, label) => registerLabel(`${r.field}::${val}`, label)} onChange={(v) => setRule(i, { ...r, value: v })} /></div>;
               }
-              return <input value={r.value} onChange={(e) => setRule(i, { ...r, value: e.target.value })} placeholder="value" className={`${selCls} w-24`} />;
+              return <input value={r.value} onChange={(e) => setRule(i, { ...r, value: e.target.value })} placeholder="value" className={`${selCls} flex-1 min-w-[6rem]`} />;
             })()}
             <button type="button" onClick={() => removeAt(i)} className="text-gray-300 hover:text-red-500 shrink-0"><Trash2 size={11} /></button>
           </div>
@@ -162,7 +175,9 @@ function ConditionGroupEditor({ group, onChange, fields, entityId, depth = 0 }: 
           if (!r.field) return '';
           const fname = fields.find((f) => f.logical_name === r.field)?.display_name ?? r.field;
           const opLabel = CONDITION_OPERATORS.find((o) => o.value === r.operator)?.label ?? r.operator;
-          return (r.operator === 'empty' || r.operator === 'not_empty') ? `${fname} ${opLabel}` : `${fname} ${opLabel} ${r.value || '…'}`;
+          // Prefer the resolved record/choice name over the raw stored value (GUID / option code).
+          const valLabel = valueLabels[`${r.field}::${r.value}`] ?? r.value;
+          return (r.operator === 'empty' || r.operator === 'not_empty') ? `${fname} ${opLabel}` : `${fname} ${opLabel} ${valLabel || '…'}`;
         };
         const groupText = (g: ConditionGroup): string =>
           g.rules.map((r) => (isConditionGroup(r) ? `(${groupText(r)})` : leafText(r))).filter(Boolean).join(` ${g.logic} `);
@@ -186,11 +201,15 @@ function ConditionChoiceValueInput({
   entityDefId,
   value,
   onChange,
+  hideLabel = false,
+  onResolved,
 }: {
   field: FieldDefinition;
   entityDefId: string;
   value: string;
   onChange: (v: string) => void;
+  hideLabel?: boolean;
+  onResolved?: (value: string, label: string) => void;
 }) {
   const [options, setOptions] = useState<{ value: string; label: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -239,12 +258,21 @@ function ConditionChoiceValueInput({
     return () => { cancelled = true; };
   }, [entityDefId, isStatecode, isStatusReason]);
 
-  const inputCls = "w-full px-2.5 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400";
+  // Report the readable label for the current value up to the condition summary.
+  useEffect(() => {
+    if (!value) return;
+    const match = options.find((o) => o.value === value);
+    if (match) onResolved?.(value, match.label);
+  }, [value, options]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const inputCls = hideLabel
+    ? "w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
+    : "w-full px-2.5 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400";
 
   if (loading) {
     return (
       <div>
-        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>
+        {!hideLabel && <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>}
         <div className="flex items-center gap-2 px-2.5 py-2 border border-gray-200 rounded-lg text-xs text-gray-400">
           <Loader2 size={11} className="animate-spin" /> Loading options...
         </div>
@@ -254,7 +282,7 @@ function ConditionChoiceValueInput({
 
   return (
     <div>
-      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>
+      {!hideLabel && <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>}
       <select value={value} onChange={(e) => onChange(e.target.value)} className={inputCls}>
         <option value="">-- Select --</option>
         {options.map((o) => (
@@ -269,10 +297,14 @@ function ConditionLookupValueInput({
   field,
   value,
   onChange,
+  hideLabel = false,
+  onResolved,
 }: {
   field: FieldDefinition;
   value: string;
   onChange: (v: string) => void;
+  hideLabel?: boolean;
+  onResolved?: (value: string, label: string) => void;
 }) {
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<{ id: string; label: string }[]>([]);
@@ -317,10 +349,14 @@ function ConditionLookupValueInput({
         .select(meta.nameCol)
         .eq(meta.pk, value)
         .maybeSingle();
-      if (!cancelled && row) setDisplayLabel(String(row[meta.nameCol] ?? ''));
+      if (!cancelled && row) {
+        const label = String(row[meta.nameCol] ?? '');
+        setDisplayLabel(label);
+        onResolved?.(value, label);
+      }
     });
     return () => { cancelled = true; };
-  }, [value, lookupEntityId, resolveEntityMeta]);
+  }, [value, lookupEntityId, resolveEntityMeta]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Click-outside handler
   useEffect(() => {
@@ -376,6 +412,7 @@ function ConditionLookupValueInput({
   const handleSelect = (id: string, label: string) => {
     onChange(id);
     setDisplayLabel(label);
+    onResolved?.(id, label);
     setOpen(false);
     setSearch('');
   };
@@ -390,19 +427,21 @@ function ConditionLookupValueInput({
 
   return (
     <div ref={wrapRef} className="relative">
-      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>
+      {!hideLabel && <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>}
 
       {/* Trigger button */}
       <button
         type="button"
         onClick={handleOpen}
-        className="w-full flex items-center gap-2 px-2.5 py-2 text-sm border border-gray-200 rounded-lg text-left bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-colors"
+        className={`w-full flex items-center gap-2 border border-gray-200 rounded-lg text-left bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-colors ${
+          hideLabel ? 'px-2 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'
+        }`}
       >
         <Search size={12} className="text-gray-400 shrink-0" />
         {value ? (
           <span className="flex-1 truncate text-gray-800">{displayLabel || value}</span>
         ) : (
-          <span className="flex-1 text-gray-400">Click to search records...</span>
+          <span className="flex-1 text-gray-400 truncate">{hideLabel ? 'Search…' : 'Click to search records...'}</span>
         )}
         {value && (
           <span onClick={handleClear} className="shrink-0 p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
@@ -1483,9 +1522,17 @@ function BpfCanvas({
   };
   const swimlanes = buildSwimlaneBgs();
 
-  // Drop zone x position (after the rightmost column on the main row)
-  const row0MaxCol = Math.max(0, ...activeStages.filter((s) => (rowOf.get(s.process_stage_id) ?? 0) === 0).map((s) => colOf.get(s.process_stage_id) ?? 0));
-  const dropZoneX = START_X + (row0MaxCol + 1) * COLUMN_WIDTH;
+  // The main (non-branch) flow runs along row 0. Its FINAL stage is the rightmost
+  // row-0 stage that isn't a branch target — that's where the single persistent "+"
+  // sits, on the connector line just past the card. Conditions branch via their own
+  // Yes/No controls, so a condition tail gets no "+".
+  const mainFlowStages = activeStages.filter(
+    (s) => (rowOf.get(s.process_stage_id) ?? 0) === 0 && !branchKind.has(s.process_stage_id)
+  );
+  const mainTail = mainFlowStages.length
+    ? mainFlowStages.reduce((a, b) => ((colOf.get(b.process_stage_id) ?? 0) > (colOf.get(a.process_stage_id) ?? 0) ? b : a))
+    : null;
+  const mainAddTail = mainTail && mainTail.component_type !== 'condition' ? mainTail : null;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -1754,7 +1801,9 @@ function BpfCanvas({
                 });
               })}
 
-              {/* Continuation zones — add MORE stages to a branch line (to the right of a branch stage). */}
+              {/* Branch-line "+" — one persistent button on the connector line just past the
+                  final stage of each branch. Click appends a stage to that branch; dropping a
+                  dragged component on it routes into the same branch (drag-and-drop unchanged). */}
               {activeStages.filter((s) => s.component_type !== 'condition' && branchKind.has(s.process_stage_id) && branchOpen(s.branch_yes_stage_id)).map((st) => {
                 const pos = nodePositions.get(st.process_stage_id);
                 if (!pos) return null;
@@ -1763,8 +1812,8 @@ function BpfCanvas({
                 return (
                   <div
                     key={st.process_stage_id + '-cont'}
-                    className="absolute"
-                    style={{ left: pos.x + COLUMN_WIDTH, top: pos.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
+                    className="absolute flex items-center"
+                    style={{ left: pos.x + NODE_WIDTH, top: pos.y + NODE_HEIGHT / 2 - 14, height: 28 }}
                     onDragOver={(e) => {
                       if (!draggingType.current) return;
                       e.preventDefault();
@@ -1782,16 +1831,21 @@ function BpfCanvas({
                       if (type) { onDropInBranch(st.process_stage_id, 'yes', type); draggingType.current = null; }
                     }}
                   >
-                    <div className={`w-full h-full rounded-xl border-2 border-dashed flex flex-col items-center justify-center text-center transition-colors ${
-                      active
-                        ? (isYes ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-red-500 bg-red-50 text-red-700')
-                        : (isYes ? 'border-emerald-300/60 bg-emerald-50/20 text-emerald-500' : 'border-red-300/60 bg-red-50/20 text-red-500')
-                    }`}>
-                      <Plus size={14} className="my-0.5" />
-                      <span className="text-[10px] font-medium px-2 leading-tight">
-                        {active ? `Drop ${draggingType.current === 'condition' ? 'condition' : 'stage'} here` : 'Add stage'}
-                      </span>
-                    </div>
+                    {/* connector stub */}
+                    <div className={`w-4 h-0.5 ${isYes ? 'bg-emerald-300' : 'bg-red-300'}`} />
+                    <button
+                      type="button"
+                      title="Add a stage to this branch"
+                      onClick={(e) => { e.stopPropagation(); onDropInBranch(st.process_stage_id, 'yes', 'stage'); }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`w-7 h-7 rounded-full border-2 border-dashed flex items-center justify-center transition-colors cursor-pointer select-none ${
+                        active
+                          ? (isYes ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-red-500 bg-red-50 text-red-700')
+                          : (isYes ? 'border-emerald-300 bg-white text-emerald-500 hover:border-emerald-400 hover:bg-emerald-50' : 'border-red-300 bg-white text-red-500 hover:border-red-400 hover:bg-red-50')
+                      }`}
+                    >
+                      <Plus size={14} />
+                    </button>
                   </div>
                 );
               })}
@@ -1821,28 +1875,36 @@ function BpfCanvas({
                 );
               })}
 
-              {/* Add stage button / drop zone */}
-              {activeStages.length > 0 && (
-                <div
-                  className="absolute"
-                  style={{ left: dropZoneX + 8, top: BASELINE_Y + NODE_HEIGHT / 2 - 34 }}
-                >
+              {/* Main-flow "+" — the single persistent button on the connector line just
+                  past the final stage. Clicking appends a new stage after it; because the
+                  tail is recomputed every render, the "+" automatically follows the new
+                  final stage. It lives OUTSIDE the card, never inside it. */}
+              {mainAddTail && (() => {
+                const pos = nodePositions.get(mainAddTail.process_stage_id);
+                if (!pos) return null;
+                return (
                   <div
-                    className={`w-[72px] h-[68px] border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-colors cursor-pointer select-none ${
-                      dropTarget === 'canvas'
-                        ? 'border-blue-400 bg-blue-50/80 text-blue-600'
-                        : 'border-blue-300 bg-blue-50/30 text-blue-400 hover:border-blue-400 hover:bg-blue-50/70'
-                    }`}
-                    onClick={() => onDropType('stage')}
-                    onMouseDown={(e) => e.stopPropagation()}
+                    className="absolute flex items-center"
+                    style={{ left: pos.x + NODE_WIDTH, top: pos.y + NODE_HEIGHT / 2 - 14, height: 28 }}
                   >
-                    <Plus size={14} />
-                    <span className="text-[9px] mt-0.5 font-semibold">
-                      {dropTarget === 'canvas' ? 'Drop' : 'Add stage'}
-                    </span>
+                    {/* connector stub */}
+                    <div className="w-4 h-0.5 bg-gray-300" />
+                    <button
+                      type="button"
+                      title="Add a stage"
+                      onClick={() => onDropType('stage')}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`w-7 h-7 rounded-full border-2 border-dashed flex items-center justify-center transition-colors cursor-pointer select-none ${
+                        dropTarget === 'canvas'
+                          ? 'border-blue-400 bg-blue-50 text-blue-600'
+                          : 'border-blue-300 bg-white text-blue-400 hover:border-blue-400 hover:bg-blue-50'
+                      }`}
+                    >
+                      <Plus size={14} />
+                    </button>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </>
           )}
         </div>

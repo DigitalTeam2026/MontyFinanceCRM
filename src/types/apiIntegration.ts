@@ -14,6 +14,15 @@ export type LookupValueType = 'id' | 'primary_name' | 'field';
 /** How an incoming lookup value is matched back to a related record. */
 export type LookupMatchBy = 'id' | 'primary_name' | 'field';
 
+/** How the incoming value is compared against the match column. */
+export type LookupMatchType = 'exact' | 'case_insensitive_exact';
+
+/** What to do when no related record matches the incoming value. */
+export type LookupNotFoundBehavior = 'reject' | 'set_null' | 'create';
+
+/** What to do when more than one related record matches (only "reject" today). */
+export type LookupMultipleMatchBehavior = 'reject';
+
 // ── Outgoing request-body mapping ───────────────────────────────────────────────
 
 /** One node mapped into the outgoing JSON request body. */
@@ -82,6 +91,13 @@ export interface InboundFieldMapping {
   lookup_entity_physical_table?: string;
   lookup_entity_pk?: string;
   lookup_entity_primary_field?: string;
+  lookup_entity_display_name?: string;         // related entity label, used in error messages
+  /** Comparison strategy for primary_name / field matching. Default: case-insensitive exact. */
+  lookup_match_type?: LookupMatchType;
+  /** Behaviour when no related record matches. Default: reject. */
+  lookup_not_found_behavior?: LookupNotFoundBehavior;
+  /** Behaviour when multiple related records match. Always reject (ambiguous). */
+  lookup_multiple_match_behavior?: LookupMultipleMatchBehavior;
 }
 
 export interface InboundConfig {
@@ -197,9 +213,17 @@ export interface EntityFieldInfo {
   lookup_entity: {
     entity_definition_id: string;
     logical_name: string;
+    display_name: string;
     physical_table_name: string;
     primary_field_name: string;
   } | null;
+}
+
+/** Result of a "Test Mapping" lookup resolution preview (admin tooling). */
+export interface LookupResolutionTestResult {
+  status: 'found' | 'not_found' | 'ambiguous' | 'error';
+  matches: { id: string; label: string }[];
+  message?: string;
 }
 
 export interface LookupEntityField {

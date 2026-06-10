@@ -5,7 +5,9 @@ import type {
   ApiIntegrationHeader,
   ApiIntegrationLog,
   EntityFieldInfo,
+  InboundFieldMapping,
   LookupEntityField,
+  LookupResolutionTestResult,
   TestExecutionResult,
 } from '../types/apiIntegration';
 
@@ -178,6 +180,7 @@ export async function fetchEntityFieldsForIntegration(
       lookup_entity:entity_definition!lookup_entity_id(
         entity_definition_id,
         logical_name,
+        display_name,
         physical_table_name,
         primary_field_name
       )
@@ -229,6 +232,64 @@ export async function fetchSampleRecords(
     id: String(r[pkColumn] ?? ''),
     label: String(r[displayColumn] ?? r[pkColumn] ?? 'Unknown'),
   }));
+}
+
+// Escape LIKE/ILIKE wildcards so a value is matched literally (case-insensitively).
+function escapeLike(v: string): string {
+  return v.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * "Test Mapping" preview — resolve a sample incoming value against the related
+ * entity using the same rules the edge function applies, so an admin can confirm
+ * the match before saving. Runs client-side (subject to RLS) and is read-only.
+ */
+export async function testLookupResolution(
+  m: InboundFieldMapping,
+  sampleValue: string
+): Promise<LookupResolutionTestResult> {
+  const value = sampleValue.trim();
+  if (!value) return { status: 'error', matches: [], message: 'Enter a sample value to test.' };
+
+  const table = m.lookup_entity_physical_table;
+  const pk = m.lookup_entity_pk;
+  const nameCol = m.lookup_entity_primary_field;
+  if (!table || !pk) {
+    return { status: 'error', matches: [], message: 'Lookup is not fully configured yet.' };
+  }
+
+  const matchBy = m.lookup_match_by ?? 'id';
+  const matchCol =
+    matchBy === 'id' ? pk
+    : matchBy === 'primary_name' ? nameCol
+    : m.lookup_match_field_physical_column;
+  if (!matchCol) {
+    return { status: 'error', matches: [], message: 'Select which field to match on.' };
+  }
+
+  const selectCols = [pk, nameCol].filter(Boolean).join(', ');
+  const ci = matchBy !== 'id' && m.lookup_match_type === 'case_insensitive_exact';
+
+  const run = (withDeleted: boolean) => {
+    let q = supabase.from(table).select(selectCols).limit(3);
+    q = ci ? q.ilike(matchCol, escapeLike(value)) : q.eq(matchCol, value);
+    if (withDeleted) q = q.eq('is_deleted', false);
+    return q;
+  };
+
+  let res = await run(true);
+  if (res.error) res = await run(false); // some lookup tables have no is_deleted column
+  if (res.error) return { status: 'error', matches: [], message: res.error.message };
+
+  const rows = (res.data ?? []) as Record<string, unknown>[];
+  const matches = rows.map((r) => ({
+    id: String(r[pk] ?? ''),
+    label: String((nameCol ? r[nameCol] : undefined) ?? r[pk] ?? '(no name)'),
+  }));
+
+  if (matches.length === 0) return { status: 'not_found', matches };
+  if (matches.length > 1) return { status: 'ambiguous', matches };
+  return { status: 'found', matches };
 }
 
 // ── Execution ─────────────────────────────────────────────────────────────────

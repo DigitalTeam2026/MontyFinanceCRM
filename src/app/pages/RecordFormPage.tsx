@@ -148,6 +148,28 @@ const ENTITY_NEW_DEFAULTS: Partial<Record<AppEntity, Record<string, unknown>>> =
   tickets:       { state_code: '1', status_reason: '1' },
 };
 
+// Display-only singular labels for the new-record page title. These entities use
+// singular logical names as their route slug, so the generic entity.slice(0, -1)
+// fallback over-trims them (e.g. "currency" -> "currenc"). This map only fixes the
+// displayed title; routing, forms, and record-creation behavior are unchanged.
+const NEW_RECORD_ENTITY_LABELS: Record<string, string> = {
+  currency:   'Currency',
+  currencies: 'Currency',
+  industry:   'Industry',
+  industries: 'Industry',
+  country:    'Country',
+  countries:  'Country',
+  campaign:   'Campaign',
+  campaigns:  'Campaign',
+  source:     'Source',
+  sources:    'Source',
+  crm_source: 'Source',
+  product:          'Product',
+  products:         'Product',
+  product_family:   'Product_Family',
+  product_families: 'Product_Family',
+};
+
 
 const HISTORY_TAB_ID = 'history_tab__field_history';
 
@@ -714,6 +736,10 @@ interface RecordFormPageProps {
   entity: AppEntity;
   recordId: string | null;
   userId: string;
+  /** Tab to reopen on mount (restored from the URL after a refresh). */
+  initialTab?: string;
+  /** Fired whenever the active tab changes, so the URL can track it. */
+  onTabChange?: (tabId: string) => void;
   onBack: () => void;
   onNavigate?: (entity: AppEntity, id: string) => void;
   onRecordLoaded?: (id: string, label: string) => void;
@@ -910,6 +936,8 @@ export default function RecordFormPage({
   entity,
   recordId,
   userId,
+  initialTab,
+  onTabChange,
   onBack,
   onNavigate,
   onRecordLoaded,
@@ -988,6 +1016,8 @@ export default function RecordFormPage({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [activeTabId, setActiveTabId] = useState<string>('');
+  // Guards the one-time restore of `initialTab` (from the URL) on first layout load.
+  const initialTabRestoredRef = useRef(false);
   const [isPinned, setIsPinned] = useState(false);
   const [crmUsers, setCrmUsers] = useState<{ id: string; email: string }[]>([]);
   const [lookupLabels, setLookupLabels] = useState<Record<string, string>>({});
@@ -1439,11 +1469,35 @@ export default function RecordFormPage({
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  // Report the active tab upward so the URL can track it across a refresh.
+  useEffect(() => {
+    if (activeTabId) onTabChange?.(activeTabId);
+  }, [activeTabId, onTabChange]);
+
   // Auto-select the first form tab when layout loads but activeTabId doesn't match any tab
   useEffect(() => {
     if (!layout) return;
     const tabs = layout.tabs?.filter((t) => t.is_visible !== false) ?? [];
     if (tabs.length === 0) return;
+
+    // One-time: restore the tab carried in the URL once the layout is available,
+    // taking precedence over the default first-tab selection. Honored only when
+    // the restored tab is valid for the loaded layout; otherwise falls through.
+    if (!initialTabRestoredRef.current) {
+      initialTabRestoredRef.current = true;
+      if (initialTab) {
+        const validFormTab =
+          initialTab.startsWith(FORM_TAB_PREFIX) &&
+          tabs.some((t) => initialTab === FORM_TAB_PREFIX + t.id);
+        const validOtherTab =
+          initialTab === HISTORY_TAB_ID || initialTab.startsWith(RELATED_TAB_PREFIX);
+        if (validFormTab || validOtherTab) {
+          setActiveTabId(initialTab);
+          return;
+        }
+      }
+    }
+
     const isForm = activeTabId.startsWith(FORM_TAB_PREFIX);
     if (isForm) {
       const matchesTab = tabs.some((t) => activeTabId === FORM_TAB_PREFIX + t.id);
@@ -1452,7 +1506,7 @@ export default function RecordFormPage({
     if (activeTabId === HISTORY_TAB_ID) return;
     if (activeTabId.startsWith(RELATED_TAB_PREFIX)) return;
     setActiveTabId(FORM_TAB_PREFIX + tabs[0].id);
-  }, [layout, activeTabId]);
+  }, [layout, activeTabId, initialTab]);
 
   // Re-resolve flow+form when the product field changes (lead/opportunity only).
   // This must fully reinitialize the BPF instance: persist the switch to the DB,
@@ -2982,7 +3036,7 @@ function RecordFormInner({
           {/* Record name + entity label + metadata chips */}
           <div className="flex-1 min-w-0">
             <p className="text-[9px] text-[#3b6fff] font-semibold tracking-widest uppercase leading-none mb-0.5">
-              {recordId ? entity.slice(0, -1) : `New ${entity.slice(0, -1)}`}
+              {recordId ? entity.slice(0, -1) : `New ${NEW_RECORD_ENTITY_LABELS[entity] ?? entity.slice(0, -1)}`}
             </p>
             <h1 className="text-[15px] font-bold text-[#111827] truncate leading-tight mb-1.5">
               {getRecordTitle()}

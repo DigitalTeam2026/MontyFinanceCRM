@@ -4,33 +4,7 @@ import { supabase } from './lib/supabase';
 import LoginPage from './LoginPage';
 import AdminStudio from './admin/AdminStudio';
 import CrmApp from './app/CrmApp';
-import type { AppEntity } from './app/types';
-
-const ENTITY_MODULE_MAP: Record<AppEntity, 'sales' | 'marketing' | 'support'> = {
-  accounts: 'sales',
-  contacts: 'sales',
-  leads: 'sales',
-  opportunities: 'sales',
-  tickets: 'support',
-};
-
-type ParsedRoute =
-  | { type: 'studio' }
-  | { type: 'app' }
-  | { type: 'record'; entity: AppEntity; id: string };
-
-function parseRoute(): ParsedRoute {
-  const hash = window.location.hash;
-  if (hash.startsWith('#/studio')) return { type: 'studio' };
-  const recordMatch = hash.match(/^#\/record\/([^/]+)\/([^/]+)/);
-  if (recordMatch) {
-    const entity = recordMatch[1] as AppEntity;
-    if (entity in ENTITY_MODULE_MAP) {
-      return { type: 'record', entity, id: recordMatch[2] };
-    }
-  }
-  return { type: 'app' };
-}
+import { parseRoute } from './lib/appRoute';
 
 export function buildRecordUrl(entitySlug: string, id: string): string {
   return `${window.location.pathname}${window.location.search}#/record/${entitySlug}/${id}`;
@@ -108,17 +82,20 @@ export default function App() {
   }
 
   // Admin + studio route
-  if (isSystemAdmin && route.type === 'studio') {
+  if (isSystemAdmin && route.surface === 'studio') {
     return <AdminStudio />;
   }
 
-  // CRM app (all users)
-  if (route.type === 'record') {
+  // CRM app (all users). A non-admin landing on a studio hash falls through to
+  // the CRM default rather than being shown a blank screen.
+  if (route.surface === 'crm') {
     return (
       <CrmApp
+        initialModule={route.module}
         initialEntity={route.entity}
-        initialModule={ENTITY_MODULE_MAP[route.entity]}
-        initialRecordId={route.id}
+        initialView={route.view}
+        initialViewId={route.viewId}
+        initialSearch={route.search}
       />
     );
   }
