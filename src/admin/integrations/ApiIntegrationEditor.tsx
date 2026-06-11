@@ -26,6 +26,7 @@ import {
   createApiIntegration,
   updateApiIntegration,
   fetchIntegrationHeaders,
+  fetchIntegrationSecret,
   fetchEntityFieldsForIntegration,
   fetchLookupEntityFields,
   fetchSampleRecords,
@@ -148,7 +149,10 @@ export default function ApiIntegrationEditor({ integration, onBack, onSaved }: P
     setSavedId(integration.api_integration_id);
     setEndpointKey(integration.endpoint_key);
     setLastRequestAt(integration.last_request_at);
-    fetchIntegrationHeaders(integration.api_integration_id).then((headers) => {
+    Promise.all([
+      fetchIntegrationHeaders(integration.api_integration_id),
+      fetchIntegrationSecret(integration.api_integration_id).catch(() => ''),
+    ]).then(([headers, secret]) => {
       setForm({
         name: integration.name,
         description: integration.description ?? '',
@@ -160,7 +164,7 @@ export default function ApiIntegrationEditor({ integration, onBack, onSaved }: P
         is_active: integration.is_active,
         trigger_event: integration.trigger_event,
         auth_type: integration.auth_type,
-        auth_secret: '',
+        auth_secret: secret,
         auth_key_name: integration.auth_key_name ?? '',
         auth_username: integration.auth_username ?? '',
         body_config: integration.body_config ?? { fields: [], exclude_null_fields: true },
@@ -607,7 +611,7 @@ export default function ApiIntegrationEditor({ integration, onBack, onSaved }: P
                   <span>
                     {isIncoming
                       ? 'Incoming requests must present these exact credentials, or they are rejected with 401.'
-                      : 'Secrets are stored securely and never returned after saving. To change a secret, type the new value.'}
+                      : 'Stored securely and visible only to system admins. Use the eye icon to reveal the saved value.'}
                   </span>
                 </div>
               )}

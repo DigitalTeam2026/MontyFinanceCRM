@@ -63,6 +63,22 @@ export async function fetchApiIntegration(id: string): Promise<ApiIntegration> {
   return data as ApiIntegration;
 }
 
+/**
+ * Read the stored auth secret for a single integration so the admin editor can
+ * reveal it via the "show password" toggle. Excluded from the standard column
+ * list (so it is never fetched incidentally); the `api_integration` table is
+ * already restricted to system admins by RLS, so this exposes nothing new.
+ */
+export async function fetchIntegrationSecret(integrationId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('api_integration')
+    .select('auth_secret')
+    .eq('api_integration_id', integrationId)
+    .single();
+  if (error) throw error;
+  return ((data as { auth_secret: string | null } | null)?.auth_secret) ?? '';
+}
+
 export async function fetchIntegrationHeaders(
   integrationId: string
 ): Promise<ApiIntegrationHeader[]> {

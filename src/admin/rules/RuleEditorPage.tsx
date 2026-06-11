@@ -20,6 +20,7 @@ import {
   Plus,
   Layers,
   Trash2,
+  LayoutGrid,
 } from 'lucide-react';
 import type { BusinessRule, RuleTrigger, RuleActionSet, RuleScope, RuleConditionGroup, RuleCondition, RuleConditionBlock, RuleAction } from '../../types/businessRule';
 import { validateProcessFlowCondition, getRuleConditionBlocks } from '../../types/businessRule';
@@ -33,8 +34,9 @@ import { fetchProcessFlowsForEntity, fetchProcessFlowWithDetails } from '../../s
 import ConditionBuilder from './ConditionBuilder';
 import ActionBuilder from './ActionBuilder';
 import RulePreviewPanel from './RulePreviewPanel';
+import RuleCanvas from './RuleCanvas';
 
-type Tab = 'trigger' | 'conditions' | 'actions' | 'settings' | 'preview';
+type Tab = 'canvas' | 'trigger' | 'conditions' | 'actions' | 'settings' | 'preview';
 
 const SCOPE_OPTIONS: { value: RuleScope; label: string; desc: string; icon: React.ReactNode }[] = [
   {
@@ -132,7 +134,8 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('conditions');
+  const [activeTab, setActiveTab] = useState<Tab>('canvas');
+  const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
 
   const trigger: RuleTrigger = rule.trigger_json ?? {
     trigger_on: 'onChange',
@@ -203,6 +206,15 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
     const next = blocks.filter((b) => b.id !== id);
     setBlocks(next);
     if (activeBlockId === id) setActiveBlockId(next[0].id);
+    if (expandedBlockId === id) setExpandedBlockId(null);
+  };
+
+  const reorderBlocks = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || from >= blocks.length || to >= blocks.length) return;
+    const next = [...blocks];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setBlocks(next);
   };
 
   const collectProcessFlowConditions = (group: RuleConditionGroup | null): RuleCondition[] => {
@@ -254,6 +266,7 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
   const activeBlockIndex = Math.max(0, blocks.findIndex((b) => b.id === activeBlock?.id));
 
   const TABS: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
+    { id: 'canvas',     label: 'Canvas',     icon: <LayoutGrid size={13} />, badge: blockCount > 1 ? blockCount : undefined },
     { id: 'trigger',    label: 'Trigger',    icon: <Zap size={13} /> },
     { id: 'conditions', label: 'Conditions', icon: <Filter size={13} />,      badge: blockCount > 1 ? blockCount : undefined },
     { id: 'actions',    label: 'Actions',    icon: <Play size={13} />,        badge: actionCount || undefined },
@@ -366,6 +379,20 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
         </div>
 
         <div className={`flex-1 min-h-0 ${activeTab === 'actions' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto p-5'}`}>
+          {activeTab === 'canvas' && (
+            <RuleCanvas
+              blocks={blocks}
+              fields={fields}
+              processFlows={processFlows}
+              loadFlowStages={loadFlowStages}
+              expandedBlockId={expandedBlockId}
+              onExpandBlock={setExpandedBlockId}
+              onUpdateBlock={updateBlock}
+              onAddBlock={addBlock}
+              onRemoveBlock={removeBlock}
+              onReorderBlocks={reorderBlocks}
+            />
+          )}
           {activeTab === 'trigger' && (
             <TriggerPanel
               trigger={trigger}
