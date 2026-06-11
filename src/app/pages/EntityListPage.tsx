@@ -1101,18 +1101,16 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           <div className="flex-1" />
           <button
             onClick={() => setShowColCustomizer((v) => !v)}
-            className="flex items-center gap-1.5 px-2.5 h-[32px] text-[12px] font-medium text-[#5b6472] bg-white shrink-0 transition hover:bg-[#f4f6fb] hover:text-[#161a22]"
-            style={{ border: '1px solid #e7eaf1', borderRadius: 10 }}
+            className="flex items-center gap-1.5 px-2 h-[32px] text-[13px] font-medium text-[#5b6472] shrink-0 transition rounded-md hover:bg-[#f4f6fb] hover:text-[#161a22]"
           >
-            <Columns3 size={13} />
+            <Columns3 size={14} />
             <span>Edit columns</span>
           </button>
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className="flex items-center gap-1.5 px-2.5 h-[32px] text-[12px] font-medium text-[#5b6472] bg-white shrink-0 transition hover:bg-[#f4f6fb] hover:text-[#161a22]"
-            style={{ border: '1px solid #e7eaf1', borderRadius: 10 }}
+            className="flex items-center gap-1.5 px-2 h-[32px] text-[13px] font-medium text-[#5b6472] shrink-0 transition rounded-md hover:bg-[#f4f6fb] hover:text-[#161a22]"
           >
-            <Filter size={13} />
+            <Filter size={14} />
             <span>Edit filters</span>
           </button>
           <div className="relative w-[210px]">

@@ -104,20 +104,6 @@ export default function AppHeader({
           PROD
         </span>
 
-        {onGlobalSearch && (
-          <button
-            onClick={onGlobalSearch}
-            title="Global search (Ctrl+K)"
-            className="w-[32px] h-[32px] flex items-center justify-center rounded-sm transition-colors"
-            style={{ color: 'var(--header-fg-muted)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--header-hover-bg)'; e.currentTarget.style.color = 'var(--header-fg)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--header-fg-muted)'; }}
-          >
-            <Search size={16} />
-          </button>
-        )}
-
-
         {/* Notification bell */}
         <div ref={bellRef} className="relative">
           <button
