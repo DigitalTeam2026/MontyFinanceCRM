@@ -1,78 +1,78 @@
 import { useState, useEffect } from 'react';
-import { ChevronDown, Users, TrendingUp, User, Briefcase, Package, Loader2, X } from 'lucide-react';
+import { ChevronDown, Briefcase, TrendingUp, Zap, Users, User, Package, Loader2, X, InboxIcon } from 'lucide-react';
 import type { AppEntity } from '../types';
 import { supabase } from '../../lib/supabase';
 
-interface DashboardCard {
+interface EntityCard {
   id: string;
   entity: AppEntity;
   label: string;
+  shortLabel: string;
   icon: React.ReactNode;
   count: number;
   countLoading: boolean;
   color: string;
-  accentColor: string;
-  gradientFrom: string;
-  gradientTo: string;
+  lightColor: string;
+  hoverColor: string;
 }
 
-interface ExpandedCardState {
+interface ExpandedState {
   cardId: string;
   itemsLoading: boolean;
   items: Record<string, unknown>[];
   selectedStatus?: string;
 }
 
-const CARD_CONFIG: Omit<DashboardCard, 'count' | 'countLoading'>[] = [
+const ENTITY_CARDS: Omit<EntityCard, 'count' | 'countLoading'>[] = [
   {
     id: 'my-accounts',
     entity: 'accounts',
     label: 'My Accounts',
+    shortLabel: 'Accounts',
     icon: <Briefcase size={24} />,
-    color: '#2563eb',
-    accentColor: '#1e40af',
-    gradientFrom: 'from-blue-50',
-    gradientTo: 'to-blue-100',
+    color: '#0078D4',
+    lightColor: '#E7F3FF',
+    hoverColor: '#106EBE',
   },
   {
     id: 'my-leads',
     entity: 'leads',
     label: 'My Leads',
+    shortLabel: 'Leads',
     icon: <TrendingUp size={24} />,
-    color: '#f59e0b',
-    accentColor: '#d97706',
-    gradientFrom: 'from-amber-50',
-    gradientTo: 'to-amber-100',
+    color: '#FFB900',
+    lightColor: '#FFF4CE',
+    hoverColor: '#D99E00',
   },
   {
     id: 'my-opportunities',
     entity: 'opportunities',
     label: 'My Opportunities',
-    icon: <Users size={24} />,
-    color: '#10b981',
-    accentColor: '#059669',
-    gradientFrom: 'from-emerald-50',
-    gradientTo: 'to-emerald-100',
+    shortLabel: 'Opportunities',
+    icon: <Zap size={24} />,
+    color: '#107C10',
+    lightColor: '#E7F5E1',
+    hoverColor: '#0B6A0B',
   },
   {
     id: 'my-contacts',
     entity: 'contacts',
     label: 'My Contacts',
-    icon: <User size={24} />,
-    color: '#8b5cf6',
-    accentColor: '#7c3aed',
-    gradientFrom: 'from-violet-50',
-    gradientTo: 'to-violet-100',
+    shortLabel: 'Contacts',
+    icon: <Users size={24} />,
+    color: '#8764B8',
+    lightColor: '#F3F0FF',
+    hoverColor: '#6B5B95',
   },
   {
     id: 'products',
     entity: 'product',
     label: 'Products/Services',
+    shortLabel: 'Products',
     icon: <Package size={24} />,
-    color: '#ec4899',
-    accentColor: '#be185d',
-    gradientFrom: 'from-pink-50',
-    gradientTo: 'to-pink-100',
+    color: '#DA3B01',
+    lightColor: '#FFE7DB',
+    hoverColor: '#B52E00',
   },
 ];
 
@@ -88,7 +88,7 @@ const TABLE_MAP: Record<AppEntity, string> = {
 
 const DISPLAY_COLUMNS: Record<AppEntity, { key: string; label: string }[]> = {
   accounts: [
-    { key: 'account_name', label: 'Name' },
+    { key: 'account_name', label: 'Account Name' },
     { key: 'phone', label: 'Phone' },
     { key: 'website', label: 'Website' },
   ],
@@ -99,17 +99,17 @@ const DISPLAY_COLUMNS: Record<AppEntity, { key: string; label: string }[]> = {
     { key: 'state_code', label: 'Status' },
   ],
   opportunities: [
-    { key: 'topic', label: 'Name' },
+    { key: 'topic', label: 'Opportunity' },
     { key: 'stage', label: 'Stage' },
     { key: 'estimated_value', label: 'Value' },
   ],
   contacts: [
     { key: 'first_name', label: 'Name' },
     { key: 'email', label: 'Email' },
-    { key: 'job_title', label: 'Job Title' },
+    { key: 'job_title', label: 'Title' },
   ],
   product: [
-    { key: 'name', label: 'Name' },
+    { key: 'name', label: 'Product Name' },
     { key: 'code', label: 'Code' },
   ],
   tickets: [
@@ -122,29 +122,39 @@ const DISPLAY_COLUMNS: Record<AppEntity, { key: string; label: string }[]> = {
   ],
 };
 
+const STATUS_FILTERS: Record<AppEntity, string[]> = {
+  leads: ['Open', 'Qualified', 'Disqualified'],
+  opportunities: ['Open', 'Closed Won', 'Closed Lost'],
+  accounts: [],
+  contacts: [],
+  product: [],
+  tickets: [],
+  product_family: [],
+};
+
 interface PersonalDashboardProps {
   userId: string;
 }
 
 export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
-  const [cards, setCards] = useState<DashboardCard[]>([]);
-  const [expandedCard, setExpandedCard] = useState<ExpandedCardState | null>(null);
+  const [entityCards, setEntityCards] = useState<EntityCard[]>([]);
+  const [expandedCard, setExpandedCard] = useState<ExpandedState | null>(null);
 
   useEffect(() => {
-    const initCards = CARD_CONFIG.map((cfg) => ({
+    const initCards = ENTITY_CARDS.map((cfg) => ({
       ...cfg,
       count: 0,
       countLoading: true,
     }));
-    setCards(initCards);
-    loadCounts();
+    setEntityCards(initCards);
+    loadCardCounts();
   }, [userId]);
 
-  const loadCounts = async () => {
+  const loadCardCounts = async () => {
     try {
       const counts: Record<string, number> = {};
 
-      for (const cfg of CARD_CONFIG) {
+      for (const cfg of ENTITY_CARDS) {
         const table = TABLE_MAP[cfg.entity];
         const { count, error } = await supabase
           .from(table)
@@ -156,7 +166,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
         }
       }
 
-      setCards((prev) =>
+      setEntityCards((prev) =>
         prev.map((card) => ({
           ...card,
           count: counts[card.id] || 0,
@@ -164,20 +174,25 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
         }))
       );
     } catch (error) {
-      console.error('Error loading dashboard counts:', error);
-      setCards((prev) => prev.map((card) => ({ ...card, countLoading: false })));
+      console.error('Error loading card counts:', error);
+      setEntityCards((prev) => prev.map((card) => ({ ...card, countLoading: false })));
     }
   };
 
   const loadCardItems = async (cardId: string) => {
-    const card = cards.find((c) => c.id === cardId);
+    const card = entityCards.find((c) => c.id === cardId);
     if (!card) return;
 
     try {
       const table = TABLE_MAP[card.entity];
-      let query = supabase.from(table).select('*').eq('owner_id', userId).limit(50);
+      let query = supabase
+        .from(table)
+        .select('*')
+        .eq('owner_id', userId)
+        .limit(100)
+        .order('created_at', { ascending: false });
 
-      if (card.entity === 'leads' && expandedCard?.cardId === cardId && expandedCard.selectedStatus) {
+      if (expandedCard?.cardId === cardId && expandedCard.selectedStatus) {
         query = query.eq('state_code', expandedCard.selectedStatus);
       }
 
@@ -192,7 +207,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
         });
       }
     } catch (error) {
-      console.error('Error loading items:', error);
+      console.error('Error loading card items:', error);
       setExpandedCard((prev) => (prev ? { ...prev, itemsLoading: false } : null));
     }
   };
@@ -206,225 +221,512 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
     }
   };
 
-  const handleLeadStatusFilter = (status: string) => {
-    if (expandedCard?.cardId === 'my-leads') {
+  const handleStatusFilter = (status: string) => {
+    if (expandedCard) {
+      const newStatus = expandedCard.selectedStatus === status ? undefined : status;
       setExpandedCard((prev) =>
-        prev ? { ...prev, selectedStatus: prev.selectedStatus === status ? undefined : status, itemsLoading: true, items: [] } : null
+        prev ? { ...prev, selectedStatus: newStatus, itemsLoading: true, items: [] } : null
       );
-      const card = cards.find((c) => c.id === 'my-leads');
-      if (card) {
-        loadCardItems('my-leads');
+
+      if (expandedCard.cardId) {
+        setTimeout(() => {
+          loadCardItemsWithStatus(expandedCard.cardId, newStatus);
+        }, 0);
       }
+    }
+  };
+
+  const loadCardItemsWithStatus = async (cardId: string, status?: string) => {
+    const card = entityCards.find((c) => c.id === cardId);
+    if (!card) return;
+
+    try {
+      const table = TABLE_MAP[card.entity];
+      let query = supabase
+        .from(table)
+        .select('*')
+        .eq('owner_id', userId)
+        .limit(100)
+        .order('created_at', { ascending: false });
+
+      if (status) {
+        query = query.eq('state_code', status);
+      }
+
+      const { data, error } = await query;
+
+      if (!error) {
+        setExpandedCard((prev) =>
+          prev && prev.cardId === cardId
+            ? { ...prev, itemsLoading: false, items: data || [], selectedStatus: status }
+            : null
+        );
+      }
+    } catch (error) {
+      console.error('Error loading items:', error);
+      setExpandedCard((prev) => (prev ? { ...prev, itemsLoading: false } : null));
     }
   };
 
   const getDisplayValue = (item: Record<string, unknown>, key: string): string => {
     const value = item[key];
     if (value === null || value === undefined) return '—';
-    if (typeof value === 'number') return value.toLocaleString();
+    if (typeof value === 'number') {
+      return value.toLocaleString('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+      });
+    }
     return String(value);
   };
 
+  const renderEmptyState = (card: EntityCard) => (
+    <div
+      style={{
+        textAlign: 'center',
+        padding: '48px 24px',
+        color: '#605E5C',
+      }}
+    >
+      <InboxIcon size={48} style={{ color: card.color, opacity: 0.2, margin: '0 auto 16px', display: 'block' }} />
+      <p style={{ fontSize: '14px', fontWeight: '500', margin: '0 0 8px 0', color: '#323130' }}>
+        No {card.shortLabel.toLowerCase()} found
+      </p>
+      <p style={{ fontSize: '12px', margin: 0, color: '#605E5C' }}>
+        {expandedCard?.selectedStatus
+          ? `No records with status "${expandedCard.selectedStatus}"`
+          : 'Create records to see them here'}
+      </p>
+    </div>
+  );
+
+  const renderTable = (items: Record<string, unknown>[], card: EntityCard) => {
+    const columns = DISPLAY_COLUMNS[card.entity] || [];
+
+    if (items.length === 0) {
+      return renderEmptyState(card);
+    }
+
+    return (
+      <div style={{ overflowX: 'auto' }}>
+        <table
+          style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            fontSize: '13px',
+          }}
+        >
+          <thead>
+            <tr style={{ backgroundColor: '#F3F2F1', borderBottom: '1px solid #E1DFDD' }}>
+              {columns.map((col) => (
+                <th
+                  key={col.key}
+                  style={{
+                    textAlign: 'left',
+                    padding: '12px 16px',
+                    fontWeight: '600',
+                    fontSize: '13px',
+                    color: '#323130',
+                  }}
+                >
+                  {col.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, idx) => (
+              <tr
+                key={idx}
+                style={{
+                  borderBottom: '1px solid #E1DFDD',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLTableRowElement).style.backgroundColor = '#F3F2F1';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLTableRowElement).style.backgroundColor = 'transparent';
+                }}
+              >
+                {columns.map((col) => (
+                  <td
+                    key={`${idx}-${col.key}`}
+                    style={{
+                      padding: '12px 16px',
+                      color: '#323130',
+                    }}
+                  >
+                    {getDisplayValue(item, col.key)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   return (
-    <div className="flex-1 overflow-auto flex flex-col" style={{ background: 'var(--bg)' }}>
+    <div
+      style={{
+        flex: 1,
+        overflowY: 'auto',
+        backgroundColor: '#FAFAF8',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       {/* Header */}
-      <div className="shrink-0 px-8 py-6 border-b" style={{ borderColor: 'var(--border)' }}>
-        <h1 className="text-2xl font-bold" style={{ color: 'var(--ink-900)' }}>
-          Personal Dashboard
+      <div
+        style={{
+          padding: '24px 32px',
+          backgroundColor: '#FFFFFF',
+          borderBottom: '1px solid #E1DFDD',
+          flexShrink: 0,
+        }}
+      >
+        <h1 style={{ fontSize: '28px', fontWeight: '600', color: '#323130', margin: '0 0 8px 0' }}>
+          Dashboard
         </h1>
-        <p className="text-sm mt-2" style={{ color: 'var(--ink-500)' }}>
-          Click on any card to view your records
+        <p style={{ fontSize: '14px', color: '#605E5C', margin: 0 }}>
+          Track your sales pipeline and key metrics at a glance
         </p>
       </div>
 
-      {/* Cards Container */}
-      <div className="flex-1 overflow-auto p-8">
-        <div className="max-w-5xl mx-auto space-y-4">
-          {cards.map((card) => {
-            const isExpanded = expandedCard?.cardId === card.id;
-            const columns = DISPLAY_COLUMNS[card.entity] || [];
+      {/* Main Content */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '32px',
+        }}
+      >
+        <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
+          {/* KPI Cards Section */}
+          <div style={{ marginBottom: '32px' }}>
+            <h2
+              style={{
+                fontSize: '16px',
+                fontWeight: '600',
+                color: '#323130',
+                marginBottom: '16px',
+                margin: '0 0 16px 0',
+              }}
+            >
+              My Records
+            </h2>
 
-            return (
-              <div key={card.id}>
-                {/* Card Header */}
-                <button
-                  onClick={() => handleCardClick(card.id)}
-                  className="w-full text-left transition-all duration-200"
-                  style={{
-                    background: isExpanded
-                      ? `linear-gradient(135deg, ${card.color}15 0%, ${card.color}08 100%)`
-                      : 'var(--surface)',
-                    borderRadius: '12px',
-                    border: `2px solid ${isExpanded ? card.color : 'var(--border)'}`,
-                    padding: '24px',
-                    boxShadow: isExpanded ? `0 8px 24px ${card.color}15` : '0 1px 3px rgba(0,0,0,0.08)',
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
+            {/* Horizontal Grid */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                gap: '16px',
+                marginBottom: '24px',
+              }}
+            >
+              {entityCards.map((card) => {
+                const isExpanded = expandedCard?.cardId === card.id;
+
+                return (
+                  <button
+                    key={card.id}
+                    onClick={() => handleCardClick(card.id)}
+                    style={{
+                      background: card.lightColor,
+                      border: `1px solid ${isExpanded ? card.color : '#E1DFDD'}`,
+                      borderRadius: '8px',
+                      padding: '16px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      textAlign: 'left',
+                      boxShadow: isExpanded
+                        ? `0 2px 8px rgba(0, 0, 0, 0.1), 0 0 0 2px ${card.lightColor}`
+                        : '0 1px 3px rgba(0, 0, 0, 0.08)',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isExpanded) {
+                        (e.currentTarget as HTMLButtonElement).style.backgroundColor = card.lightColor;
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = card.color;
+                        (e.currentTarget as HTMLButtonElement).style.boxShadow =
+                          '0 2px 8px rgba(0, 0, 0, 0.12)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isExpanded) {
+                        (e.currentTarget as HTMLButtonElement).style.backgroundColor = card.lightColor;
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = '#E1DFDD';
+                        (e.currentTarget as HTMLButtonElement).style.boxShadow =
+                          '0 1px 3px rgba(0, 0, 0, 0.08)';
+                      }
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
                       <div
-                        className="p-3 rounded-lg transition-transform duration-200"
                         style={{
-                          background: `${card.color}15`,
-                          color: card.color,
-                          transform: isExpanded ? 'scale(1.1)' : 'scale(1)',
+                          padding: '10px',
+                          borderRadius: '6px',
+                          background: card.color,
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
                         }}
                       >
                         {card.icon}
                       </div>
+                      <div style={{ flex: 1 }}>
+                        <h3
+                          style={{
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            color: '#323130',
+                            margin: 0,
+                          }}
+                        >
+                          {card.shortLabel}
+                        </h3>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
                       <div>
-                        <h2 className="text-lg font-semibold" style={{ color: 'var(--ink-900)' }}>
-                          {card.label}
-                        </h2>
-                        <p className="text-sm mt-1" style={{ color: 'var(--ink-500)' }}>
+                        <p style={{ fontSize: '11px', color: '#605E5C', margin: '0 0 4px 0' }}>
+                          Records
+                        </p>
+                        <p
+                          style={{
+                            fontSize: '28px',
+                            fontWeight: '700',
+                            color: card.color,
+                            margin: 0,
+                          }}
+                        >
                           {card.countLoading ? (
-                            <Loader2 size={14} className="inline animate-spin" />
+                            <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
                           ) : (
-                            <>
-                              {card.count} {card.count === 1 ? 'item' : 'items'}
-                            </>
+                            card.count
                           )}
                         </p>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="text-3xl font-bold"
-                        style={{ color: card.color }}
-                      >
-                        {card.countLoading ? <Loader2 size={20} className="animate-spin" /> : card.count}
-                      </div>
                       <ChevronDown
-                        size={20}
+                        size={18}
                         style={{
                           color: card.color,
                           transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
                           transition: 'transform 0.3s ease',
+                          flexShrink: 0,
                         }}
                       />
                     </div>
-                  </div>
-                </button>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-                {/* Expanded Content */}
-                {isExpanded && (
+          {/* Expanded Content */}
+          {expandedCard && (
+            <div
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderRadius: '8px',
+                border: `1px solid #E1DFDD`,
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                overflow: 'hidden',
+                animation: 'slideDown 0.3s ease',
+              }}
+            >
+              {/* Card Header */}
+              <div
+                style={{
+                  padding: '16px 24px',
+                  borderBottom: `1px solid #E1DFDD`,
+                  backgroundColor: '#FAFAF8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#323130', margin: 0 }}>
+                  {entityCards.find((c) => c.id === expandedCard.cardId)?.label || 'Records'}
+                </h3>
+                <button
+                  onClick={() => setExpandedCard(null)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#605E5C',
+                    fontSize: '20px',
+                    padding: '4px 8px',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Status Filters */}
+              {(() => {
+                const card = entityCards.find((c) => c.id === expandedCard.cardId);
+                const statusOptions = card ? STATUS_FILTERS[card.entity] : [];
+
+                return statusOptions.length > 0 ? (
                   <div
-                    className="mt-4 rounded-lg p-6 border"
                     style={{
-                      background: 'var(--surface)',
-                      borderColor: card.color,
-                      borderTop: `4px solid ${card.color}`,
+                      padding: '16px 24px',
+                      borderBottom: `1px solid #E1DFDD`,
+                      backgroundColor: '#FAFAF8',
                     }}
                   >
-                    {/* Status Filter for Leads */}
-                    {card.entity === 'leads' && (
-                      <div className="mb-6 pb-6" style={{ borderBottom: '1px solid var(--border)' }}>
-                        <p className="text-sm font-semibold mb-3" style={{ color: 'var(--ink-700)' }}>
-                          Filter by Status:
-                        </p>
-                        <div className="flex gap-2 flex-wrap">
-                          {['Open', 'Qualified', 'Disqualified'].map((status) => (
-                            <button
-                              key={status}
-                              onClick={() => handleLeadStatusFilter(status)}
-                              className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
-                              style={{
-                                background:
-                                  expandedCard?.selectedStatus === status
-                                    ? card.color
-                                    : `${card.color}10`,
-                                color:
-                                  expandedCard?.selectedStatus === status
-                                    ? '#ffffff'
-                                    : card.color,
-                                border: `1px solid ${expandedCard?.selectedStatus === status ? 'transparent' : card.color}`,
-                              }}
-                            >
-                              {status}
-                            </button>
-                          ))}
-                          {expandedCard?.selectedStatus && (
-                            <button
-                              onClick={() => handleLeadStatusFilter('')}
-                              className="px-3 py-2 rounded-lg text-sm transition-colors"
-                              style={{
-                                background: 'var(--bg)',
-                                color: 'var(--ink-500)',
-                                border: '1px solid var(--border)',
-                              }}
-                            >
-                              <X size={16} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Items List */}
-                    {expandedCard.itemsLoading ? (
-                      <div className="flex items-center justify-center py-12">
-                        <Loader2 size={24} className="animate-spin" style={{ color: card.color }} />
-                      </div>
-                    ) : expandedCard.items.length === 0 ? (
-                      <div className="py-12 text-center">
-                        <p style={{ color: 'var(--ink-500)' }}>
-                          No {card.label.toLowerCase()} found
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                              {columns.map((col) => (
-                                <th
-                                  key={col.key}
-                                  className="text-left py-3 px-4 font-semibold"
-                                  style={{ color: 'var(--ink-700)' }}
-                                >
-                                  {col.label}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {expandedCard.items.map((item, idx) => (
-                              <tr
-                                key={idx}
-                                style={{
-                                  borderBottom: '1px solid var(--divider)',
-                                  background: idx % 2 === 0 ? 'transparent' : 'var(--bg)',
-                                  transition: 'background-color 0.2s',
-                                }}
-                                onMouseEnter={(e) => {
-                                  (e.currentTarget as HTMLTableRowElement).style.background = `${card.color}08`;
-                                }}
-                                onMouseLeave={(e) => {
-                                  (e.currentTarget as HTMLTableRowElement).style.background = idx % 2 === 0 ? 'transparent' : 'var(--bg)';
-                                }}
-                              >
-                                {columns.map((col) => (
-                                  <td
-                                    key={`${idx}-${col.key}`}
-                                    className="py-3 px-4"
-                                    style={{ color: 'var(--ink-600)' }}
-                                  >
-                                    {getDisplayValue(item as Record<string, unknown>, col.key)}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                    <p
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        color: '#323130',
+                        marginBottom: '12px',
+                        margin: '0 0 12px 0',
+                      }}
+                    >
+                      Filter by Status
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {statusOptions.map((status) => (
+                        <button
+                          key={status}
+                          onClick={() => handleStatusFilter(status)}
+                          style={{
+                            padding: '6px 16px',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            border:
+                              expandedCard.selectedStatus === status
+                                ? `2px solid ${card?.color}`
+                                : `1px solid #E1DFDD`,
+                            background:
+                              expandedCard.selectedStatus === status
+                                ? card?.color
+                                : '#FFFFFF',
+                            color:
+                              expandedCard.selectedStatus === status
+                                ? '#FFFFFF'
+                                : '#323130',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (expandedCard.selectedStatus !== status) {
+                              (e.currentTarget as HTMLButtonElement).style.borderColor =
+                                card?.color;
+                              (e.currentTarget as HTMLButtonElement).style.backgroundColor =
+                                card?.lightColor;
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (expandedCard.selectedStatus !== status) {
+                              (e.currentTarget as HTMLButtonElement).style.borderColor = '#E1DFDD';
+                              (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#FFFFFF';
+                            }
+                          }}
+                        >
+                          {status}
+                        </button>
+                      ))}
+                      {expandedCard.selectedStatus && (
+                        <button
+                          onClick={() => handleStatusFilter('')}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            background: '#FAFAF8',
+                            border: '1px solid #E1DFDD',
+                            cursor: 'pointer',
+                            color: '#605E5C',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
+                ) : null;
+              })()}
+
+              {/* Table Content */}
+              <div
+                style={{
+                  maxHeight: '500px',
+                  overflowY: 'auto',
+                  padding: '0',
+                }}
+              >
+                {expandedCard.itemsLoading ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '48px 24px',
+                    }}
+                  >
+                    <Loader2
+                      size={24}
+                      style={{
+                        color: entityCards.find((c) => c.id === expandedCard.cardId)?.color,
+                        animation: 'spin 1s linear infinite',
+                      }}
+                    />
+                  </div>
+                ) : (
+                  (() => {
+                    const card = entityCards.find((c) => c.id === expandedCard.cardId);
+                    return card ? renderTable(expandedCard.items, card) : null;
+                  })()
                 )}
               </div>
-            );
-          })}
+            </div>
+          )}
         </div>
       </div>
+
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-8px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+          background: #C8C6C4;
+          border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: #A6A6A6;
+        }
+      `}</style>
     </div>
   );
 }
