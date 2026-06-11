@@ -50,6 +50,7 @@ export interface FilteredListData {
 }
 
 export type CrmRouteView =
+  | { type: 'dashboard' }
   | { type: 'list' }
   | { type: 'new' }
   | { type: 'record'; id: string; tab?: string }
@@ -133,7 +134,7 @@ export function parseRoute(): AppRoute {
     }
   }
 
-  // CRM app route: #/app/<module>/<entity>[/new|/filtered][?view=&q=&d=]
+  // CRM app route: #/app/<module>/<entity>[/new|/filtered|/dashboard][?view=&q=&d=]
   if (head === 'app') {
     const module = segs[1] || 'sales';
     const entity = segs[2];
@@ -141,6 +142,9 @@ export function parseRoute(): AppRoute {
       const sub = segs[3];
       if (sub === 'new') {
         return { surface: 'crm', module, entity, view: { type: 'new' } };
+      }
+      if (sub === 'dashboard') {
+        return { surface: 'crm', module, entity, view: { type: 'dashboard' } };
       }
       if (sub === 'filtered') {
         const data = decodeData<FilteredListData>(query.get('d') ?? '');
@@ -175,6 +179,9 @@ function withQuery(base: string, params: Record<string, string | undefined>): st
 /** Build the hash (including leading '#') for a CRM route. */
 export function buildCrmHash(route: Omit<CrmRoute, 'surface'>): string {
   const { module, entity, view, viewId, search } = route;
+  if (view.type === 'dashboard') {
+    return `#/app/${module}/${entity}/dashboard`;
+  }
   if (view.type === 'record') {
     return withQuery(`#/record/${entity}/${view.id}`, { tab: view.tab });
   }
