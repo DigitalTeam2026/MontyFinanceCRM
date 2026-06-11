@@ -68,7 +68,11 @@ export function NotificationProvider({ userId, children }: NotificationProviderP
         },
         (payload) => {
           const n = payload.new as AppNotification;
-          setNotifications((prev) => [n, ...prev]);
+          // De-dupe: the initial load() and this realtime INSERT can both deliver
+          // the same row, which would otherwise appear twice.
+          setNotifications((prev) =>
+            prev.some((x) => x.notification_id === n.notification_id) ? prev : [n, ...prev]
+          );
         }
       )
       .on(

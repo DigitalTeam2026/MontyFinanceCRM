@@ -161,7 +161,10 @@ async function fetchCandidates(
     // Accept value keyed by either the logical name or physical name
     const val = values[physField] ?? values[logicalField];
     if (val == null || String(val).trim() === '') continue;
-    orParts.push(`${physField}.ilike.${String(val).trim()}`);
+    // Wrap the value in PostgREST double-quotes and escape backslash/quote so
+    // commas, parentheses, etc. cannot break out of the or() filter (injection).
+    const safeVal = String(val).trim().replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    orParts.push(`${physField}.ilike."${safeVal}"`);
   }
 
   if (orParts.length === 0) return [];

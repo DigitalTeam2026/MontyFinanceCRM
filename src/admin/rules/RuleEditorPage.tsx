@@ -5,8 +5,6 @@ import {
   Save,
   RefreshCw,
   Zap,
-  Filter,
-  Play,
   Settings,
   Activity,
   CheckCircle2,
@@ -17,9 +15,6 @@ import {
   Database,
   GitBranch,
   Milestone,
-  Plus,
-  Layers,
-  Trash2,
   LayoutGrid,
 } from 'lucide-react';
 import type { BusinessRule, RuleTrigger, RuleActionSet, RuleScope, RuleConditionGroup, RuleCondition, RuleConditionBlock, RuleAction } from '../../types/businessRule';
@@ -31,12 +26,10 @@ import { fetchFieldsForEntity } from '../../services/fieldService';
 import { fetchFormsForEntity } from '../../services/formService';
 import { saveRule } from '../../services/businessRuleService';
 import { fetchProcessFlowsForEntity, fetchProcessFlowWithDetails } from '../../services/processFlowService';
-import ConditionBuilder from './ConditionBuilder';
-import ActionBuilder from './ActionBuilder';
 import RulePreviewPanel from './RulePreviewPanel';
 import RuleCanvas from './RuleCanvas';
 
-type Tab = 'canvas' | 'trigger' | 'conditions' | 'actions' | 'settings' | 'preview';
+type Tab = 'canvas' | 'trigger' | 'settings' | 'preview';
 
 const SCOPE_OPTIONS: { value: RuleScope; label: string; desc: string; icon: React.ReactNode }[] = [
   {
@@ -268,8 +261,6 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
   const TABS: { id: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'canvas',     label: 'Canvas',     icon: <LayoutGrid size={13} />, badge: blockCount > 1 ? blockCount : undefined },
     { id: 'trigger',    label: 'Trigger',    icon: <Zap size={13} /> },
-    { id: 'conditions', label: 'Conditions', icon: <Filter size={13} />,      badge: blockCount > 1 ? blockCount : undefined },
-    { id: 'actions',    label: 'Actions',    icon: <Play size={13} />,        badge: actionCount || undefined },
     { id: 'settings',   label: 'Settings',   icon: <Settings size={13} /> },
     { id: 'preview',    label: 'Preview',    icon: <FlaskConical size={13} /> },
   ];
@@ -378,7 +369,7 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
           </div>
         </div>
 
-        <div className={`flex-1 min-h-0 ${activeTab === 'actions' ? 'overflow-hidden flex flex-col' : 'overflow-y-auto p-5'}`}>
+        <div className="flex-1 min-h-0 overflow-y-auto p-5">
           {activeTab === 'canvas' && (
             <RuleCanvas
               blocks={blocks}
@@ -404,58 +395,6 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
               processFlows={processFlows}
               loadFlowStages={loadFlowStages}
             />
-          )}
-          {activeTab === 'conditions' && (
-            <div>
-              <SectionHeading
-                title="Conditions"
-                subtitle="Each condition block has its own THEN / ELSE actions. Select a block to edit it."
-                icon={<Filter size={14} />}
-              />
-              <BlockTabs
-                blocks={blocks}
-                activeBlockId={activeBlock?.id ?? ''}
-                onSelect={setActiveBlockId}
-                onAdd={addBlock}
-                onRemove={removeBlock}
-              />
-              {activeBlock && (
-                <ConditionBuilder
-                  key={activeBlock.id}
-                  fields={fields}
-                  group={activeBlock.condition_group}
-                  onChange={(g) => updateBlock(activeBlock.id, { condition_group: g })}
-                  processFlows={processFlows}
-                  loadFlowStages={loadFlowStages}
-                />
-              )}
-            </div>
-          )}
-          {activeTab === 'actions' && (
-            <div className="flex flex-col h-full min-h-0 p-5">
-              <SectionHeading
-                title="Actions"
-                subtitle="Actions belong to the selected condition block. Switch blocks to edit their THEN / ELSE actions."
-                icon={<Play size={14} />}
-              />
-              <BlockTabs
-                blocks={blocks}
-                activeBlockId={activeBlock?.id ?? ''}
-                onSelect={setActiveBlockId}
-                onAdd={addBlock}
-                onRemove={removeBlock}
-              />
-              <div className="flex-1 min-h-0">
-                {activeBlock && (
-                  <ActionBuilder
-                    key={activeBlock.id}
-                    fields={fields}
-                    actionSet={{ if_actions: activeBlock.if_actions, else_actions: activeBlock.else_actions }}
-                    onChange={(set) => updateBlock(activeBlock.id, { if_actions: set.if_actions, else_actions: set.else_actions })}
-                  />
-                )}
-              </div>
-            </div>
           )}
           {activeTab === 'settings' && (
             <RuleSettingsPanel rule={rule} onChange={(r) => { setRule(r); markDirty(); }} />
@@ -828,64 +767,3 @@ function SummaryRow({ label, value, active }: { label: string; value: string; ac
   );
 }
 
-// ─── Condition block selector (shared by Conditions & Actions tabs) ───────────
-function BlockTabs({
-  blocks,
-  activeBlockId,
-  onSelect,
-  onAdd,
-  onRemove,
-}: {
-  blocks: RuleConditionBlock[];
-  activeBlockId: string;
-  onSelect: (id: string) => void;
-  onAdd: () => void;
-  onRemove: (id: string) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2 flex-wrap mb-4">
-      {blocks.map((b, i) => {
-        const isActive = b.id === activeBlockId;
-        const count = b.if_actions.length + b.else_actions.length;
-        const condCount = (b.condition_group?.conditions.length ?? 0) + (b.condition_group?.groups.length ?? 0);
-        return (
-          <div
-            key={b.id}
-            onClick={() => onSelect(b.id)}
-            className={`group relative flex items-center gap-2 pl-3 pr-2 py-2 rounded-xl border-2 cursor-pointer transition-all ${
-              isActive
-                ? 'border-blue-500 bg-blue-50 shadow-sm'
-                : 'border-slate-200 bg-white hover:border-slate-300'
-            }`}
-          >
-            <Layers size={13} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
-            <div className="leading-tight">
-              <p className={`text-xs font-semibold ${isActive ? 'text-blue-700' : 'text-slate-600'}`}>
-                Condition {i + 1}
-              </p>
-              <p className="text-[10px] text-slate-400">
-                {condCount > 0 ? `${condCount} cond` : 'always'} · {count} action{count === 1 ? '' : 's'}
-              </p>
-            </div>
-            {blocks.length > 1 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onRemove(b.id); }}
-                title="Remove this condition block"
-                className="ml-1 p-0.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-              >
-                <Trash2 size={12} />
-              </button>
-            )}
-          </div>
-        );
-      })}
-      <button
-        onClick={onAdd}
-        className="flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all text-xs font-semibold"
-      >
-        <Plus size={13} />
-        Add Condition Block
-      </button>
-    </div>
-  );
-}

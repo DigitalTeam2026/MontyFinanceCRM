@@ -8,11 +8,17 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "check-agent": "node tools/qa-agent/index.mjs",
+    "check-agent:frontend": "node tools/qa-agent/index.mjs --scope=frontend",
+    "check-agent:backend": "node tools/qa-agent/index.mjs --scope=backend",
+    "check-agent:database": "node tools/qa-agent/index.mjs --scope=database"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
+    "chalk": "^5.6.2",
     "lucide-react": "^0.344.0",
+    "pg": "^8.21.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "xlsx": "^0.18.5"
@@ -23,13 +29,13 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.18",
-    "eslint": "^9.9.1",
+    "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.11",
     "globals": "^15.9.0",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5.5.3",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^8.3.0",
     "vite": "^5.4.2"
   }

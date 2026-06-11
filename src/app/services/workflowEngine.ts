@@ -339,6 +339,9 @@ async function execWebhook(step: WorkflowStep, ctx: WorkflowContext): Promise<St
   const jwt = session?.access_token ?? anonKey;
 
   const payload = {
+    // The edge function resolves the URL from this step server-side (authoritative);
+    // `url` is sent only as a fallback and is SSRF-validated server-side regardless.
+    workflow_step_id: step.workflow_step_id,
     url: config.url,
     method: config.method ?? 'POST',
     headers: Object.fromEntries((config.headers ?? []).map((h) => [h.key, h.value])),
@@ -369,7 +372,7 @@ async function execWebhook(step: WorkflowStep, ctx: WorkflowContext): Promise<St
 
   return {
     status: 'success',
-    result: { status_code: body.status_code ?? resp.status, body: body.response_body },
+    result: { status_code: body.status_code ?? resp.status, body: body.response_preview ?? body.response_body },
   };
 }
 
