@@ -67,13 +67,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Get user's security roles
-    const { data: userRoles } = await adminClient
-      .from("user_security_role")
-      .select("role_id")
-      .eq("user_id", crmUser ? undefined : user.id);
-
-    // Fallback: get CRM user ID first
+    // Get CRM user ID first
     const { data: crmUserRow } = await adminClient
       .from("crm_user")
       .select("user_id")

@@ -96,6 +96,10 @@ export default function CrmApp({
       } else {
         setSession(null);
       }
+    }).catch((err) => {
+      // Never leave the app stuck on the loading spinner if session bootstrap throws
+      console.error('[CrmApp] session bootstrap failed:', err);
+      setSession(null);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {

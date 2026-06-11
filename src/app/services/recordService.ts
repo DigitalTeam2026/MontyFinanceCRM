@@ -365,7 +365,11 @@ async function assertProductAccess(entity: AppEntity, values: RecordData): Promi
   const { data, error } = await supabase
     .rpc('fn_check_product_access', { p_product_id: productId, p_access_mode: 'read', p_user_id: (await supabase.auth.getUser()).data.user?.id });
 
-  if (error) return;
+  // Fail closed: if the access check itself errors, deny the assignment rather
+  // than silently proceeding (previously `if (error) return;` failed open).
+  if (error) {
+    throw new Error('Unable to verify product access. Please try again or contact your administrator.');
+  }
   if (data === false) {
     throw new Error('You do not have permission to assign this product. Contact your administrator to request access.');
   }

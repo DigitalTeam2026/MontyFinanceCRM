@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { assertSafeUrl } from "../_shared/security.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -203,10 +204,17 @@ Deno.serve(async (req: Request) => {
     let errorMessage: string | null = null;
 
     try {
+      // SSRF guard — block private/loopback/metadata destinations even though
+      // this function is admin-gated (defense against a malicious stored URL).
+      const safe = await assertSafeUrl(integration.endpoint_url);
+      if (!safe.ok) {
+        throw new Error(safe.reason ?? "Endpoint URL is not permitted");
+      }
       const res = await fetch(integration.endpoint_url, {
         method: integration.http_method,
         headers: reqHeaders,
         body: hasBody ? JSON.stringify(requestBody) : undefined,
+        redirect: "manual",
         signal: AbortSignal.timeout(30_000),
       });
       responseStatus = res.status;

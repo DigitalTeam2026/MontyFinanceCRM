@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { constantTimeEqual } from "../_shared/security.ts";
 
 /*
   Public incoming-API endpoint for CRM integrations.
@@ -369,15 +370,15 @@ function checkAuth(req: Request, integration: Integration): boolean {
     case "none":
       return true;
     case "bearer":
-      return req.headers.get("Authorization") === `Bearer ${secret}`;
+      return constantTimeEqual(req.headers.get("Authorization") ?? "", `Bearer ${secret}`);
     case "basic": {
       const expected = `Basic ${btoa(`${integration.auth_username ?? ""}:${secret}`)}`;
-      return req.headers.get("Authorization") === expected;
+      return constantTimeEqual(req.headers.get("Authorization") ?? "", expected);
     }
     case "api_key":
     case "custom_header": {
       if (!integration.auth_key_name) return false;
-      return req.headers.get(integration.auth_key_name) === secret;
+      return constantTimeEqual(req.headers.get(integration.auth_key_name) ?? "", secret);
     }
     default:
       return false;

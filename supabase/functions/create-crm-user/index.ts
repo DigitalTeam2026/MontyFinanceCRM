@@ -43,11 +43,11 @@ Deno.serve(async (req: Request) => {
 
     const { data: callerCrmUser } = await adminClient
       .from("crm_user")
-      .select("is_system_admin")
+      .select("is_system_admin, is_active")
       .eq("user_id", caller.id)
       .maybeSingle();
 
-    if (!callerCrmUser?.is_system_admin) {
+    if (!callerCrmUser?.is_system_admin || callerCrmUser.is_active === false) {
       return new Response(JSON.stringify({ error: "Forbidden: system admins only" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -62,6 +62,16 @@ Deno.serve(async (req: Request) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Server-side password policy (min 10 chars, mixed character classes)
+    const pw = String(password);
+    const strong = pw.length >= 10 && /[a-z]/.test(pw) && /[A-Z]/.test(pw) && /[0-9]/.test(pw);
+    if (!strong) {
+      return new Response(
+        JSON.stringify({ error: "Password must be at least 10 characters and include lower, upper and numeric characters" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
@@ -97,9 +107,21 @@ Deno.serve(async (req: Request) => {
 
     if (crmError) {
       await adminClient.auth.admin.deleteUser(newUserId);
-      return new Response(JSON.stringify({ error: crmError.message }), {
+      console.error("[create-crm-user] crm_user insert failed:", crmError.message);
+      return new Response(JSON.stringify({ error: "Failed to create user record" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Audit the privilege grant when a new system admin is minted
+    if (is_system_admin === true) {
+      await adminClient.from("audit_log").insert({
+        entity_name: "crm_user",
+        record_id: newUserId,
+        action: "grant_system_admin",
+        changed_by: caller.id,
+        new_values: { is_system_admin: true, email },
       });
     }
 
@@ -108,7 +130,8 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
+    console.error("[create-crm-user] error:", err instanceof Error ? err.message : String(err));
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

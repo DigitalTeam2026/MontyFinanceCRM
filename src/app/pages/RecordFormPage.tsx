@@ -799,6 +799,7 @@ function StatusDropdown({ entityDefinitionId, statecodeValue, value, onChange, r
 
   useEffect(() => {
     if (!entityDefinitionId) return;
+    let cancelled = false;
     supabase
       .from('status_reason_definition')
       .select('reason_value, display_label, color, sort_order, statecode_definition(state_value)')
@@ -806,6 +807,7 @@ function StatusDropdown({ entityDefinitionId, statecodeValue, value, onChange, r
       .eq('is_active', true)
       .order('sort_order')
       .then(({ data }) => {
+        if (cancelled) return;
         const filtered = (data ?? []).filter((r) => {
           if (!statecodeValue) return true;
           const sd = r.statecode_definition as { state_value: number } | null;
@@ -819,6 +821,7 @@ function StatusDropdown({ entityDefinitionId, statecodeValue, value, onChange, r
           })),
         );
       });
+    return () => { cancelled = true; };
   }, [entityDefinitionId, statecodeValue]);
 
   const current = options.find((o) => o.value === value);
@@ -1083,6 +1086,9 @@ export default function RecordFormPage({
   const processFlowRef = useRef<LoadedProcessFlow | null>(null);
   const skipNextLoadAllRef = useRef(false);
   const suppressNextLoadingRef = useRef(false);
+  // Monotonic load generation — discards results from a stale loadAll when the
+  // user switches records/entities before an in-flight load resolves.
+  const loadGenRef = useRef(0);
   const hasLoadedOnceRef = useRef(false);
 
   useEffect(() => {
@@ -1253,7 +1259,7 @@ export default function RecordFormPage({
     return JSON.stringify(values) !== JSON.stringify(savedValues);
   }, [values, savedValues, resolvedRecordId]);
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (gen: number) => {
     if (skipNextLoadAllRef.current) {
       skipNextLoadAllRef.current = false;
       return;
@@ -1282,6 +1288,9 @@ export default function RecordFormPage({
           ? fetchRelationshipsForEntity(resolvedEntityDefId)
           : Promise.resolve([]),
       ]);
+      // Discard if a newer load started while we were awaiting (record switch)
+      if (gen !== loadGenRef.current) return;
+
       setCrmUsers(usersData);
       setCurrencies(currencyList);
       setBaseCurrency(base);
@@ -1348,9 +1357,6 @@ export default function RecordFormPage({
         if (!fd?.layout_json) return;
         const normalized = normalizeLayout(fd.layout_json);
         if (!normalized) return;
-        const ctrlCount = normalized.tabs.reduce(
-          (n, t) => n + t.sections.reduce((m, s) => m + s.controls.length, 0), 0);
-        console.log(`[RecordForm:applyForm] source=${source} form_id=${fd.form_id} tabs=${normalized.tabs.length} controls=${ctrlCount} modified_at=${fd.modified_at}`);
         setLayout(normalized);
         setActiveFormId(fd.form_id ?? null);
         if (normalized.tabs.length > 0) {
@@ -1363,7 +1369,6 @@ export default function RecordFormPage({
         const entityFormId = await getEntityFormIdForFlow(pf.flow.process_flow_id, entityLogical);
         const formIdToLoad = entityFormId ?? pf.flow.form_id;
         if (formIdToLoad) {
-          console.log(`[RecordForm:applyFlowForm] overriding with flow form_id=${formIdToLoad} (flow=${pf.flow.name})`);
           const flowForm = await fetchFormById(formIdToLoad);
           applyForm(flowForm, 'process_flow');
         }
@@ -1437,12 +1442,15 @@ export default function RecordFormPage({
           }
         } catch { /* non-fatal */ }
 
+        // Discard if a newer load started while fetching this record
+        if (gen !== loadGenRef.current) return;
         setValues(record);
         setSavedValues(record);
         const labelField = ENTITY_LABEL_FIELD[entity];
         const label = String(record[labelField] ?? '');
         if (label) onRecordLoaded?.(recordId, label);
         fetchLookupLabels(record, slugMap, physMap).then((labels) => {
+          if (gen !== loadGenRef.current) return;
           const ownerId = record['owner_id'];
           if (ownerId && typeof ownerId === 'string') {
             const ownerUser = usersData.find((u) => u.id === ownerId);
@@ -1456,6 +1464,7 @@ export default function RecordFormPage({
         // and only grant the specific actions the share explicitly allows.
         checkRecordShareAccess(entityLogical, recordId)
           .then((perms) => {
+            if (gen !== loadGenRef.current) return;
             const hasAnyShare = perms.can_read || perms.can_write || perms.can_delete || perms.can_assign || perms.can_share;
             setSharePerms(hasAnyShare ? perms : null);
           })
@@ -1463,11 +1472,12 @@ export default function RecordFormPage({
       }
     } finally {
       hasLoadedOnceRef.current = true;
-      setLoading(false);
+      // Only the most recent load controls the spinner
+      if (gen === loadGenRef.current) setLoading(false);
     }
   }, [entity, recordId]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { const gen = ++loadGenRef.current; loadAll(gen); }, [loadAll]);
 
   // Report the active tab upward so the URL can track it across a refresh.
   useEffect(() => {
@@ -1594,15 +1604,17 @@ export default function RecordFormPage({
   // Fetch label for related record (lead → opportunity, opportunity → lead)
   useEffect(() => {
     setRelatedRecordLabel(null);
+    let cancelled = false;
     const qualifiedOppId = values['qualified_opportunity_id'] as string | null | undefined;
     const originatingLeadId = values['originating_lead_id'] as string | null | undefined;
     if (entity === 'leads' && qualifiedOppId) {
       supabase.from('opportunity').select('topic').eq('opportunity_id', qualifiedOppId).maybeSingle()
-        .then(({ data }) => { if (data) setRelatedRecordLabel(data.topic ?? null); });
+        .then(({ data }) => { if (!cancelled && data) setRelatedRecordLabel(data.topic ?? null); });
     } else if (entity === 'opportunities' && originatingLeadId) {
       supabase.from('lead').select('first_name, last_name').eq('lead_id', originatingLeadId).maybeSingle()
-        .then(({ data }) => { if (data) setRelatedRecordLabel([data.first_name, data.last_name].filter(Boolean).join(' ') || null); });
+        .then(({ data }) => { if (!cancelled && data) setRelatedRecordLabel([data.first_name, data.last_name].filter(Boolean).join(' ') || null); });
     }
+    return () => { cancelled = true; };
   }, [entity, values['qualified_opportunity_id'], values['originating_lead_id']]);
 
   useEffect(() => {

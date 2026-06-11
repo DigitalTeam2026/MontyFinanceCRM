@@ -22,3 +22,7 @@ dist-ssr
 *.sw?
 .env
 .vercel
+
+# QA Agent generated reports
+qa-report.md
+qa-db.md

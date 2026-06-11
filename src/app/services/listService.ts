@@ -664,7 +664,10 @@ async function fetchUniversal(entity: AppEntity, opts: ListOptions): Promise<Lis
     if (search) {
       const fields = SEARCH_FIELDS[entity];
       if (fields && fields.length > 0) {
-        const expr = fields.map((f) => `${f}.ilike.%${search}%`).join(',');
+        // Quote + escape the term so commas/parentheses in the search string
+        // cannot break out of the or() filter expression (PostgREST injection).
+        const safe = search.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const expr = fields.map((f) => `${f}.ilike."%${safe}%"`).join(',');
         q = q.or(expr);
       } else {
         const columns = ENTITY_COLUMNS[entity] ?? [];

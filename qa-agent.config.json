@@ -1,0 +1,12 @@
+{
+  "frontend": {
+    "include": ["src"]
+  },
+  "backend": {
+    "include": ["supabase/functions"]
+  },
+  "database": {
+    "include": ["supabase/migrations"]
+  },
+  "failOn": "critical"
+}
