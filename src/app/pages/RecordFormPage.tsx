@@ -29,6 +29,18 @@ import {
   Plus,
   Trash2,
   Share2,
+  Building2,
+  User,
+  UserPlus,
+  Target,
+  Ticket,
+  Factory,
+  Globe,
+  Coins,
+  Megaphone,
+  Radio,
+  Package,
+  Boxes,
 } from 'lucide-react';
 import type { AppEntity, AppModule } from '../types';
 import { ENTITY_LOGICAL_NAME } from '../types';
@@ -524,6 +536,8 @@ interface CollapsibleSectionProps {
   lookupEntitySlugMap?: Record<string, string>;
   subgridRefreshCounter?: number;
   fieldConfigMap?: Record<string, Record<string, unknown>>;
+  /** Accounts-only Dynamics-style presentation (flat white sections). */
+  isRedesign?: boolean;
 }
 
 function CollapsibleSection({
@@ -550,6 +564,7 @@ function CollapsibleSection({
   lookupEntitySlugMap,
   subgridRefreshCounter,
   fieldConfigMap,
+  isRedesign = false,
 }: CollapsibleSectionProps) {
   const { getFieldRestriction, getEntityPrivilege } = usePermissions();
   const { density } = useFormDensity();
@@ -574,13 +589,26 @@ function CollapsibleSection({
 
   if (section.is_visible === false) return null;
 
+  const containerCls = isRedesign
+    ? 'bg-white border border-[#e7eaf1] rounded-md shadow-sm'
+    : 'border border-slate-200 rounded-lg overflow-hidden mb-3';
+  const headerCls = isRedesign
+    ? 'w-full flex items-center justify-between px-4 py-2.5 border-b border-[#eef1f6] hover:bg-[#f9fafc] transition-colors text-left'
+    : `w-full flex items-center justify-between ${ds.sectionHeader} bg-slate-50 hover:bg-slate-100 transition-colors text-left`;
+  const headerTextCls = isRedesign
+    ? 'text-[11px] font-semibold text-[#6b7280] uppercase tracking-wider'
+    : `${ds.sectionHeaderText} font-semibold text-slate-600`;
+  const bodyCls = isRedesign
+    ? `px-4 py-3 grid gap-x-4 gap-y-3 ${section.columns === 2 ? 'grid-cols-2' : 'grid-cols-1'}`
+    : `${ds.sectionPadding} grid ${ds.sectionGap} ${section.columns === 2 ? 'grid-cols-2' : 'grid-cols-1'}`;
+
   return (
-    <div className="border border-slate-200 rounded-lg overflow-hidden mb-3">
+    <div className={containerCls}>
       <button
         onClick={handleToggle}
-        className={`w-full flex items-center justify-between ${ds.sectionHeader} bg-slate-50 hover:bg-slate-100 transition-colors text-left`}
+        className={headerCls}
       >
-        <span className={`${ds.sectionHeaderText} font-semibold text-slate-600`}>{section.label}</span>
+        <span className={headerTextCls}>{section.label}</span>
         {collapsed ? (
           <ChevronRightIcon size={13} className="text-slate-400" />
         ) : (
@@ -589,7 +617,7 @@ function CollapsibleSection({
       </button>
 
       {!collapsed && (
-        <div className={`${ds.sectionPadding} grid ${ds.sectionGap} ${section.columns === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <div className={bodyCls}>
           {visibleControls.map((control) => {
             const rs = ruleState.fields[control.field_logical_name ?? ''];
 
@@ -2541,7 +2569,7 @@ export default function RecordFormPage({
     <RecordFormInner
       entity={entity}
       recordId={resolvedRecordId}
-      isRedesign={entity === 'accounts'}
+      isRedesign={true}
       formReadonly={formReadonly}
       canCreate={canCreate}
       canWrite={canWrite}
@@ -2627,6 +2655,7 @@ export default function RecordFormPage({
       lookupEntitySlugMap={lookupEntitySlugMap}
       onNewRecord={onNewRecord}
       onDelete={handleDeleteClick}
+      onRefresh={() => { void refreshFullRecord(); }}
       subgridRefreshCounter={subgridRefreshCounter}
       leadHasRelatedOpp={leadHasRelatedOpp}
       roleCanWrite={roleCanWrite}
@@ -2865,6 +2894,7 @@ interface RecordFormInnerProps {
   lookupEntitySlugMap: Record<string, string>;
   onNewRecord?: () => void;
   onDelete?: () => void;
+  onRefresh?: () => void;
   subgridRefreshCounter: number;
   leadHasRelatedOpp: boolean;
   roleCanWrite: boolean;
@@ -2965,7 +2995,7 @@ function RecordFormInner({
   fieldOptionSetMap, fieldInlineChoicesMap, fieldTypeMap, fieldRequiredMap, processFlow, entityDefId, availableFlows = [], onSwitchFlow,
   stageGateErrors, onStageViolation, onFieldNavigate, onClearStageGateErrors,
   transformationRules, onTransform, relatedRecordLabel, subgridRelDefMap, onLookupLabelChange, lookupEntitySlugMap,
-  onNewRecord, onDelete, subgridRefreshCounter, leadHasRelatedOpp,
+  onNewRecord, onDelete, onRefresh, subgridRefreshCounter, leadHasRelatedOpp,
   roleCanWrite, sharePerms, formAccessResult, isRedesign = false, fieldConfigMap,
 }: RecordFormInnerProps) {
   const { density } = useFormDensity();
@@ -2978,6 +3008,98 @@ function RecordFormInner({
   // isOppWon/isOppLost retained only for banner display; readonly behavior driven by formAccessResult
   const isOppWon = entity === 'opportunities' && innerStateCode === '2';
   const isOppLost = entity === 'opportunities' && innerStateCode === '3';
+
+  // Contact form uses a softer professional-blue accent (icon/buttons/active tab)
+  // while leaving the Account redesign's stronger blue untouched.
+  const isContact = entity === 'contacts';
+
+  // Display-only singular label for the redesigned (accounts) header, e.g. "Account".
+  const redesignNewTitle = (() => {
+    const base = NEW_RECORD_ENTITY_LABELS[entity] ?? (entity.endsWith('s') ? entity.slice(0, -1) : entity);
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  })();
+
+  // Per-entity header icon for the redesigned record header (presentation only).
+  // Keyword matching tolerates singular/plural and logical-name variants.
+  const redesignEntityIcon = (() => {
+    const e = String(entity).toLowerCase();
+    // Core CRM entities
+    if (e === 'contacts' || e === 'contact') return <User size={15} />;
+    if (e === 'leads' || e === 'lead') return <UserPlus size={15} />;
+    if (e === 'opportunities' || e === 'opportunity') return <Target size={15} />;
+    if (e === 'tickets' || e === 'ticket' || e === 'cases' || e === 'case') return <Ticket size={15} />;
+    if (e === 'accounts' || e === 'account') return <Building2 size={15} />;
+    // Catalog / reference entities — distinct, professional icons
+    if (e.includes('product') && e.includes('famil')) return <Boxes size={15} />;
+    if (e.includes('product')) return <Package size={15} />;
+    if (e.includes('industr')) return <Factory size={15} />;
+    if (e.includes('countr') || e.includes('nation')) return <Globe size={15} />;
+    if (e.includes('currenc')) return <Coins size={15} />;
+    if (e.includes('campaign')) return <Megaphone size={15} />;
+    if (e.includes('source')) return <Radio size={15} />;
+    return <Building2 size={15} />;
+  })();
+
+  // Currency selector / lock indicator — shared so it stays available in the
+  // redesigned header too (not shown for leads or entities without a currency field).
+  const currencyChip = (entity !== 'leads' && currencies.length > 0 && values.currency_id !== undefined) ? (
+    <div className="shrink-0 flex items-center gap-1">
+      {isCurrencyLocked ? (
+        <>
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold ${
+              currencyLockReason === 'status_threshold'
+                ? 'bg-orange-50 border border-orange-200 text-orange-700'
+                : 'bg-slate-100 border border-slate-200 text-slate-600'
+            }`}
+            title={
+              currencyLockReason === 'status_threshold'
+                ? 'Currency locked by status threshold — record has passed a business process milestone'
+                : 'Currency is locked — monetary values have been saved'
+            }
+          >
+            <Lock size={10} className={currencyLockReason === 'status_threshold' ? 'text-orange-400' : 'text-slate-400'} />
+            {activeCurrency?.code ?? '—'}
+            {currencyLockReason === 'status_threshold' && (
+              <span className="text-orange-500 text-[9px] font-medium">Status</span>
+            )}
+          </span>
+          {isSystemAdmin && recordId && !formReadonly && (
+            <button
+              onClick={onOpenChangeCurrencyModal}
+              title="Change record currency (admin)"
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition"
+            >
+              <ShieldAlert size={10} />
+              Change
+            </button>
+          )}
+        </>
+      ) : formReadonly ? (
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 border border-slate-200 text-[11px] font-semibold text-slate-600">
+          {activeCurrency?.code ?? '—'}
+        </span>
+      ) : (
+        <div className="flex items-center gap-1">
+          <select
+            value={String(values.currency_id ?? '')}
+            onChange={(e) => onChange('currency_id', e.target.value)}
+            className="text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+            title="Select record currency (will lock after first monetary save)"
+          >
+            {currencies.map((c) => (
+              <option key={c.currency_id} value={c.currency_id}>
+                {c.code} ({c.symbol})
+              </option>
+            ))}
+          </select>
+          <span title="Currency will lock once a monetary value is saved" className="text-slate-300 cursor-help">
+            <RefreshCw size={10} className="text-slate-400" />
+          </span>
+        </div>
+      )}
+    </div>
+  ) : null;
 
   const lifecycleCommands = useMemo(
     () => getVisibleCommands(lifecycleRules, values),
@@ -3010,30 +3132,83 @@ function RecordFormInner({
   }, [closeLostOpen]);
 
   return (
-    <div className={`flex-1 flex flex-col overflow-hidden${isRedesign ? '' : ' bg-slate-50'}`} style={isRedesign ? { background: '#eef1f7', fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif" } : undefined}>
+    <div className={`flex-1 flex flex-col overflow-hidden${isRedesign ? '' : ' bg-slate-50'}${isRedesign && isContact ? ' mc-rd-contact' : ''}`} style={isRedesign ? { background: '#eef1f7', fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif" } : undefined}>
       {isRedesign && (
         <style>{`
-          .rd-save-btn{border-radius:10px !important;box-shadow:0 4px 12px rgba(59,111,255,.25) !important;}
-          .rd-save-btn:hover:not(:disabled){filter:brightness(1.07);}
+          /* Primary Save — restrained professional blue, consistent states */
+          .rd-save-btn{border-radius:6px !important;box-shadow:0 1px 2px rgba(15,23,42,.08) !important;}
+          .rd-save-btn:hover:not(:disabled){filter:brightness(0.94);}
+          .rd-save-btn:active:not(:disabled){filter:brightness(0.88);box-shadow:inset 0 1px 2px rgba(15,23,42,.18) !important;}
+          .rd-save-btn:focus-visible{outline:none !important;box-shadow:0 0 0 3px rgba(37,99,235,.35) !important;}
+          /* Neutral command buttons — subtle borders, consistent states */
+          .mc-cmd-neutral{border-radius:6px !important;}
+          .mc-cmd-neutral:hover:not(:disabled){background:#f8fafc !important;border-color:#cbd5e1 !important;}
+          .mc-cmd-neutral:active:not(:disabled){background:#f1f5f9 !important;box-shadow:inset 0 1px 2px rgba(15,23,42,.08) !important;}
+          .mc-cmd-neutral:focus-visible{outline:none !important;border-color:#93b4f5 !important;box-shadow:0 0 0 3px rgba(37,99,235,.18) !important;}
+          /* Compact, clean Dynamics-style fields (scoped to the account form only) */
+          .mc-rd-form input:not([type=checkbox]):not([type=radio]):not([type=file]),
+          .mc-rd-form select,
+          .mc-rd-form textarea{
+            border-color:#dbe1ec;
+            border-radius:6px;
+          }
+          .mc-rd-form input:not([type=checkbox]):not([type=radio]):not([type=file]):hover:not(:disabled),
+          .mc-rd-form select:hover:not(:disabled),
+          .mc-rd-form textarea:hover:not(:disabled){
+            border-color:#c2cbdb;
+          }
+          .mc-rd-form input:focus,
+          .mc-rd-form select:focus,
+          .mc-rd-form textarea:focus{
+            border-color:#3b6fff;
+            box-shadow:0 0 0 2px rgba(59,111,255,.15);
+          }
+          /* Contact form: softer professional-blue accent (higher specificity overrides) */
+          .mc-rd-contact .mc-rd-form input:focus,
+          .mc-rd-contact .mc-rd-form select:focus,
+          .mc-rd-contact .mc-rd-form textarea:focus{
+            border-color:#3f5e9e;
+            box-shadow:0 0 0 2px rgba(63,94,158,.15);
+          }
+          .mc-rd-contact .rd-save-btn:focus-visible{box-shadow:0 0 0 3px rgba(63,94,158,.32) !important;}
         `}</style>
       )}
       {/* ── Sticky Header ── */}
       <div className="shrink-0 shadow-sm bg-white border-b border-[#e7eaf1]">
-        <div style={{ height: 3, background: 'linear-gradient(135deg,#3b6fff,#22d3ee)' }} />
+        {!isRedesign && <div style={{ height: 3, background: 'linear-gradient(135deg,#3b6fff,#22d3ee)' }} />}
         {/* Top bar: breadcrumb + title + actions */}
-        <div className="px-5 py-2.5 flex items-center gap-3">
+        <div className={`${isRedesign ? 'px-5 py-2.5' : 'px-5 py-2.5'} flex items-center gap-3`}>
           {/* Back */}
           <button
             onClick={onBack}
-            className="flex items-center gap-1 text-[12px] text-[#6b7280] hover:text-[#3b6fff] transition shrink-0 group"
+            className={`flex items-center gap-1 text-[12px] transition shrink-0 group ${isRedesign ? 'text-[#64748b] hover:text-[#2563eb]' : 'text-[#6b7280] hover:text-[#3b6fff]'}`}
           >
             <ChevronLeft size={15} className="group-hover:-translate-x-0.5 transition-transform" />
             <span className="hidden sm:inline">Back</span>
           </button>
 
-          <div className="h-8 w-px bg-[#e7eaf1] shrink-0" />
+          <div className={`shrink-0 ${isRedesign ? 'h-7 w-px bg-[#e5e9f0]' : 'h-8 w-px bg-[#e7eaf1]'}`} />
 
           {/* Record name + entity label + metadata chips */}
+          {isRedesign ? (
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div
+                className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 border border-[#dde4f0]"
+                style={{ background: '#eef3fb', color: '#3f5e9e' }}
+              >
+                {redesignEntityIcon}
+              </div>
+              <div className="min-w-0 leading-tight">
+                <p className="text-[10px] font-semibold text-[#94a3b8] tracking-wide uppercase leading-none mb-1">
+                  {redesignNewTitle}
+                </p>
+                <h1 className="text-[16px] font-semibold text-[#1f2937] truncate leading-tight">
+                  {recordId ? getRecordTitle() : `New ${redesignNewTitle}`}
+                </h1>
+              </div>
+              {currencyChip}
+            </div>
+          ) : (
           <div className="flex-1 min-w-0">
             <p className="text-[9px] text-[#3b6fff] font-semibold tracking-widest uppercase leading-none mb-0.5">
               {recordId ? entity.slice(0, -1) : `New ${NEW_RECORD_ENTITY_LABELS[entity] ?? entity.slice(0, -1)}`}
@@ -3043,67 +3218,10 @@ function RecordFormInner({
             </h1>
             {/* Metadata chips row — left aligned (currency only; owner+status moved to header right) */}
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Currency selector / lock indicator (not shown for leads or accounts) */}
-              {!isRedesign && entity !== 'leads' && currencies.length > 0 && (values.currency_id !== undefined) && (
-                <div className="shrink-0 flex items-center gap-1">
-                  {isCurrencyLocked ? (
-                    <>
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold ${
-                          currencyLockReason === 'status_threshold'
-                            ? 'bg-orange-50 border border-orange-200 text-orange-700'
-                            : 'bg-slate-100 border border-slate-200 text-slate-600'
-                        }`}
-                        title={
-                          currencyLockReason === 'status_threshold'
-                            ? 'Currency locked by status threshold — record has passed a business process milestone'
-                            : 'Currency is locked — monetary values have been saved'
-                        }
-                      >
-                        <Lock size={10} className={currencyLockReason === 'status_threshold' ? 'text-orange-400' : 'text-slate-400'} />
-                        {activeCurrency?.code ?? '—'}
-                        {currencyLockReason === 'status_threshold' && (
-                          <span className="text-orange-500 text-[9px] font-medium">Status</span>
-                        )}
-                      </span>
-                      {isSystemAdmin && recordId && !formReadonly && (
-                        <button
-                          onClick={onOpenChangeCurrencyModal}
-                          title="Change record currency (admin)"
-                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition"
-                        >
-                          <ShieldAlert size={10} />
-                          Change
-                        </button>
-                      )}
-                    </>
-                  ) : formReadonly ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 border border-slate-200 text-[11px] font-semibold text-slate-600">
-                      {activeCurrency?.code ?? '—'}
-                    </span>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <select
-                        value={String(values.currency_id ?? '')}
-                        onChange={(e) => onChange('currency_id', e.target.value)}
-                        className="text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-                        title="Select record currency (will lock after first monetary save)"
-                      >
-                        {currencies.map((c) => (
-                          <option key={c.currency_id} value={c.currency_id}>
-                            {c.code} ({c.symbol})
-                          </option>
-                        ))}
-                      </select>
-                      <span title="Currency will lock once a monetary value is saved" className="text-slate-300 cursor-help">
-                        <RefreshCw size={10} className="text-slate-400" />
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
+              {currencyChip}
             </div>
           </div>
+          )}
 
           {/* Right-side actions */}
           <div className="flex items-center gap-2 shrink-0">
@@ -3195,7 +3313,7 @@ function RecordFormInner({
 
       {/* ── Command Bar ── */}
       {!formReadonly && (
-        <div className="px-4 py-1.5 flex items-center gap-1.5 shrink-0 bg-white border-b border-[#e7eaf1]">
+        <div className={`${isRedesign ? 'px-5' : 'px-4'} py-1.5 flex items-center gap-1.5 shrink-0 bg-white border-b border-[#e7eaf1]`}>
           {/* Save */}
           <button
             onClick={onSave}
@@ -3208,9 +3326,7 @@ function RecordFormInner({
                 : 'text-white border-transparent disabled:opacity-60'
             }`}
             style={saveStatus === 'idle' || saveStatus === 'saving'
-              ? isRedesign
-                ? { background: 'linear-gradient(135deg,#3b6fff,#22d3ee)' }
-                : { background: '#2563eb' }
+              ? { background: isContact ? '#3f5e9e' : '#2563eb' }
               : undefined}
           >
             {saveStatus === 'saving' ? (
@@ -3229,7 +3345,7 @@ function RecordFormInner({
           <button
             onClick={onSaveAndClose}
             disabled={saveStatus === 'saving'}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition disabled:opacity-60"
+            className="mc-cmd-neutral flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition disabled:opacity-60"
           >
             <SaveAll size={12} />
             Save &amp; Close
@@ -3239,10 +3355,23 @@ function RecordFormInner({
             <button
               onClick={onSaveAndNew}
               disabled={saveStatus === 'saving'}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition disabled:opacity-60"
+              className="mc-cmd-neutral flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition disabled:opacity-60"
             >
               <RefreshCw size={12} />
               Save &amp; New
+            </button>
+          )}
+
+          {/* Refresh — reloads the saved record (no-op on an unsaved new record) */}
+          {recordId && onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={saveStatus === 'saving'}
+              title="Refresh"
+              className="mc-cmd-neutral flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition disabled:opacity-60"
+            >
+              <RefreshCw size={12} />
+              Refresh
             </button>
           )}
 
@@ -3550,7 +3679,7 @@ function RecordFormInner({
 
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className={`px-6 flex gap-0 shrink-0 overflow-x-auto ${isRedesign ? 'bg-white border-b border-[#e7eaf1]' : 'bg-white border-b border-slate-200'}`}>
+          <div className={`flex gap-0 shrink-0 overflow-x-auto ${isRedesign ? 'px-5 bg-white border-b border-[#e7eaf1]' : 'px-6 bg-white border-b border-slate-200'}`}>
             {formTabs
               .filter((tab) => {
                 if (recordId) return true;
@@ -3567,10 +3696,10 @@ function RecordFormInner({
                 <button
                   key={tab.id}
                   onClick={() => onChangeTab(tabId)}
-                  className={`relative flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
+                  className={`relative flex items-center gap-1.5 ${isRedesign ? 'px-3 py-2 text-[12px]' : 'px-4 py-2.5 text-[13px]'} font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
                     isActive
                       ? isRedesign
-                        ? 'border-[#3b6fff] text-[#3b6fff]'
+                        ? 'border-[#2563eb] text-[#2563eb]'
                         : 'border-blue-500 text-blue-600'
                       : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                   }`}
@@ -3590,10 +3719,10 @@ function RecordFormInner({
                 <div className="w-px bg-slate-100 my-2 mx-1 shrink-0" />
                 <button
                   onClick={() => onChangeTab(HISTORY_TAB_ID)}
-                  className={`relative flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
+                  className={`relative flex items-center gap-1.5 ${isRedesign ? 'px-3 py-2 text-[12px]' : 'px-4 py-2.5 text-[13px]'} font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
                     isHistoryTab
                       ? isRedesign
-                        ? 'border-[#3b6fff] text-[#3b6fff]'
+                        ? 'border-[#2563eb] text-[#2563eb]'
                         : 'border-blue-500 text-blue-600'
                       : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                   }`}
@@ -3607,10 +3736,10 @@ function RecordFormInner({
                     <button
                       key={sg.configKey}
                       onClick={() => onChangeTab(tabId)}
-                      className={`relative flex items-center gap-1.5 px-4 py-2.5 text-[13px] font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
+                      className={`relative flex items-center gap-1.5 ${isRedesign ? 'px-3 py-2 text-[12px]' : 'px-4 py-2.5 text-[13px]'} font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
                         isActive
                           ? isRedesign
-                            ? 'border-[#3b6fff] text-[#3b6fff]'
+                            ? 'border-[#2563eb] text-[#2563eb]'
                             : 'border-blue-500 text-blue-600'
                           : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                       }`}
@@ -3623,7 +3752,7 @@ function RecordFormInner({
             )}
           </div>
 
-          <div className={`flex-1 overflow-y-auto ${isRedesign ? 'p-5' : 'p-6'}`}>
+          <div className={`flex-1 overflow-y-auto ${isRedesign ? 'px-5 py-4' : 'p-6'}`}>
             {isFormTab && currentFormTab && stageGateErrors && (
               <StageGateBanner
                 stageLabel={stageGateErrors.stageLabel}
@@ -3634,7 +3763,7 @@ function RecordFormInner({
               />
             )}
             {isFormTab && currentFormTab && (
-              <>
+              <div className={isRedesign ? 'mc-rd-form w-full space-y-3' : 'contents'}>
                 <RuleMessageBanner ruleState={ruleState} />
                 <RecommendationsPanel ruleState={ruleState} />
                 {currentFormTab.sections
@@ -3665,9 +3794,10 @@ function RecordFormInner({
                       lookupEntitySlugMap={lookupEntitySlugMap}
                       subgridRefreshCounter={subgridRefreshCounter}
                       fieldConfigMap={fieldConfigMap}
+                      isRedesign={isRedesign}
                     />
                   ))}
-              </>
+              </div>
             )}
 
             {isHistoryTab && recordId && (

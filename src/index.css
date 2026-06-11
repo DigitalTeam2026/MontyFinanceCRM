@@ -3,14 +3,19 @@
 @tailwind utilities;
 
 :root {
-  /* Sidebar theming */
-  --sidebar-bg: #0a1d36;
+  /* Top-bar theming — default is light; JS (applySidebarCssVars) sets
+     adaptive --header-* values whenever the personalizer color changes. */
+  --sidebar-bg: #f7f8fa;
   --sidebar-hover: color-mix(in srgb, var(--sidebar-bg) 85%, white);
   --sidebar-active: color-mix(in srgb, var(--sidebar-bg) 70%, white);
   --sidebar-border: color-mix(in srgb, var(--sidebar-bg) 80%, white);
-  --header-input-bg: color-mix(in srgb, var(--sidebar-bg) 75%, white);
-  --header-input-border: color-mix(in srgb, var(--sidebar-bg) 65%, white);
-  --header-hover-bg: color-mix(in srgb, var(--sidebar-bg) 82%, white);
+  --header-fg: #1f2937;
+  --header-fg-muted: #6b7280;
+  --header-sep: #d1d5db;
+  --header-border: #e5e7eb;
+  --header-input-bg: #f1f3f6;
+  --header-input-border: #e3e6eb;
+  --header-hover-bg: rgba(2,6,23,0.05);
 
   /* Navy palette */
   --navy-900: #0a1d36;

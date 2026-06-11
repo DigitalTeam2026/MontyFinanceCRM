@@ -14,45 +14,45 @@ import { fetchFullNavTree } from '../../services/navigationService';
 import type { NavArea, NavGroup, NavItem } from '../../services/navigationService';
 
 const ICON_MAP: Record<string, React.ReactNode> = {
-  TrendingUp:   <TrendingUp size={15} />,
-  Megaphone:    <Megaphone size={15} />,
-  Headphones:   <HeadphonesIcon size={15} />,
-  Layout:       <LayoutGrid size={15} />,
-  FileText:     <FileText size={15} />,
-  Users:        <Users size={15} />,
-  Package:      <Package size={15} />,
-  BarChart2:    <BarChart2 size={15} />,
-  Settings:     <SettingsIcon size={15} />,
-  Star:         <Star size={15} />,
-  Globe:        <Globe size={15} />,
-  Layers:       <Layers size={15} />,
-  FolderOpen:   <FolderOpen size={15} />,
-  BookOpen:     <BookOpen size={15} />,
-  ShoppingCart: <ShoppingCart size={15} />,
-  Briefcase:    <Briefcase size={15} />,
-  UserPlus:     <UserPlus size={15} />,
-  Target:       <Target size={15} />,
-  Ticket:       <Ticket size={15} />,
-  Building2:    <Building2 size={15} />,
+  TrendingUp:   <TrendingUp size={16} />,
+  Megaphone:    <Megaphone size={16} />,
+  Headphones:   <HeadphonesIcon size={16} />,
+  Layout:       <LayoutGrid size={16} />,
+  FileText:     <FileText size={16} />,
+  Users:        <Users size={16} />,
+  Package:      <Package size={16} />,
+  BarChart2:    <BarChart2 size={16} />,
+  Settings:     <SettingsIcon size={16} />,
+  Star:         <Star size={16} />,
+  Globe:        <Globe size={16} />,
+  Layers:       <Layers size={16} />,
+  FolderOpen:   <FolderOpen size={16} />,
+  BookOpen:     <BookOpen size={16} />,
+  ShoppingCart: <ShoppingCart size={16} />,
+  Briefcase:    <Briefcase size={16} />,
+  UserPlus:     <UserPlus size={16} />,
+  Target:       <Target size={16} />,
+  Ticket:       <Ticket size={16} />,
+  Building2:    <Building2 size={16} />,
 };
 
 const AREA_ICON_MAP: Record<string, React.ReactNode> = {
-  TrendingUp:   <TrendingUp size={15} />,
-  Megaphone:    <Megaphone size={15} />,
-  Headphones:   <HeadphonesIcon size={15} />,
-  Layout:       <LayoutGrid size={15} />,
-  FileText:     <FileText size={15} />,
-  Users:        <Users size={15} />,
-  Package:      <Package size={15} />,
-  BarChart2:    <BarChart2 size={15} />,
-  Settings:     <SettingsIcon size={15} />,
-  Star:         <Star size={15} />,
-  Globe:        <Globe size={15} />,
-  Layers:       <Layers size={15} />,
-  FolderOpen:   <FolderOpen size={15} />,
-  BookOpen:     <BookOpen size={15} />,
-  ShoppingCart: <ShoppingCart size={15} />,
-  Briefcase:    <Briefcase size={15} />,
+  TrendingUp:   <TrendingUp size={16} />,
+  Megaphone:    <Megaphone size={16} />,
+  Headphones:   <HeadphonesIcon size={16} />,
+  Layout:       <LayoutGrid size={16} />,
+  FileText:     <FileText size={16} />,
+  Users:        <Users size={16} />,
+  Package:      <Package size={16} />,
+  BarChart2:    <BarChart2 size={16} />,
+  Settings:     <SettingsIcon size={16} />,
+  Star:         <Star size={16} />,
+  Globe:        <Globe size={16} />,
+  Layers:       <Layers size={16} />,
+  FolderOpen:   <FolderOpen size={16} />,
+  BookOpen:     <BookOpen size={16} />,
+  ShoppingCart: <ShoppingCart size={16} />,
+  Briefcase:    <Briefcase size={16} />,
 };
 
 function resolveEntity(entityName: string | null): AppEntity {
@@ -75,6 +75,9 @@ interface AppSidebarProps {
 }
 
 const SIDEBAR_PRESETS: { name: string; color: string }[] = [
+  { name: 'Default',       color: '#f7f8fa' },
+  { name: 'Pure White',    color: '#ffffff' },
+  { name: 'Mist',          color: '#eef2f7' },
   { name: 'Midnight Navy', color: '#0a1d36' },
   { name: 'Royal Blue',    color: '#0f2a5e' },
   { name: 'Monty Blue',    color: '#163b6e' },
@@ -93,9 +96,9 @@ const LS_KEY = 'monty.sidebarColor';
 
 function loadSidebarColor(): string {
   try {
-    return localStorage.getItem(LS_KEY) || '#0a1d36';
+    return localStorage.getItem(LS_KEY) || '#f7f8fa';
   } catch {
-    return '#0a1d36';
+    return '#f7f8fa';
   }
 }
 
@@ -137,13 +140,43 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${[r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
 }
 
+function headerLuminance(hex: string): number {
+  const m = hex.replace('#', '');
+  if (m.length < 6) return 1;
+  const r = parseInt(m.slice(0, 2), 16) || 0;
+  const g = parseInt(m.slice(2, 4), 16) || 0;
+  const b = parseInt(m.slice(4, 6), 16) || 0;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
 function applySidebarCssVars(color: string) {
-  document.documentElement.style.setProperty('--sidebar-bg', color);
+  const root = document.documentElement.style;
+  root.setProperty('--sidebar-bg', color);
   const [h, s] = hexToHsl(color);
   const accent = hslToHex(h, Math.max(s, 0.55), 0.43);
   const link = hslToHex(h, Math.max(s, 0.55), 0.40);
-  document.documentElement.style.setProperty('--navy-accent', accent);
-  document.documentElement.style.setProperty('--link', link);
+  root.setProperty('--navy-accent', accent);
+  root.setProperty('--link', link);
+
+  // Adaptive top-bar foreground/controls so text stays readable on a
+  // light OR dark chosen color — keeps the personalizer working for any color.
+  if (headerLuminance(color) > 0.6) {
+    root.setProperty('--header-fg', '#1f2937');
+    root.setProperty('--header-fg-muted', '#6b7280');
+    root.setProperty('--header-sep', '#d1d5db');
+    root.setProperty('--header-border', '#e5e7eb');
+    root.setProperty('--header-input-bg', '#f1f3f6');
+    root.setProperty('--header-input-border', '#e3e6eb');
+    root.setProperty('--header-hover-bg', 'rgba(2,6,23,0.05)');
+  } else {
+    root.setProperty('--header-fg', '#ffffff');
+    root.setProperty('--header-fg-muted', 'rgba(255,255,255,0.55)');
+    root.setProperty('--header-sep', 'rgba(255,255,255,0.22)');
+    root.setProperty('--header-border', 'rgba(255,255,255,0.08)');
+    root.setProperty('--header-input-bg', 'rgba(255,255,255,0.10)');
+    root.setProperty('--header-input-border', 'rgba(255,255,255,0.16)');
+    root.setProperty('--header-hover-bg', 'rgba(255,255,255,0.12)');
+  }
 }
 
 function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
@@ -178,21 +211,21 @@ function SidebarThemePicker({ currentColor, onChange }: { currentColor: string; 
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-[#9fb0c8] hover:text-white hover:bg-[#13284a] transition-colors rounded"
+        className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-[#4b5563] hover:text-[#1f2937] hover:bg-[#eceef1] transition-colors rounded"
       >
         <span
-          className="w-3.5 h-3.5 rounded-full border border-white/20 shrink-0"
+          className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
           style={{ background: currentColor }}
         />
-        <span className="flex-1 text-left font-medium">Personalize sidebar</span>
-        <ChevronRight size={11} className="text-[#7a8ca8] shrink-0" />
+        <span className="flex-1 text-left font-medium">Personalize top bar</span>
+        <ChevronRight size={11} className="text-[#9ca3af] shrink-0" />
       </button>
 
       {open && (
         <div className="absolute bottom-full left-0 mb-1 w-[220px] bg-white rounded-lg shadow-2xl border border-[var(--border)] z-50 overflow-hidden">
           <div className="px-3 pt-3 pb-2">
-            <p className="text-[11px] font-semibold text-[var(--ink-700)]">Sidebar Color</p>
-            <p className="text-[10px] text-[var(--ink-400)] mt-0.5">Choose a theme for the sidebar</p>
+            <p className="text-[11px] font-semibold text-[var(--ink-700)]">Top Bar Color</p>
+            <p className="text-[10px] text-[var(--ink-400)] mt-0.5">Choose a color for the top bar</p>
           </div>
           <div className="px-3 pb-2 grid grid-cols-6 gap-2">
             {SIDEBAR_PRESETS.map((p) => (
@@ -222,7 +255,7 @@ function SidebarThemePicker({ currentColor, onChange }: { currentColor: string; 
           </div>
           <div className="border-t border-[var(--divider)] px-3 py-2">
             <button
-              onClick={() => onChange('#0a1d36')}
+              onClick={() => onChange('#f7f8fa')}
               className="flex items-center gap-1.5 text-[11px] text-[var(--link)] hover:underline font-medium"
             >
               <RotateCcw size={10} />
@@ -310,16 +343,17 @@ export default function AppSidebar({
 
   return (
     <aside
-      className="text-[#d4dceb] flex flex-col h-full shrink-0 select-none overflow-hidden transition-all duration-300 ease-in-out"
+      className="text-[#374151] flex flex-col h-full shrink-0 select-none overflow-hidden transition-all duration-300 ease-in-out"
       style={{
         width: collapsed ? '56px' : '220px',
-        background: 'var(--sidebar-bg)',
+        background: '#f7f8fa',
+        borderRight: '1px solid #e5e7eb',
       }}
     >
-      {/* Brand block - 44px */}
+      {/* Brand block - 48px */}
       <div
-        className={`h-[44px] flex items-center shrink-0 ${collapsed ? 'justify-center px-0' : 'px-3 gap-2.5'}`}
-        style={{ borderBottom: '1px solid var(--sidebar-border)' }}
+        className={`h-[48px] flex items-center shrink-0 ${collapsed ? 'justify-center px-0' : 'px-4 gap-2.5'}`}
+        style={{ borderBottom: '1px solid #e5e7eb' }}
       >
         {collapsed ? (
           <div className="w-[22px] h-[22px] rounded-[5px] bg-[#2b6cb0] flex items-center justify-center shrink-0">
@@ -337,13 +371,13 @@ export default function AppSidebar({
               </svg>
             </div>
             <div className="min-w-0 flex-1 overflow-hidden">
-              <span className="text-[13px] font-semibold text-white leading-none">CRM </span>
-              <span className="text-[11px] text-[#9fb0c8] font-medium">Platform</span>
+              <span className="text-[15px] font-semibold text-[#1f2937] leading-none">CRM </span>
+              <span className="text-[12px] text-[#6b7280] font-medium">Platform</span>
             </div>
             <button
               onClick={() => setCollapsed(true)}
               title="Collapse sidebar"
-              className="text-[#7a8ca8] hover:text-white transition-colors shrink-0"
+              className="text-[#9ca3af] hover:text-[#374151] transition-colors shrink-0"
             >
               <PanelLeftClose size={13} />
             </button>
@@ -357,15 +391,14 @@ export default function AppSidebar({
           <button
             onClick={() => setCollapsed(false)}
             title="Expand sidebar"
-            className="w-9 h-9 flex items-center justify-center text-[#7a8ca8] hover:text-white rounded-md transition-colors mb-1"
-            style={{ ['--tw-bg-opacity' as string]: 0 }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sidebar-hover)')}
+            className="w-8 h-8 flex items-center justify-center text-[#6b7280] hover:text-[#374151] rounded-md transition-colors mb-1"
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#eceef1')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
             <PanelLeftOpen size={14} />
           </button>
 
-          <div className="w-6 mb-1" style={{ borderTop: '1px solid var(--sidebar-border)' }} />
+          <div className="w-6 mb-1" style={{ borderTop: '1px solid #e5e7eb' }} />
 
           {areas.map((area) => {
             const isActiveModule = activeModule === area.name;
@@ -376,27 +409,25 @@ export default function AppSidebar({
                     setExpanded(area.name);
                     onNavigate(area.name, firstEntityOfArea(area));
                   }}
-                  className="w-9 h-9 flex items-center justify-center rounded-md transition-colors"
+                  className="w-8 h-8 flex items-center justify-center rounded-md transition-colors"
                   style={{
-                    background: isActiveModule ? 'var(--sidebar-active)' : 'transparent',
-                    color: isActiveModule ? 'white' : '#7a8ca8',
+                    background: isActiveModule ? '#e9eef7' : 'transparent',
+                    color: isActiveModule ? '#2563eb' : '#6b7280',
                   }}
                   onMouseEnter={(e) => {
-                    if (!isActiveModule) e.currentTarget.style.background = 'var(--sidebar-hover)';
-                    e.currentTarget.style.color = 'white';
+                    if (!isActiveModule) { e.currentTarget.style.background = '#eceef1'; e.currentTarget.style.color = '#374151'; }
                   }}
                   onMouseLeave={(e) => {
-                    if (!isActiveModule) e.currentTarget.style.background = 'transparent';
-                    if (!isActiveModule) e.currentTarget.style.color = '#7a8ca8';
+                    if (!isActiveModule) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
                   }}
                 >
-                  {AREA_ICON_MAP[area.icon_name] ?? <LayoutGrid size={15} />}
+                  {AREA_ICON_MAP[area.icon_name] ?? <LayoutGrid size={16} />}
                 </button>
               </Tooltip>
             );
           })}
 
-          <div className="w-6 my-1" style={{ borderTop: '1px solid var(--sidebar-border)' }} />
+          <div className="w-6 my-1" style={{ borderTop: '1px solid #e5e7eb' }} />
 
           {uniqueNavItems.map((item) => {
             const entity = resolveEntity(item.entity_name);
@@ -406,21 +437,19 @@ export default function AppSidebar({
               <Tooltip key={item.nav_item_id} label={item.display_label}>
                 <button
                   onClick={() => { if (area) onNavigate(area.name, entity); }}
-                  className="w-9 h-9 flex items-center justify-center rounded-md transition-colors"
+                  className="w-8 h-8 flex items-center justify-center rounded-md transition-colors"
                   style={{
-                    background: isActive ? '#1f4374' : 'transparent',
-                    color: isActive ? 'white' : '#7a8ca8',
+                    background: isActive ? '#e9eef7' : 'transparent',
+                    color: isActive ? '#2563eb' : '#6b7280',
                   }}
                   onMouseEnter={(e) => {
-                    if (!isActive) e.currentTarget.style.background = 'var(--sidebar-hover)';
-                    e.currentTarget.style.color = 'white';
+                    if (!isActive) { e.currentTarget.style.background = '#eceef1'; e.currentTarget.style.color = '#374151'; }
                   }}
                   onMouseLeave={(e) => {
-                    if (!isActive) e.currentTarget.style.background = 'transparent';
-                    if (!isActive) e.currentTarget.style.color = '#7a8ca8';
+                    if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
                   }}
                 >
-                  {ICON_MAP[item.icon_name] ?? <FileText size={15} />}
+                  {ICON_MAP[item.icon_name] ?? <FileText size={16} />}
                 </button>
               </Tooltip>
             );
@@ -441,25 +470,25 @@ export default function AppSidebar({
                     setExpanded(area.name);
                     onNavigate(area.name, firstEntityOfArea(area));
                   }}
-                  className="w-full flex items-center gap-2 px-4 h-[32px] text-[12px] font-medium transition-colors"
+                  className="w-full flex items-center gap-2 px-3 h-[36px] text-[13px] font-semibold transition-colors"
                   style={{
-                    color: isActiveModule ? 'white' : '#d4dceb',
-                    background: isActiveModule ? 'var(--sidebar-hover)' : 'transparent',
+                    color: isActiveModule ? '#1f2937' : '#374151',
+                    background: isActiveModule ? '#eceef1' : 'transparent',
                   }}
                   onMouseEnter={(e) => {
-                    if (!isActiveModule) e.currentTarget.style.background = '#13284a';
+                    if (!isActiveModule) e.currentTarget.style.background = '#eceef1';
                   }}
                   onMouseLeave={(e) => {
                     if (!isActiveModule) e.currentTarget.style.background = 'transparent';
                   }}
                 >
-                  <span className={isActiveModule ? 'text-[#5b9bd5]' : 'text-[#7a8ca8]'}>
-                    {AREA_ICON_MAP[area.icon_name] ?? <LayoutGrid size={15} />}
+                  <span className={isActiveModule ? 'text-[#2563eb]' : 'text-[#6b7280]'}>
+                    {AREA_ICON_MAP[area.icon_name] ?? <LayoutGrid size={16} />}
                   </span>
                   <span className="flex-1 text-left truncate">{area.display_label}</span>
                   {isOpen
-                    ? <ChevronDown size={12} className="text-[#7a8ca8] shrink-0" />
-                    : <ChevronRight size={12} className="text-[#7a8ca8] shrink-0" />}
+                    ? <ChevronDown size={12} className="text-[#9ca3af] shrink-0" />
+                    : <ChevronRight size={12} className="text-[#9ca3af] shrink-0" />}
                 </button>
 
                 {isOpen && (
@@ -471,8 +500,8 @@ export default function AppSidebar({
                         <div key={group.nav_group_id}>
                           {/* Sub-section label */}
                           <p
-                            className="text-[10.5px] uppercase font-medium text-[#7a8ca8]"
-                            style={{ letterSpacing: '1.1px', padding: '14px 16px 4px' }}
+                            className="text-[10px] uppercase font-semibold text-[#9ca3af]"
+                            style={{ letterSpacing: '0.8px', padding: '12px 14px 4px' }}
                           >
                             {group.display_label}
                           </p>
@@ -483,30 +512,31 @@ export default function AppSidebar({
                               <button
                                 key={item.nav_item_id}
                                 onClick={() => onNavigate(area.name, entity)}
-                                className="w-full flex items-center gap-2 text-[12px] transition-colors relative"
+                                className="w-full flex items-center gap-2 text-[13px] transition-colors relative"
                                 style={{
-                                  padding: '6px 12px 6px 16px',
-                                  color: isActive ? 'white' : '#d4dceb',
-                                  background: isActive ? '#1f4374' : 'transparent',
-                                  borderLeft: isActive ? '2px solid #3b82f6' : '2px solid transparent',
+                                  padding: '7px 12px 7px 14px',
+                                  color: isActive ? '#1e293b' : '#374151',
+                                  fontWeight: isActive ? 600 : 500,
+                                  background: isActive ? '#e9eef7' : 'transparent',
+                                  borderLeft: isActive ? '2px solid #2563eb' : '2px solid transparent',
                                 }}
                                 onMouseEnter={(e) => {
                                   if (!isActive) {
-                                    e.currentTarget.style.background = '#13284a';
-                                    e.currentTarget.style.color = 'white';
+                                    e.currentTarget.style.background = '#eceef1';
+                                    e.currentTarget.style.color = '#1f2937';
                                   }
                                 }}
                                 onMouseLeave={(e) => {
                                   if (!isActive) {
                                     e.currentTarget.style.background = 'transparent';
-                                    e.currentTarget.style.color = '#d4dceb';
+                                    e.currentTarget.style.color = '#374151';
                                   }
                                 }}
                               >
-                                <span className={isActive ? 'text-[#5b9bd5]' : 'text-[#7a8ca8]'}>
-                                  {ICON_MAP[item.icon_name] ?? <FileText size={15} />}
+                                <span className={isActive ? 'text-[#2563eb]' : 'text-[#6b7280]'}>
+                                  {ICON_MAP[item.icon_name] ?? <FileText size={16} />}
                                 </span>
-                                <span className="font-medium truncate">{item.display_label}</span>
+                                <span className="truncate">{item.display_label}</span>
                               </button>
                             );
                           })}
@@ -520,26 +550,26 @@ export default function AppSidebar({
           })}
 
           {/* My Records */}
-          <div style={{ borderTop: '1px solid var(--sidebar-border)', marginTop: '4px', paddingTop: '4px' }}>
+          <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '4px', paddingTop: '4px' }}>
             <button
               onClick={() => setMyRecordsOpen((v) => !v)}
-              className="w-full flex items-center gap-2 px-4 h-[32px] text-[12px] font-medium text-[#d4dceb] transition-colors"
+              className="w-full flex items-center gap-2 px-3 h-[36px] text-[13px] font-semibold text-[#374151] transition-colors"
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#13284a';
-                e.currentTarget.style.color = 'white';
+                e.currentTarget.style.background = '#eceef1';
+                e.currentTarget.style.color = '#1f2937';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = '#d4dceb';
+                e.currentTarget.style.color = '#374151';
               }}
             >
-              <span className="text-[#7a8ca8]">
-                <UserCheck size={15} />
+              <span className="text-[#6b7280]">
+                <UserCheck size={16} />
               </span>
               <span className="flex-1 text-left">My Records</span>
               {myRecordsOpen
-                ? <ChevronDown size={11} className="text-[#7a8ca8] shrink-0" />
-                : <ChevronRight size={11} className="text-[#7a8ca8] shrink-0" />}
+                ? <ChevronDown size={11} className="text-[#9ca3af] shrink-0" />
+                : <ChevronRight size={11} className="text-[#9ca3af] shrink-0" />}
             </button>
             {myRecordsOpen && (
               <div className="pb-1">
@@ -551,18 +581,18 @@ export default function AppSidebar({
                     <button
                       key={item.nav_item_id}
                       onClick={() => onNavigateAssignedToMe(area.name, entity)}
-                      className="w-full flex items-center gap-2 text-[12px] text-[#d4dceb] transition-colors"
-                      style={{ padding: '6px 12px 6px 16px' }}
+                      className="w-full flex items-center gap-2 text-[13px] text-[#374151] transition-colors"
+                      style={{ padding: '7px 12px 7px 14px' }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#13284a';
-                        e.currentTarget.style.color = 'white';
+                        e.currentTarget.style.background = '#eceef1';
+                        e.currentTarget.style.color = '#1f2937';
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = '#d4dceb';
+                        e.currentTarget.style.color = '#374151';
                       }}
                     >
-                      <span className="text-[#7a8ca8]">{ICON_MAP[item.icon_name] ?? <FileText size={15} />}</span>
+                      <span className="text-[#6b7280]">{ICON_MAP[item.icon_name] ?? <FileText size={16} />}</span>
                       <span className="font-medium truncate">{item.display_label}</span>
                     </button>
                   );
@@ -582,7 +612,7 @@ export default function AppSidebar({
       {/* Footer */}
       <div
         className={collapsed ? 'py-3 flex flex-col items-center gap-2' : 'px-2 py-2'}
-        style={{ borderTop: '1px solid #15294a' }}
+        style={{ borderTop: '1px solid #e5e7eb' }}
       >
         {collapsed ? (
           <>
@@ -590,8 +620,8 @@ export default function AppSidebar({
               <Tooltip label="Admin Studio">
                 <a
                   href="#/studio"
-                  className="w-9 h-9 flex items-center justify-center text-[#7a8ca8] hover:text-white rounded-md transition-colors"
-                  onMouseEnter={(e) => { e.currentTarget.style.background = '#13284a'; }}
+                  className="w-8 h-8 flex items-center justify-center text-[#6b7280] hover:text-[#374151] rounded-md transition-colors"
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#eceef1'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                 >
                   <Settings size={13} />
@@ -607,8 +637,8 @@ export default function AppSidebar({
               <Tooltip label="Sign out">
                 <button
                   onClick={onSignOut}
-                  className="w-9 h-9 flex items-center justify-center text-[#7a8ca8] hover:text-white rounded-md transition-colors"
-                  onMouseEnter={(e) => { e.currentTarget.style.background = '#13284a'; }}
+                  className="w-8 h-8 flex items-center justify-center text-[#6b7280] hover:text-[#374151] rounded-md transition-colors"
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#eceef1'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                 >
                   <LogOut size={13} />
@@ -621,29 +651,29 @@ export default function AppSidebar({
             {isSystemAdmin && (
               <a
                 href="#/studio"
-                className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-[#9fb0c8] hover:text-white transition-colors rounded"
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#13284a'; }}
+                className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-[#4b5563] hover:text-[#1f2937] transition-colors rounded"
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#eceef1'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
-                <Settings size={12} className="text-[#7a8ca8]" />
+                <Settings size={12} className="text-[#6b7280]" />
                 <span className="font-medium">Admin Studio</span>
               </a>
             )}
 
             <SidebarThemePicker currentColor={sidebarColor} onChange={handleColorChange} />
 
-            <div className="flex items-center gap-2.5 px-3 pt-2 pb-1" style={{ borderTop: '1px solid #15294a', marginTop: '4px' }}>
+            <div className="flex items-center gap-2.5 px-3 pt-2 pb-1" style={{ borderTop: '1px solid #e5e7eb', marginTop: '4px' }}>
               <div className="w-6 h-6 rounded-full bg-[#2b6cb0] flex items-center justify-center shrink-0">
                 <span className="text-[9px] font-bold text-white">{initials}</span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] text-[#9fb0c8] truncate leading-none">{userEmail ?? 'User'}</p>
+                <p className="text-[10px] text-[#6b7280] truncate leading-none">{userEmail ?? 'User'}</p>
               </div>
               {onSignOut && (
                 <button
                   onClick={onSignOut}
                   title="Sign out"
-                  className="text-[#7a8ca8] hover:text-white transition-colors"
+                  className="text-[#6b7280] hover:text-[#374151] transition-colors"
                 >
                   <LogOut size={12} />
                 </button>

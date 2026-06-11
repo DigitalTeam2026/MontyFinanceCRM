@@ -66,28 +66,30 @@ export default function AppHeader({
   }, [onNotificationNavigate]);
 
   return (
-    <header className="h-[44px] flex items-center px-4 gap-3 shrink-0 relative" style={{ background: 'var(--sidebar-bg)' }}>
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 min-w-0 shrink-0">
-        <span className="text-[11px] text-white/50 font-medium">
+    <header className="h-[48px] flex items-center px-5 gap-4 shrink-0 relative" style={{ background: 'var(--sidebar-bg)', borderBottom: '1px solid var(--header-border)' }}>
+      {/* App name + breadcrumb */}
+      <div className="flex items-center gap-2 min-w-0 shrink-0">
+        <span className="text-[13px] font-semibold" style={{ color: 'var(--header-fg)' }}>Monty CRM</span>
+        <span className="text-[12px]" style={{ color: 'var(--header-sep)' }}>|</span>
+        <span className="text-[12px] font-medium" style={{ color: 'var(--header-fg-muted)' }}>
           {MODULE_LABELS[module]}
         </span>
-        <span className="text-white/25 text-[11px]">/</span>
-        <h1 className="text-[13px] font-semibold text-white truncate">{meta.plural}</h1>
+        <span className="text-[12px]" style={{ color: 'var(--header-sep)' }}>/</span>
+        <h1 className="text-[14px] font-semibold truncate" style={{ color: 'var(--header-fg)' }}>{meta.plural}</h1>
       </div>
 
       {/* Search */}
       <div className="flex items-center gap-2 flex-1 justify-center">
-        <div className="relative w-full max-w-[520px]">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40" />
+        <div className="relative w-full max-w-[560px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--header-fg-muted)' }} />
           <input
             type="text"
             value={draft}
             onChange={(e) => handleChange(e.target.value)}
             onKeyDown={handleSearchKeyDown}
             placeholder={`Search ${meta.plural.toLowerCase()}...`}
-            className="w-full h-[28px] pl-8 pr-3 text-[12px] rounded text-white placeholder-white/40 focus:outline-none focus:ring-1 focus:ring-[#3b82f6] focus:border-[#3b82f6] transition"
-            style={{ background: 'var(--header-input-bg)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--header-input-border)' }}
+            className="w-full h-[32px] pl-9 pr-3 text-[13px] rounded-md placeholder-[#9ca3af] focus:outline-none focus:ring-1 focus:ring-[#3b82f6] focus:border-[#3b82f6] transition"
+            style={{ background: 'var(--header-input-bg)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--header-input-border)', color: 'var(--header-fg)' }}
           />
         </div>
       </div>
@@ -96,8 +98,8 @@ export default function AppHeader({
       <div className="flex items-center gap-1.5 shrink-0">
         {/* Env pill */}
         <span
-          className="px-2 py-0.5 text-[10px] font-semibold text-white/70 rounded"
-          style={{ background: 'var(--header-input-bg)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--header-input-border)' }}
+          className="px-2 py-0.5 text-[10px] font-semibold rounded"
+          style={{ background: 'var(--header-input-bg)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--header-input-border)', color: 'var(--header-fg-muted)' }}
         >
           PROD
         </span>
@@ -106,11 +108,12 @@ export default function AppHeader({
           <button
             onClick={onGlobalSearch}
             title="Global search (Ctrl+K)"
-            className="w-[30px] h-[30px] flex items-center justify-center rounded-sm text-white/50 hover:text-white transition-colors"
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--header-hover-bg)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            className="w-[32px] h-[32px] flex items-center justify-center rounded-sm transition-colors"
+            style={{ color: 'var(--header-fg-muted)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--header-hover-bg)'; e.currentTarget.style.color = 'var(--header-fg)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--header-fg-muted)'; }}
           >
-            <Search size={14} />
+            <Search size={16} />
           </button>
         )}
 
@@ -119,17 +122,13 @@ export default function AppHeader({
         <div ref={bellRef} className="relative">
           <button
             onClick={() => setNotifOpen((v) => !v)}
-            className={`relative w-[30px] h-[30px] flex items-center justify-center rounded-sm transition-colors ${
-              notifOpen
-                ? 'text-white'
-                : 'text-white/50 hover:text-white'
-            }`}
+            className="relative w-[32px] h-[32px] flex items-center justify-center rounded-sm transition-colors"
             title="Notifications"
-            style={notifOpen ? { background: 'var(--header-hover-bg)' } : undefined}
-            onMouseEnter={(e) => { if (!notifOpen) e.currentTarget.style.background = 'var(--header-hover-bg)'; }}
-            onMouseLeave={(e) => { if (!notifOpen) e.currentTarget.style.background = 'transparent'; }}
+            style={{ color: notifOpen ? 'var(--header-fg)' : 'var(--header-fg-muted)', background: notifOpen ? 'var(--header-hover-bg)' : 'transparent' }}
+            onMouseEnter={(e) => { if (!notifOpen) { e.currentTarget.style.background = 'var(--header-hover-bg)'; e.currentTarget.style.color = 'var(--header-fg)'; } }}
+            onMouseLeave={(e) => { if (!notifOpen) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--header-fg-muted)'; } }}
           >
-            <Bell size={14} />
+            <Bell size={16} />
             {unreadCount > 0 && (
               <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-0.5 flex items-center justify-center text-[8px] font-bold text-white bg-[#e04040] rounded-full">
                 {unreadCount > 99 ? '99+' : unreadCount}
@@ -147,10 +146,10 @@ export default function AppHeader({
 
         {/* Avatar — initials from the logged-in user's display name */}
         <div
-          className="w-6 h-6 rounded-full bg-[#2b6cb0] flex items-center justify-center shrink-0 ml-1"
+          className="w-[28px] h-[28px] rounded-full bg-[#2b6cb0] flex items-center justify-center shrink-0 ml-1"
           title={userName || userEmail || 'User'}
         >
-          <span className="text-[9px] font-bold text-white">
+          <span className="text-[10px] font-bold text-white">
             {getInitials(userName, userEmail)}
           </span>
         </div>

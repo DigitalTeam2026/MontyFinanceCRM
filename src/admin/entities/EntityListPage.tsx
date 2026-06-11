@@ -3,10 +3,46 @@ import {
   Plus, Search, Database, Trash2, RefreshCw, Lock,
   ChevronUp, ChevronDown, MoreHorizontal, Download, Upload,
   Filter, X, ArrowUpDown,
+  Building2, Users, UserPlus, Target, Ticket, Package, Factory,
+  DollarSign, Map, Globe, Megaphone, Award, ShoppingCart, FileText,
+  Briefcase, Truck, Tag, Calendar, Mail, Phone, Box, Boxes, Wrench,
+  BookOpen, Layers, Folder, Star, Component, Hash, Grid3x3,
+  type LucideIcon,
 } from 'lucide-react';
 import type { EntityDefinition } from '../../types/entity';
 import { fetchEntities, softDeleteEntity } from '../../services/entityService';
 import ConfirmDialog from '../components/ConfirmDialog';
+
+// Per-entity icon resolution — each entity gets its own icon by logical name,
+// with a deterministic fallback so unrecognized entities still differ visually.
+const ENTITY_ICON_MAP: Record<string, LucideIcon> = {
+  account: Building2, contact: Users, lead: UserPlus,
+  opportunity: Target, ticket: Ticket, case: Ticket,
+  product: Package, industry: Factory, currency: DollarSign,
+  territory: Map, region: Globe, campaign: Megaphone,
+  competitor: Award, order: ShoppingCart, invoice: FileText,
+  quote: FileText, contract: Briefcase, vendor: Truck,
+  supplier: Truck, category: Tag, activity: Calendar,
+  task: Calendar, email: Mail, call: Phone, note: FileText,
+  document: FileText, user: Users, team: Users, role: Lock,
+  price: DollarSign, unit: Box, warehouse: Boxes, asset: Package,
+  service: Wrench, knowledge: BookOpen, article: BookOpen,
+  segment: Layers,
+};
+const FALLBACK_ICONS: LucideIcon[] = [
+  Box, Layers, Tag, Folder, FileText, Briefcase, Star,
+  ShoppingCart, Globe, Boxes, Component, Hash, Grid3x3, Calendar,
+];
+
+function resolveEntityIcon(entity: EntityDefinition): LucideIcon {
+  const name = (entity.logical_name || entity.display_name || '').toLowerCase();
+  for (const key of Object.keys(ENTITY_ICON_MAP)) {
+    if (name === key || name.includes(key)) return ENTITY_ICON_MAP[key];
+  }
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return FALLBACK_ICONS[h % FALLBACK_ICONS.length] ?? Database;
+}
 
 interface EntityListPageProps {
   onNew: () => void;
@@ -231,6 +267,7 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
             <tbody>
               {filtered.map((entity) => {
                 const isSelected = selected.has(entity.entity_definition_id);
+                const EntityIcon = resolveEntityIcon(entity);
                 return (
                   <tr
                     key={entity.entity_definition_id}
@@ -252,7 +289,7 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
                         <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
                           entity.is_custom ? 'bg-amber-50 ring-1 ring-amber-200' : 'bg-slate-50 ring-1 ring-slate-200'
                         }`}>
-                          <Database size={13} className={entity.is_custom ? 'text-amber-500' : 'text-slate-400'} />
+                          <EntityIcon size={13} className={entity.is_custom ? 'text-amber-500' : 'text-slate-400'} />
                         </div>
                         <div className="min-w-0">
                           <p className="font-semibold text-slate-800 truncate leading-tight">{entity.display_name}</p>
