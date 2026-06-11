@@ -12,7 +12,9 @@
     "check-agent": "node tools/qa-agent/index.mjs",
     "check-agent:frontend": "node tools/qa-agent/index.mjs --scope=frontend",
     "check-agent:backend": "node tools/qa-agent/index.mjs --scope=backend",
-    "check-agent:database": "node tools/qa-agent/index.mjs --scope=database"
+    "check-agent:database": "node tools/qa-agent/index.mjs --scope=database",
+    "fix-qa-report": "node tools/qa-agent/fix-qa-report.mjs",
+    "apply-fixes": "node tools/qa-agent/apply-fixes.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

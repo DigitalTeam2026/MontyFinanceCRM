@@ -4,7 +4,7 @@ import {
   Plus, Trash2, Users, User, Users as UsersIcon,
 } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
-import type { ColumnSecurityProfile, ColumnSecurityProfileField, ColumnSecurityProfileAssignment } from '../../services/columnSecurityService';
+import type { ColumnSecurityProfile, ColumnSecurityProfileAssignment } from '../../services/columnSecurityService';
 import {
   createColumnSecurityProfile, updateColumnSecurityProfile,
   fetchProfileFields, saveProfileFields,

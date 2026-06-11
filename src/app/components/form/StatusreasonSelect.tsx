@@ -57,7 +57,7 @@ export default function StatusreasonSelect({
           value: String(r.reason_value),
           label: r.display_label,
           color: r.color ?? '#6B7280',
-          statecodeValue: String((r.statecode_definition as { state_value: number }).state_value),
+          statecodeValue: String((r.statecode_definition as unknown as { state_value: number }).state_value),
         }));
         cache[key] = items;
         setAllReasons(items);

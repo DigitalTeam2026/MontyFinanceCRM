@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Save, CheckCircle2,
-  GitMerge, Info, Settings2, Shield,
+  GitMerge, Info, Settings2,
 } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
 import type { MergeCandidate, MergeDecision, FieldSelection } from '../../types/mergeCenter';

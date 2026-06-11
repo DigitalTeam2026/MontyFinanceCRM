@@ -40,6 +40,7 @@ const LAYOUT_COMPONENTS = [
   { id: 'section',   label: 'Section',   icon: <Table2 size={13} />,      hint: 'Group fields into a section' },
   { id: 'subgrid',   label: 'Subgrid',   icon: <LayoutGrid size={13} />,  hint: 'Display related records' },
   { id: 'timeline',  label: 'Timeline',  icon: <Clock size={13} />,       hint: 'Activity timeline (notes, appointments, emails, attachments)' },
+  { id: 'documents', label: 'Documents', icon: <File size={13} />,        hint: 'Per-record document storage (upload, download, delete)' },
   { id: 'spacer',    label: 'Spacer',    icon: <Space size={13} />,       hint: 'Empty placeholder cell' },
   { id: 'separator', label: 'Separator', icon: <Minus size={13} />,       hint: 'Horizontal divider line' },
   { id: 'label',     label: 'Label',     icon: <Tag size={13} />,         hint: 'Static text label' },
@@ -117,14 +118,14 @@ export default function ComponentLibrary({
       if (activeTabId) onAddSection(activeTabId);
     } else if (componentId === 'subgrid') {
       if (activeTabId && activeSectionId) onAddSubgrid();
-    } else if (componentId === 'timeline') {
+    } else if (componentId === 'timeline' || componentId === 'documents') {
       if (!activeTabId || !activeSectionId) return;
       const control: DesignerControl = {
         id: uid(),
-        control_type: 'timeline',
+        control_type: componentId,
         field_definition_id: null,
         field_logical_name: null,
-        field_display_name: 'Timeline',
+        field_display_name: componentId === 'documents' ? 'Documents' : 'Timeline',
         field_type_name: null,
         label_override: null,
         column_span: 2,
@@ -260,7 +261,7 @@ export default function ComponentLibrary({
               <span className="font-medium">Tab</span>
             </button>
             {LAYOUT_COMPONENTS.map((comp) => {
-              const needsSection = comp.id === 'subgrid' || comp.id === 'spacer' || comp.id === 'separator' || comp.id === 'label' || comp.id === 'timeline';
+              const needsSection = comp.id === 'subgrid' || comp.id === 'spacer' || comp.id === 'separator' || comp.id === 'label' || comp.id === 'timeline' || comp.id === 'documents';
               const disabled = needsSection ? !canAdd : (comp.id !== 'tab' && !layoutTabId);
               return (
                 <button
@@ -269,12 +270,12 @@ export default function ComponentLibrary({
                   disabled={disabled}
                   title={disabled ? 'Select a section first' : comp.hint}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-left group ${
-                    comp.id === 'subgrid' || comp.id === 'timeline' ? 'hover:text-blue-700 hover:bg-blue-50' : ''
+                    comp.id === 'subgrid' || comp.id === 'timeline' || comp.id === 'documents' ? 'hover:text-blue-700 hover:bg-blue-50' : ''
                   }`}
                 >
-                  <span className={`shrink-0 ${comp.id === 'subgrid' || comp.id === 'timeline' ? 'text-blue-500 group-hover:text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`}>{comp.icon}</span>
+                  <span className={`shrink-0 ${comp.id === 'subgrid' || comp.id === 'timeline' || comp.id === 'documents' ? 'text-blue-500 group-hover:text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`}>{comp.icon}</span>
                   <span className="font-medium">{comp.label}</span>
-                  {(comp.id === 'subgrid' || comp.id === 'timeline') && (
+                  {(comp.id === 'subgrid' || comp.id === 'timeline' || comp.id === 'documents') && (
                     <span className="ml-auto text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full uppercase tracking-wide">Add</span>
                   )}
                 </button>
@@ -318,7 +319,7 @@ function GroupHeader({
 }
 
 function FieldRow({
-  field, canAdd, onAdd, onForm, activeTabId, activeSectionId,
+  field, canAdd, onAdd, onForm, activeTabId: _activeTabId, activeSectionId: _activeSectionId,
 }: {
   field: FieldDefinition;
   canAdd: boolean;

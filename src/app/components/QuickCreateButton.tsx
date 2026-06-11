@@ -1,4 +1,4 @@
-import { Plus, UserPlus, Target, Ticket, ChevronDown } from 'lucide-react';
+import { Plus, UserPlus, Target, Ticket } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 export type QuickCreateType = 'lead' | 'opportunity' | 'ticket';

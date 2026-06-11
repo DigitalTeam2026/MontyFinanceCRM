@@ -1,0 +1,87 @@
+# Monty File Server
+
+Local file storage service for the CRM's **Document Location** feature. It runs on the
+machine that owns the storage folders (your PC for local testing, or a file server) and
+is the only component that can read/write `C:\...` paths — browsers and Supabase cannot.
+
+It writes uploaded files to the per-entity root folder configured in **Admin Studio →
+Platform → Document Location**, under:
+
+```
+<root>/<recordId>/<fileName>
+```
+
+## How it fits together
+
+```
+Browser (CRM)  ──upload──>  File Server (this)  ──writes──>  C:\...\MontyFinanceStorage\Lead\<recordId>\<file>
+      │                          │
+      │                          └─ reads the per-entity root from Supabase
+      └────── registers the relative path in the `crm_document` table (via Supabase)
+```
+
+- The browser sends the file plus the caller's Supabase JWT.
+- The server **verifies the JWT** and reads the entity's root location from
+  `document_location_config` **through that token** (RLS), so a client can never make it
+  write to an arbitrary path.
+- `recordId` / `fileName` are sanitized and the final path is confirmed to stay inside the
+  configured root (no path traversal).
+
+## Setup
+
+```bash
+cd tools/file-server
+npm install
+cp .env.example .env      # then edit .env
+```
+
+Fill in `.env`:
+
+- `SUPABASE_URL` / `SUPABASE_ANON_KEY` — same values as the project root `.env`
+  (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`).
+- `PORT` — default `4000`.
+- `ALLOWED_ORIGINS` — your Vite dev origin, e.g. `http://localhost:5173`.
+
+Start it:
+
+```bash
+npm start
+# Monty file server listening on http://localhost:4000
+```
+
+If the CRM runs the file server on a non-default port/host, set `VITE_FILE_SERVER_URL`
+in the **project root** `.env` (e.g. `VITE_FILE_SERVER_URL=http://localhost:4000`).
+
+## Endpoints
+
+| Method | Path        | Purpose                                                            |
+|--------|-------------|-------------------------------------------------------------------|
+| GET    | `/health`   | Liveness check.                                                   |
+| POST   | `/upload`   | Raw file body + `x-entity`, `x-record-id`, `x-file-name` headers. |
+| GET    | `/download` | `?entity=&recordId=&file=` — streams the file.                   |
+| DELETE | `/file`     | `?entity=&recordId=&file=` — removes the file.                   |
+
+All requests require `Authorization: Bearer <supabase-jwt>` (download also accepts `?token=`).
+
+## End-to-end test (with Lead)
+
+1. **Apply the migration** so the tables exist (run from the project root):
+   `node scripts/apply_migration.mjs supabase/migrations/20260611140000_document_location_storage.sql`
+2. **Start this server**: `npm start` in `tools/file-server`.
+3. **Start the CRM**: `npm run dev` in the project root, and sign in as a system admin.
+4. In **Admin Studio → Document Location**, click **Add Location**, pick **Lead**, and set
+   the root to e.g. `C:\Users\habib.serhan\Desktop\MontyFinanceStorage\Lead`. Save.
+   (You don't need to pre-create the folder — the server makes it on first upload.)
+5. Render `<DocumentUploader entityLogicalName="lead" recordId="<a real lead id>" />` on a
+   Lead record (see `src/app/components/DocumentUploader.tsx`), upload a file, and confirm:
+   - the file appears at `…\MontyFinanceStorage\Lead\<leadId>\<file>` on disk,
+   - a row exists in `crm_document` with `relative_path = <leadId>/<file>`,
+   - **Download** returns the file and **Delete** removes it.
+
+## Notes
+
+- This server must run on the machine that should hold the files. If the CRM is opened from
+  a different PC, that PC must be able to reach this server's host/port, and the paths are
+  on the **server's** filesystem, not the visitor's.
+- For production, run it behind HTTPS and a process manager, and lock `ALLOWED_ORIGINS`
+  down to the real app origin.

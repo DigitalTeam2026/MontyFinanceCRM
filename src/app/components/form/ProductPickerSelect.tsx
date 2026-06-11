@@ -49,7 +49,15 @@ export default function ProductPickerSelect({ value, onChange, isReadonly = fals
           return;
         }
         setOptions(
-          (data ?? []).map((p: {
+          ((data ?? []) as unknown as {
+            product_id: string;
+            name: string;
+            code: string;
+            product_type: string;
+            access_mode: string;
+            line_of_business: { name: string } | null;
+            product_family: { name: string } | null;
+          }[]).map((p: {
             product_id: string;
             name: string;
             code: string;

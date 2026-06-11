@@ -357,22 +357,21 @@ async function writeFieldChanges(
 
 const PRODUCT_FIELD_ENTITIES = new Set<AppEntity>(['leads', 'opportunities']);
 
-async function assertProductAccess(entity: AppEntity, values: RecordData): Promise<void> {
-  if (!PRODUCT_FIELD_ENTITIES.has(entity)) return;
-  const productId = (values['product_id'] ?? values['productid']) as string | null | undefined;
-  if (!productId) return;
-
-  const { data, error } = await supabase
-    .rpc('fn_check_product_access', { p_product_id: productId, p_access_mode: 'read', p_user_id: (await supabase.auth.getUser()).data.user?.id });
-
-  // Fail closed: if the access check itself errors, deny the assignment rather
-  // than silently proceeding (previously `if (error) return;` failed open).
-  if (error) {
-    throw new Error('Unable to verify product access. Please try again or contact your administrator.');
-  }
-  if (data === false) {
+// Product access is enforced server-side by the BEFORE INSERT/UPDATE trigger
+// `fn_validate_product_access_on_save` on lead/opportunity, which raises an
+// `insufficient_privilege` (SQLSTATE 42501) error when the user may not assign
+// the product. The underlying `fn_check_product_access` function is intentionally
+// revoked from `authenticated` (it's called only from triggers/policies), so the
+// frontend can no longer pre-check it directly. Instead we translate the trigger's
+// error into a friendly message after the save attempt.
+function rethrowProductAccessError(entity: AppEntity, error: { code?: string; message?: string }): never {
+  const isProductAccessDenial =
+    PRODUCT_FIELD_ENTITIES.has(entity) &&
+    (error.code === '42501' || /product access denied/i.test(error.message ?? ''));
+  if (isProductAccessDenial) {
     throw new Error('You do not have permission to assign this product. Contact your administrator to request access.');
   }
+  throw error;
 }
 
 export async function saveRecord(
@@ -386,8 +385,6 @@ export async function saveRecord(
   const mapping = await getFieldMapping(entity);
   const physicalValues = translateToPhysical(values, mapping, table);
   const tableCols = await getTableColumns(table);
-
-  await assertProductAccess(entity, values);
 
   // Custom entities (not in static ENTITY_TABLE) always have created_by/owner_id/modified_by
   // columns from _crm_entity_create_table_ddl. Inject unconditionally so RLS passes even when
@@ -406,7 +403,7 @@ export async function saveRecord(
       .eq(pk, id)
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) rethrowProductAccessError(entity, error);
     if (!data) throw new Error(`Update returned no data for ${table} id=${id}`);
     const saved = translateToLogical(data as RecordData, mapping);
 
@@ -486,7 +483,7 @@ export async function saveRecord(
       .insert(insertPayload)
       .select()
       .maybeSingle();
-    if (error) throw error;
+    if (error) rethrowProductAccessError(entity, error);
     if (!data) throw new Error(`Insert returned no data for ${table}`);
     const created = translateToLogical(data as RecordData, mapping);
 
@@ -621,7 +618,7 @@ export async function fetchTimelineItems(entity: AppEntity, recordId: string): P
 
   if (!record) return [];
 
-  const r = record as Record<string, unknown>;
+  const r = record as unknown as Record<string, unknown>;
   const items: TimelineItem[] = [];
 
   if (r.created_at) {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Plus, Trash2, RefreshCw, Search,
-  Users, UserPlus, UserMinus, ShieldCheck, ChevronDown, Check, X,
+  Users, UserPlus, UserMinus, ShieldCheck, Check,
 } from 'lucide-react';
 import SearchableSelect from '../../app/components/SearchableSelect';
 import { useToast } from '../../app/context/ToastContext';

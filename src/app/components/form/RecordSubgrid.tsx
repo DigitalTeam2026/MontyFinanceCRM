@@ -1,8 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Plus, ExternalLink, Loader2, Inbox } from 'lucide-react';
 import type { AppEntity } from '../../types';
-import { fetchRelatedRecords } from '../../services/recordService';
+import { getEntityTable } from '../../services/recordService';
+import { supabase } from '../../../lib/supabase';
 import StatusBadge from '../StatusBadge';
+
+/** Fetch up to `limit` records of `entity` whose `foreignKey` points at `recordId`. */
+async function fetchRelatedRecords(
+  entity: AppEntity,
+  foreignKey: string,
+  recordId: string,
+  limit: number,
+): Promise<Record<string, unknown>[]> {
+  const table = await getEntityTable(entity);
+  const { data, error } = await supabase.from(table).select('*').eq(foreignKey, recordId).limit(limit);
+  if (error) throw error;
+  return (data ?? []) as unknown as Record<string, unknown>[];
+}
 
 interface SubgridColumn {
   key: string;

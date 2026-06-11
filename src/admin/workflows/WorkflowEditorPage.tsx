@@ -6,7 +6,6 @@ import {
   Zap,
   Settings,
   CheckCircle2,
-  ChevronDown,
   PlayCircle,
   PauseCircle,
 } from 'lucide-react';

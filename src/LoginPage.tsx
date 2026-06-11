@@ -48,7 +48,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         .mf-login .stage{position:relative;flex:1;display:grid;grid-template-columns:1.15fr 1fr;align-items:center;gap:48px;padding:48px 72px;}
         .mf-login .stage::before{content:"";position:absolute;inset:0;background:radial-gradient(700px 560px at 10% 70%, rgba(201,161,78,.07), transparent 65%),radial-gradient(560px 480px at 45% 18%, rgba(47,77,200,.05), transparent 60%);pointer-events:none;}
 
-        .mf-login header{display:flex;align-items:center;justify-content:flex-end;gap:16px;padding:30px 72px 0;position:relative;z-index:1;}
+        .mf-login header{display:flex;align-items:center;justify-content:flex-start;gap:16px;padding:30px 72px 0;position:relative;z-index:1;}
         .mf-login .brandlogo{height:36px;width:auto;max-width:180px;object-fit:contain;display:block;}
         .mf-login .wordmark{font-family:'Playfair Display',serif;font-weight:800;font-size:22px;letter-spacing:.2px;}
         .mf-login .wordmark sup{font-family:'Inter',sans-serif;font-size:9px;font-weight:700;letter-spacing:.12em;color:var(--gold);margin-left:4px;}

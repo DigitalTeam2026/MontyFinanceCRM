@@ -263,7 +263,7 @@ async function loadLookupOptions(
   }
 
   const { data } = await q.limit(500);
-  const opts = (data ?? []).map((r: Record<string, unknown>) => ({
+  const opts = ((data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => ({
     value: String(r[pkCol] ?? ''),
     label: String(r[labelCol] ?? '') || String((r as Record<string, unknown>).email ?? '') || String(r[pkCol] ?? ''),
   })).filter((o) => o.value && o.label);

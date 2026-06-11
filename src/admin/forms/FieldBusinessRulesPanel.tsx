@@ -56,7 +56,7 @@ function isRuleRelatedToField(rule: BusinessRule, fieldName: string): boolean {
 
 export default function FieldBusinessRulesPanel({
   entityId,
-  entityName,
+  entityName: _entityName,
   fieldLogicalName,
   fieldDisplayName,
   onOpenRule,

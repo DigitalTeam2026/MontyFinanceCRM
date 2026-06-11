@@ -64,9 +64,6 @@ export default function MergeComparePanel({
   onFieldSelectionChange,
   disabled,
 }: MergeComparePanelProps) {
-  const masterRecordId = masterSide === 'a' ? candidate.record_a_id : candidate.record_b_id;
-  const loserRecordId  = masterSide === 'a' ? candidate.record_b_id : candidate.record_a_id;
-
   const labelA = candidate.record_a_label || 'Record A';
   const labelB = candidate.record_b_label || 'Record B';
 

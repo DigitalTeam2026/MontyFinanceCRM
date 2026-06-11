@@ -435,7 +435,7 @@ export async function exportForUpdate(
   const pkLabel = `${entityLabel} ID`;
   const headers = [pkLabel, ...importable.map((c) => c.label)];
 
-  const dataRows = (records ?? []).map((record: Record<string, unknown>) => {
+  const dataRows = ((records ?? []) as unknown as Record<string, unknown>[]).map((record: Record<string, unknown>) => {
     const row: unknown[] = [record[pk]];
     for (const col of importable) {
       const raw = record[col.physicalColumn];

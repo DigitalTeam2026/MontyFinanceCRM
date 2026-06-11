@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Plus, Search, Trash2, Copy, ToggleLeft, ToggleRight, Loader2,
-  ShieldAlert, ChevronRight, AlertCircle, History,
+  ShieldAlert, ChevronRight, History,
 } from 'lucide-react';
 import {
   fetchDigitalRules,

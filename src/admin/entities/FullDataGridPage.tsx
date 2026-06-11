@@ -3,7 +3,6 @@ import {
   Plus, Save, RefreshCw, Download, X, ChevronDown, ChevronLeft, ChevronRight,
   ArrowUp, ArrowDown, Trash2, Search, Filter, Columns3, Pencil,
   ChevronsLeft, ChevronsRight, ChevronRight as BreadcrumbChevron,
-  Link2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { EntityDefinition } from '../../types/entity';
@@ -219,7 +218,7 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
           .select(`${meta.pk}, ${meta.labelField}`)
           .in(meta.pk, ids);
         const map = new Map<string, string>();
-        for (const row of (data ?? []) as Record<string, unknown>[]) {
+        for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
           map.set(String(row[meta.pk]), String(row[meta.labelField] ?? ''));
         }
         return [fieldId, map] as [string, Map<string, string>];
@@ -1079,7 +1078,7 @@ function LookupCellEditor({ field, value, onChange, onBlur, autoFocus, meta, loo
         query = query.order(meta.labelField, { ascending: true });
         const { data } = await query;
         setResults(
-          (data ?? []).map((r: Record<string, unknown>) => ({
+          ((data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => ({
             id: String(r[meta.pk]),
             label: String(r[meta.labelField] ?? ''),
           }))

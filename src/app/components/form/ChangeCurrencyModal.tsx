@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { AlertTriangle, X, Loader2, ShieldAlert, CheckCircle2, DollarSign, Lock } from 'lucide-react';
+import { AlertTriangle, X, Loader2, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import SearchableSelect from '../SearchableSelect';
 import type { AppEntity } from '../../types';
 import type { CurrencyRecord } from '../../services/currencyService';
-import { MONETARY_FIELDS, executeControlledCurrencyChange, isStatusLocked } from '../../services/currencyService';
+import { MONETARY_FIELDS, executeControlledCurrencyChange } from '../../services/currencyService';
 
 interface ChangeCurrencyModalProps {
   entity: AppEntity;

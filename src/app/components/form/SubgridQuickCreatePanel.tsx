@@ -43,18 +43,6 @@ async function loadOptionSetValues(optionSetName: string): Promise<OptionItem[]>
   return items;
 }
 
-const entityDefCache: Record<string, string> = {};
-async function resolveEntityDefId(logicalName: string): Promise<string | null> {
-  if (entityDefCache[logicalName]) return entityDefCache[logicalName];
-  const { data } = await supabase
-    .from('entity_definition')
-    .select('entity_definition_id')
-    .eq('logical_name', logicalName)
-    .maybeSingle();
-  if (data) entityDefCache[logicalName] = data.entity_definition_id;
-  return data?.entity_definition_id ?? null;
-}
-
 // ─── Single field input ───────────────────────────────────────────────────────
 
 function FieldInput({

@@ -50,7 +50,7 @@ export async function fetchApiIntegrations(): Promise<ApiIntegration[]> {
     .eq('is_deleted', false)
     .order('name');
   if (error) throw error;
-  return data as ApiIntegration[];
+  return data as unknown as ApiIntegration[];
 }
 
 export async function fetchApiIntegration(id: string): Promise<ApiIntegration> {
@@ -60,7 +60,7 @@ export async function fetchApiIntegration(id: string): Promise<ApiIntegration> {
     .eq('api_integration_id', id)
     .single();
   if (error) throw error;
-  return data as ApiIntegration;
+  return data as unknown as ApiIntegration;
 }
 
 /**
@@ -103,7 +103,7 @@ export async function createApiIntegration(
     .single();
   if (error) throw error;
 
-  const integration = data as ApiIntegration;
+  const integration = data as unknown as ApiIntegration;
   await _replaceHeaders(integration.api_integration_id, formHeaders);
   return integration;
 }
@@ -127,7 +127,7 @@ export async function updateApiIntegration(
   if (error) throw error;
 
   await _replaceHeaders(id, formHeaders);
-  return data as ApiIntegration;
+  return data as unknown as ApiIntegration;
 }
 
 export async function deleteApiIntegration(id: string): Promise<void> {
@@ -207,7 +207,7 @@ export async function fetchEntityFieldsForIntegration(
     .order('sort_order')
     .order('display_name');
   if (error) throw error;
-  return data as EntityFieldInfo[];
+  return data as unknown as EntityFieldInfo[];
 }
 
 export async function fetchLookupEntityFields(
@@ -227,7 +227,7 @@ export async function fetchLookupEntityFields(
     .order('sort_order')
     .order('display_name');
   if (error) throw error;
-  return data as LookupEntityField[];
+  return data as unknown as LookupEntityField[];
 }
 
 // Fetch a handful of records from an entity table for the test-panel picker.
@@ -244,7 +244,7 @@ export async function fetchSampleRecords(
     .eq('is_deleted', false)
     .limit(limit);
 
-  return (data ?? []).map((r: Record<string, unknown>) => ({
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => ({
     id: String(r[pkColumn] ?? ''),
     label: String(r[displayColumn] ?? r[pkColumn] ?? 'Unknown'),
   }));
@@ -297,7 +297,7 @@ export async function testLookupResolution(
   if (res.error) res = await run(false); // some lookup tables have no is_deleted column
   if (res.error) return { status: 'error', matches: [], message: res.error.message };
 
-  const rows = (res.data ?? []) as Record<string, unknown>[];
+  const rows = (res.data ?? []) as unknown as Record<string, unknown>[];
   const matches = rows.map((r) => ({
     id: String(r[pk] ?? ''),
     label: String((nameCol ? r[nameCol] : undefined) ?? r[pk] ?? '(no name)'),

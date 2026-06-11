@@ -1,7 +1,7 @@
 import {
   Pencil, Trash2, Lock, Hash, Type, Calendar, ToggleLeft, Link,
   List, FileText, DollarSign, Mail, Phone, Globe, Image, File, Clock, AlignLeft,
-  Shield, Wrench, ShieldCheck, User,
+  Shield, Wrench, ShieldCheck,
 } from 'lucide-react';
 import type { FieldDefinition } from '../../types/field';
 

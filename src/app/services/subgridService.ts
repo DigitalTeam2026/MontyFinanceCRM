@@ -161,7 +161,7 @@ export async function fetchSubgridRowsPaged(
   const { data, error, count } = await query;
   if (error) throw error;
 
-  const rows = ((data as SubgridRow[]) ?? []).map((row) => {
+  const rows = ((data as unknown as SubgridRow[]) ?? []).map((row) => {
     let enriched = row;
     if (conf.hasCurrency) {
       const cur = row.currency as { code: string; symbol: string } | null;
@@ -353,10 +353,10 @@ export async function resolveRelationshipConfig(
     return null;
   }
 
-  const sourceEntityLogical = (data.source_entity as { logical_name: string } | null)?.logical_name ?? '';
-  const targetEntityLogical = (data.target_entity as { logical_name: string } | null)?.logical_name ?? '';
-  const targetEntityPhysical = (data.target_entity as { physical_table_name: string } | null)?.physical_table_name ?? '';
-  const fkColumn = (data.lookup_field as { physical_column_name: string } | null)?.physical_column_name ?? '';
+  const sourceEntityLogical = (data.source_entity as unknown as { logical_name: string } | null)?.logical_name ?? '';
+  const targetEntityLogical = (data.target_entity as unknown as { logical_name: string } | null)?.logical_name ?? '';
+  const targetEntityPhysical = (data.target_entity as unknown as { physical_table_name: string } | null)?.physical_table_name ?? '';
+  const fkColumn = (data.lookup_field as unknown as { physical_column_name: string } | null)?.physical_column_name ?? '';
 
   if (!fkColumn || !targetEntityLogical) {
     relConfigCache.set(relationshipDefinitionId, null);
@@ -490,7 +490,7 @@ export async function resolveSubgridLookups(
         .in(col.lookupPk!, fkValues)
         .limit(1000);
       const map: Record<string, string> = {};
-      for (const row of (data ?? []) as Record<string, unknown>[]) {
+      for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
         const id = String(row[col.lookupPk!]);
         const label = String(row[col.lookupLabelField!] ?? '');
         if (label) map[id] = label;

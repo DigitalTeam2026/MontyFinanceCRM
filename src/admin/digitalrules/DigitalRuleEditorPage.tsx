@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Save, Loader2, Plus, Trash2, ChevronDown, ChevronUp, GripVertical,
+  Save, Loader2, Plus, ChevronDown, ChevronUp, GripVertical,
   AlertCircle, CheckCircle2, X,
 } from 'lucide-react';
 import {
@@ -10,7 +10,7 @@ import {
   replaceConditions,
   replaceActions,
 } from '../../services/digitalRuleService';
-import type { DigitalRule, ConditionDraft, ActionDraft } from '../../types/digitalRule';
+import type { ConditionDraft, ActionDraft } from '../../types/digitalRule';
 import {
   TRIGGER_EVENT_META,
   CONDITION_TYPE_META,

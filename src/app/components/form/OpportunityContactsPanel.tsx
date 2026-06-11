@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Plus, Loader2, Trash2, Star, StarOff, Search, X,
+  Plus, Loader2, Trash2, Star, StarOff, Search,
   Users, ChevronDown, AlertCircle, RefreshCw,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
@@ -46,15 +46,6 @@ interface ContactSearchResult {
   account_name: string | null;
 }
 
-function RoleBadge({ role }: { role: string }) {
-  const m = roleMeta(role);
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${m.color}`}>
-      {m.label}
-    </span>
-  );
-}
-
 function RoleSelect({
   value,
   onChange,
@@ -82,7 +73,7 @@ function RoleSelect({
 }
 
 function ContactSearchDropdown({
-  opportunityId,
+  opportunityId: _opportunityId,
   existingContactIds,
   onSelect,
   onClose,
@@ -218,7 +209,7 @@ export default function OpportunityContactsPanel({ opportunityId, userId, readon
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
-  const [addingRole, setAddingRole] = useState<Record<string, string>>({});
+  const [addingRole] = useState<Record<string, string>>({});
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -249,7 +240,7 @@ export default function OpportunityContactsPanel({ opportunityId, userId, readon
         .order('added_at', { ascending: true });
 
       if (err) throw err;
-      setRows((data ?? []) as StakeholderRow[]);
+      setRows((data ?? []) as unknown as StakeholderRow[]);
     } catch {
       setError('Unable to load stakeholders.');
     } finally {

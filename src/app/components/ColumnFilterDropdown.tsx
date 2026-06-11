@@ -120,7 +120,7 @@ export default function ColumnFilterDropdown({
   onClose,
   entityDefinitionId,
   entityTable,
-  isRedesign = false,
+  isRedesign: _isRedesign = false,
   sortKey,
   sortDir,
   onSort,
@@ -262,7 +262,7 @@ export default function ColumnFilterDropdown({
           .select(physCol)
           .not(physCol, 'is', null)
           .limit(200);
-        const unique = [...new Set((data ?? []).map((r: Record<string, unknown>) => String(r[physCol] ?? '')).filter(Boolean))].sort();
+        const unique = [...new Set(((data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => String(r[physCol] ?? '')).filter(Boolean))].sort();
         setChoiceOptions(unique.map((v) => ({ value: v, label: v.charAt(0).toUpperCase() + v.slice(1) })));
       } else {
         setChoiceOptions([]);
@@ -732,46 +732,6 @@ function StyledInput({ value, onChange, onEnter, placeholder, autoFocus, type = 
       style={{ borderColor: '#e7eaf1' }}
       onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
       onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
-    />
-  );
-}
-
-
-/* ── Small reusable sub-components ── */
-
-function Select({ value, onChange, options }: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full text-[13px] border border-[#8a8886] rounded px-2 py-1.5 bg-white text-[#201f1e] focus:outline-none focus:border-[#0078d4] focus:ring-1 focus:ring-[#0078d4]"
-    >
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  );
-}
-
-function Input({ value, onChange, onEnter, placeholder, autoFocus, type = 'text' }: {
-  value: string;
-  onChange: (v: string) => void;
-  onEnter?: () => void;
-  placeholder?: string;
-  autoFocus?: boolean;
-  type?: string;
-}) {
-  return (
-    <input
-      autoFocus={autoFocus}
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={(e) => e.key === 'Enter' && onEnter?.()}
-      placeholder={placeholder}
-      className="w-full text-[13px] border border-[#8a8886] rounded px-2 py-1.5 bg-white text-[#201f1e] placeholder-[#a19f9d] focus:outline-none focus:border-[#0078d4] focus:ring-1 focus:ring-[#0078d4]"
     />
   );
 }

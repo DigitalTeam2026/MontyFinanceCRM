@@ -25,7 +25,7 @@ import {
   updateStageField, deleteStageField, reorderStageFields,
   fetchEntityConfigs, upsertEntityConfig, deleteEntityConfig,
   ensurePrimaryEntityConfig,
-  saveDraft, publishProcessFlowDraft, fetchStageFieldsForFlow,
+  publishProcessFlowDraft, fetchStageFieldsForFlow,
 } from '../../services/processFlowService';
 import type { EntityDefinition } from '../../types/entity';
 import { fetchEntities } from '../../services/entityService';
@@ -396,7 +396,7 @@ function ConditionLookupValueInput({
       .limit(15);
     if (q.trim()) query = query.ilike(meta.nameCol, `%${q}%`);
     const { data } = await query;
-    setResults((data ?? []).map((r: Record<string, unknown>) => ({
+    setResults(((data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => ({
       id: String(r[meta.pk] ?? ''),
       label: String(r[meta.nameCol] ?? ''),
     })));
@@ -871,10 +871,6 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
     }
     return flow.entity_definition_id;
   };
-
-  const selectedStageContextEntityId = selectedStage
-    ? (selectedStage.target_entity_id ?? getStageContextEntityId(selectedStage.process_stage_id))
-    : flow.entity_definition_id;
 
   const selectedStagePreviousContextEntityId = selectedStage
     ? getStageContextEntityId(selectedStage.process_stage_id)
@@ -2755,7 +2751,7 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
                                 ) : (
                                   <div className="flex items-center gap-1 min-w-0">
                                     <span className="text-[11px] font-medium text-gray-800 truncate">{label}</span>
-                                    {isFromRelated && <Link2 size={8} className="text-teal-500 shrink-0" title="From related entity" />}
+                                    {isFromRelated && <span title="From related entity" className="inline-flex shrink-0"><Link2 size={8} className="text-teal-500" /></span>}
                                     <button
                                       onClick={() => { setEditingStepId(step.psf_id); setEditingLabel(step.display_label ?? fieldDef?.display_name ?? ''); }}
                                       className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-blue-500 transition-all shrink-0"

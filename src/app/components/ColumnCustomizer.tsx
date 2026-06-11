@@ -115,7 +115,7 @@ export default function ColumnCustomizer({
     fetchFieldsForEntity(entityDefinitionId)
       .then((fields) =>
         setCurrentFields(fields.map((f) => {
-          const le = (f as Record<string, unknown>).lookup_entity as { physical_table_name?: string; primary_field_name?: string } | null;
+          const le = (f as unknown as Record<string, unknown>).lookup_entity as { physical_table_name?: string; primary_field_name?: string } | null;
           const lookupTable = le?.physical_table_name;
           const lookupLabel = lookupTable === 'crm_user' ? 'email' : le?.primary_field_name;
           return {
@@ -156,7 +156,7 @@ export default function ColumnCustomizer({
     fetchFieldsForEntity(selectedRelationship.target_entity_id)
       .then((fields) =>
         setRelatedFields(fields.map((f) => {
-          const le = (f as Record<string, unknown>).lookup_entity as { physical_table_name?: string; primary_field_name?: string } | null;
+          const le = (f as unknown as Record<string, unknown>).lookup_entity as { physical_table_name?: string; primary_field_name?: string } | null;
           const lookupTable = le?.physical_table_name;
           const lookupLabel = lookupTable === 'crm_user' ? 'email' : le?.primary_field_name;
           return {

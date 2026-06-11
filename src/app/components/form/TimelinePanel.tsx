@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Clock, StickyNote, Calendar, Mail, Paperclip, Plus, ChevronDown, ChevronUp, Trash2, CreditCard as Edit2, Pin, PinOff, Send, Inbox, CheckCircle2, XCircle, RefreshCw, Loader2, AlertCircle, X, Check, Upload, Share2 } from 'lucide-react';
+import { Clock, StickyNote, Calendar, Mail, Paperclip, Plus, Trash2, CreditCard as Edit2, Pin, PinOff, Send, Inbox, CheckCircle2, XCircle, RefreshCw, Loader2, AlertCircle, X, Check, Share2 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import type { TimelineEntry, TimelineNote, TimelineAppointment, TimelineEmail, TimelineAttachment } from '../../../types/timeline';
 import {
   fetchTimelineEntries,
   createNote, updateNote, deleteNote, togglePinNote,
   createAppointment, updateAppointment, deleteAppointment,
-  createEmail, updateEmail, deleteEmail,
+  createEmail, deleteEmail,
   createAttachment, deleteAttachment,
 } from '../../services/timelineService';
 import { usePermissions } from '../../context/PermissionContext';

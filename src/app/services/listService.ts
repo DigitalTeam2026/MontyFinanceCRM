@@ -571,7 +571,7 @@ async function resolveRelatedColumns(
 
       // Build lookup: pkValue → row data
       const pkToRow = new Map<string, Record<string, unknown>>();
-      for (const r of data) pkToRow.set(String((r as Record<string, unknown>)[relatedPk]), r as Record<string, unknown>);
+      for (const r of data) pkToRow.set(String((r as unknown as Record<string, unknown>)[relatedPk]), r as unknown as Record<string, unknown>);
 
       // Populate result for each spec
       for (const spec of groupSpecs) {

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   AlertTriangle, CheckCircle, RefreshCw, Search, Filter,
-  Database, Table2, Wrench, Eye, ExternalLink, ChevronDown, ChevronUp,
+  Database, Table2, Wrench, ChevronDown, ChevronUp,
   XCircle, Info, Loader, ShieldAlert,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';

@@ -1,0 +1,1155 @@
+# 🧪 QA Agent Report
+
+> Generated: 2026-06-11 13:43:12  
+> Scope: `database`  
+> Repo: `C:\Users\habib.serhan\Desktop\Monty Finance CRM`
+
+## Summary
+
+| Severity | Count |
+| --- | --- |
+| 🔴 Critical | 11 |
+| 🟡 Medium | 193 |
+| 🔵 Low | 170 |
+| **Total** | **374** |
+
+| Area | Issues |
+| --- | --- |
+| Database | 374 |
+
+## 🔴 Critical (11)
+
+### Database
+
+- **[rls/permissive-policy]** Policy on `audit_log` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326125115_06_audit_common_platform_and_seed.sql`:91
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `field_change_log` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327211600_40_field_change_log.sql`:40
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `currency_audit_log` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260409183457_52_currency_audit_log.sql`:82
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `merge_audit_log` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411172354_75_merge_center.sql`:183
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `workflow_run_log` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415111145_100_workflow_execution_tables.sql`:82
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `workflow_run_log` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415111145_100_workflow_execution_tables.sql`:85
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `workflow_step_log` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415111145_100_workflow_execution_tables.sql`:113
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `workflow_run_log` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415115954_101_security_and_index_cleanup.sql`:51
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `process_stage_history` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260506090402_140_process_instance_and_stage_tracking.sql`:159
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/anon-policy]** Policy on `company_profile` grants access to `anon`/`public`.
+  - 📍 `supabase/migrations/20260610000005_company_profile.sql`:36
+  - 💡 _Require the `authenticated` role unless anonymous access is intentional._
+- **[rls/anon-policy]** Policy on `storage` grants access to `anon`/`public`.
+  - 📍 `supabase/migrations/20260610000006_company_profile_details.sql`:37
+  - 💡 _Require the `authenticated` role unless anonymous access is intentional._
+
+## 🟡 Medium (193)
+
+### Database
+
+- **[rls/permissive-policy]** Policy on `organization` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:54
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `organization` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:64
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `business_unit` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:89
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `business_unit` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:99
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `crm_user.user_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:110
+  - 💡 _CREATE INDEX ON crm_user (user_id);_
+- **[rls/permissive-policy]** Policy on `team` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:189
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `team` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:199
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `team_user` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:221
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `team_user` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:231
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `security_role` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:253
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `security_role` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:263
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `user_security_role` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:285
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `user_security_role` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:295
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `team_security_role` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:316
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `team_security_role` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:326
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `role_privilege` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:356
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `role_privilege` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:366
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `role_privilege` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:372
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `field_type` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:56
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `field_type` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:66
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `entity_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:93
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `entity_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:103
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `option_set` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:125
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `option_set` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:135
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `option_set_value` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:161
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `option_set_value` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:171
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `option_set_value` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:177
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `field_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:218
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `field_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:228
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `field_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:234
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:260
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:270
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:276
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_section` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:301
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_section` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:311
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_section` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:317
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_control` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:344
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_control` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:354
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_control` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:360
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `view_column` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:426
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `view_column` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:436
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `view_column` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:442
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `subgrid_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:470
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `subgrid_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:480
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `subgrid_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:486
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `business_rule` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:515
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `business_rule` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:525
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `business_rule` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:531
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `workflow_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:559
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `workflow_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:569
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `workflow_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:575
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `workflow_step` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:604
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `workflow_step` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:614
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `workflow_step` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:620
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `country` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:98
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `country` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:108
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `currency` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:129
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `currency` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:139
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `industry` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:156
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `industry` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:166
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `contact_source` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:183
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `contact_source` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:193
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `contact_subsource` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:214
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `contact_subsource` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:224
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `ticket_priority` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124851_04_customer_support_module.sql`:58
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `ticket_priority` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124851_04_customer_support_module.sql`:68
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `ticket_status` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124851_04_customer_support_module.sql`:88
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `ticket_status` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124851_04_customer_support_module.sql`:98
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `journey_step` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:366
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `journey_step` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:372
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `entity_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327071921_08_entity_management_extensions.sql`:79
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_tab` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327073847_10_form_designer_extensions.sql`:109
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_tab` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327073847_10_form_designer_extensions.sql`:115
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_tab` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327073847_10_form_designer_extensions.sql`:118
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_script` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327073847_10_form_designer_extensions.sql`:137
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_script` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327073847_10_form_designer_extensions.sql`:143
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_script` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327073847_10_form_designer_extensions.sql`:146
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_event_handler` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327073847_10_form_designer_extensions.sql`:165
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_event_handler` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327073847_10_form_designer_extensions.sql`:171
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `form_event_handler` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327073847_10_form_designer_extensions.sql`:174
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `nav_area` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327082643_15_navigation_and_optionset_extensions.sql`:58
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `nav_area` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327082643_15_navigation_and_optionset_extensions.sql`:64
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `nav_group` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327082643_15_navigation_and_optionset_extensions.sql`:84
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `nav_group` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327082643_15_navigation_and_optionset_extensions.sql`:90
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `nav_group` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327082643_15_navigation_and_optionset_extensions.sql`:93
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `nav_item` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327082643_15_navigation_and_optionset_extensions.sql`:114
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `nav_item` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327082643_15_navigation_and_optionset_extensions.sql`:120
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `nav_item` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327082643_15_navigation_and_optionset_extensions.sql`:123
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `dashboard` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327105607_27_dashboard_management.sql`:73
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `dashboard_widget` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327105607_27_dashboard_management.sql`:102
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `dashboard_widget` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327105607_27_dashboard_management.sql`:112
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `dashboard_widget` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327105607_27_dashboard_management.sql`:118
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `dashboard_role_assignment.dashboard_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260327105607_27_dashboard_management.sql`:126
+  - 💡 _CREATE INDEX ON dashboard_role_assignment (dashboard_id);_
+- **[rls/permissive-policy]** Policy on `dashboard_role_assignment` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327105607_27_dashboard_management.sql`:135
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `dashboard_role_assignment` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327105607_27_dashboard_management.sql`:145
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `field_permission` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327123145_32_field_level_permissions.sql`:46
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `field_permission` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327123145_32_field_level_permissions.sql`:56
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `field_permission` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327123145_32_field_level_permissions.sql`:62
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `section_permission` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327200623_36_section_level_permissions.sql`:47
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `section_permission` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327200623_36_section_level_permissions.sql`:57
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `section_permission` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327200623_36_section_level_permissions.sql`:63
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `action_permission` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327201451_37_action_level_permissions.sql`:60
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `action_permission` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327201451_37_action_level_permissions.sql`:70
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `action_permission` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260327201451_37_action_level_permissions.sql`:76
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `process_stage` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411162711_68_business_process_flows.sql`:147
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `process_flow_transition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411162711_68_business_process_flows.sql`:169
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `product_family` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411163550_69_products_and_lines_of_business.sql`:134
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `duplicate_job` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411165058_71_duplicate_detection.sql`:127
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `duplicate_job` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411165058_71_duplicate_detection.sql`:137
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `lead_qualification_field_mapping` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411170110_72_lead_qualification_rules.sql`:145
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `lead_qualification_field_mapping` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411170110_72_lead_qualification_rules.sql`:155
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `lead_qualification_field_mapping` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411170110_72_lead_qualification_rules.sql`:161
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `approval_condition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411170903_73_approval_process_configuration.sql`:132
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `approval_condition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411170903_73_approval_process_configuration.sql`:138
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `approval_condition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411170903_73_approval_process_configuration.sql`:141
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `approval_step` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411170903_73_approval_process_configuration.sql`:172
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `approval_step` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411170903_73_approval_process_configuration.sql`:178
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `approval_step` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411170903_73_approval_process_configuration.sql`:181
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `data_policy_condition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411171712_74_data_validation_policies.sql`:141
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `data_policy_condition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411171712_74_data_validation_policies.sql`:147
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `data_policy_condition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411171712_74_data_validation_policies.sql`:150
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `data_policy_enforcement` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411171712_74_data_validation_policies.sql`:176
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `data_policy_enforcement` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411171712_74_data_validation_policies.sql`:182
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `data_policy_enforcement` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411171712_74_data_validation_policies.sql`:185
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `merge_candidate` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411172354_75_merge_center.sql`:110
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `merge_candidate` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411172354_75_merge_center.sql`:116
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `merge_decision` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411172354_75_merge_center.sql`:148
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `merge_decision` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411172354_75_merge_center.sql`:154
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `product_business_unit_access` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:70
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `product_role_access` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:110
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `product_team_access` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:150
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `product_user_access` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:191
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `duplicate_job` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260411210134_82_duplicate_job_delete_policy.sql`:8
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `column_security_profile` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415065135_93_column_security_profiles.sql`:84
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `column_security_profile` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415065135_93_column_security_profiles.sql`:94
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `column_security_profile` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415065135_93_column_security_profiles.sql`:100
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `column_security_profile_field` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415065135_93_column_security_profiles.sql`:124
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `column_security_profile_field` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415065135_93_column_security_profiles.sql`:134
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `column_security_profile_field` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415065135_93_column_security_profiles.sql`:140
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `column_security_profile_assignment` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415065135_93_column_security_profiles.sql`:161
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `column_security_profile_assignment` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415065135_93_column_security_profiles.sql`:171
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `column_security_profile_assignment` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415065135_93_column_security_profiles.sql`:177
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `scheduled_workflow_step` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415111145_100_workflow_execution_tables.sql`:139
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `scheduled_workflow_step` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415111145_100_workflow_execution_tables.sql`:142
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `business_rule.target_form_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260415122928_102_business_rule_scope_redesign.sql`:22
+  - 💡 _CREATE INDEX ON business_rule (target_form_id);_
+- **[rls/permissive-policy]** Policy on `process_stage` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415162120_113_fix_process_stage_insert_policy.sql`:27
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `process_stage` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260415162120_113_fix_process_stage_insert_policy.sql`:33
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `process_flow_assignment_rule.created_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260416092117_123_process_flow_assignment_rules.sql`:24
+  - 💡 _CREATE INDEX ON process_flow_assignment_rule (created_by);_
+- **[rls/permissive-policy]** Policy on `record_transformation_target` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260420080710_127_record_transformation_rules.sql`:120
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `record_transformation_target` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260420080710_127_record_transformation_rules.sql`:130
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `record_transformation_target` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260420080710_127_record_transformation_rules.sql`:136
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `record_transformation_field_mapping` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260420080710_127_record_transformation_rules.sql`:163
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `record_transformation_field_mapping` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260420080710_127_record_transformation_rules.sql`:173
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `record_transformation_field_mapping` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260420080710_127_record_transformation_rules.sql`:179
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `process_stage.target_entity_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260420101430_130_cross_entity_process_flow_and_conditional_transitions.sql`:39
+  - 💡 _CREATE INDEX ON process_stage (target_entity_id);_
+- **[index/missing-fk-index]** Foreign key `relationship_definition.source_lookup_field_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260422113036_136_relationship_definition.sql`:63
+  - 💡 _CREATE INDEX ON relationship_definition (source_lookup_field_id);_
+- **[rls/permissive-policy]** Policy on `relationship_definition` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260422113036_136_relationship_definition.sql`:114
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `process_instances.current_stage_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260506090402_140_process_instance_and_stage_tracking.sql`:92
+  - 💡 _CREATE INDEX ON process_instances (current_stage_id);_
+- **[index/missing-fk-index]** Foreign key `process_instances.created_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260506090402_140_process_instance_and_stage_tracking.sql`:92
+  - 💡 _CREATE INDEX ON process_instances (created_by);_
+- **[rls/permissive-policy]** Policy on `process_instances` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260506090402_140_process_instance_and_stage_tracking.sql`:114
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `process_stage_history.changed_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260506090402_140_process_instance_and_stage_tracking.sql`:137
+  - 💡 _CREATE INDEX ON process_stage_history (changed_by);_
+- **[rls/permissive-policy]** Policy on `process_stage_fields` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260506090527_141_process_stage_schema_extensions.sql`:132
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `process_stage_actions` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260506090527_141_process_stage_schema_extensions.sql`:179
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `view_sharing.created_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260515120139_156_view_sharing_and_personal_views.sql`:27
+  - 💡 _CREATE INDEX ON view_sharing (created_by);_
+- **[index/missing-fk-index]** Foreign key `process_flow_entity_config.entity_definition_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260518064632_162_process_flow_entity_config.sql`:30
+  - 💡 _CREATE INDEX ON process_flow_entity_config (entity_definition_id);_
+- **[index/missing-fk-index]** Foreign key `process_flow_entity_config.form_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260518064632_162_process_flow_entity_config.sql`:30
+  - 💡 _CREATE INDEX ON process_flow_entity_config (form_id);_
+- **[index/missing-fk-index]** Foreign key `process_flow_entity_config.relationship_definition_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260518064632_162_process_flow_entity_config.sql`:30
+  - 💡 _CREATE INDEX ON process_flow_entity_config (relationship_definition_id);_
+- **[rls/permissive-policy]** Policy on `process_flow_entity_config` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260518064632_162_process_flow_entity_config.sql`:53
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `digital_rule.created_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260526071214_create_digital_rules_schema.sql`:36
+  - 💡 _CREATE INDEX ON digital_rule (created_by);_
+- **[index/missing-fk-index]** Foreign key `crm_source.owner_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260603065356_delete_test_ticket_create_source_set_org_ownership.sql`:79
+  - 💡 _CREATE INDEX ON crm_source (owner_id);_
+- **[index/missing-fk-index]** Foreign key `crm_source.created_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260603065356_delete_test_ticket_create_source_set_org_ownership.sql`:79
+  - 💡 _CREATE INDEX ON crm_source (created_by);_
+- **[index/missing-fk-index]** Foreign key `crm_source.modified_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260603065356_delete_test_ticket_create_source_set_org_ownership.sql`:79
+  - 💡 _CREATE INDEX ON crm_source (modified_by);_
+- **[index/missing-fk-index]** Foreign key `timeline_note.owner_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:51
+  - 💡 _CREATE INDEX ON timeline_note (owner_id);_
+- **[index/missing-fk-index]** Foreign key `timeline_note.created_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:51
+  - 💡 _CREATE INDEX ON timeline_note (created_by);_
+- **[index/missing-fk-index]** Foreign key `timeline_note.modified_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:51
+  - 💡 _CREATE INDEX ON timeline_note (modified_by);_
+- **[rls/permissive-policy]** Policy on `timeline_note` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:70
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `timeline_appointment.owner_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:90
+  - 💡 _CREATE INDEX ON timeline_appointment (owner_id);_
+- **[index/missing-fk-index]** Foreign key `timeline_appointment.created_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:90
+  - 💡 _CREATE INDEX ON timeline_appointment (created_by);_
+- **[index/missing-fk-index]** Foreign key `timeline_appointment.modified_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:90
+  - 💡 _CREATE INDEX ON timeline_appointment (modified_by);_
+- **[rls/permissive-policy]** Policy on `timeline_appointment` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:113
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `timeline_email.owner_id` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:133
+  - 💡 _CREATE INDEX ON timeline_email (owner_id);_
+- **[index/missing-fk-index]** Foreign key `timeline_email.created_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:133
+  - 💡 _CREATE INDEX ON timeline_email (created_by);_
+- **[index/missing-fk-index]** Foreign key `timeline_email.modified_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:133
+  - 💡 _CREATE INDEX ON timeline_email (modified_by);_
+- **[rls/permissive-policy]** Policy on `timeline_email` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:158
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `timeline_attachment.uploaded_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:178
+  - 💡 _CREATE INDEX ON timeline_attachment (uploaded_by);_
+- **[index/missing-fk-index]** Foreign key `timeline_attachment.created_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:178
+  - 💡 _CREATE INDEX ON timeline_attachment (created_by);_
+- **[rls/permissive-policy]** Policy on `timeline_attachment` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:197
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `process_flow.draft_json` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260609000001_bpf_draft_publish.sql`:40
+  - 💡 _CREATE INDEX ON process_flow (draft_json);_
+- **[index/missing-fk-index]** Foreign key `api_integration.created_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260610000001_api_integrations.sql`:21
+  - 💡 _CREATE INDEX ON api_integration (created_by);_
+- **[index/missing-fk-index]** Foreign key `api_integration_log.triggered_by` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260610000001_api_integrations.sql`:91
+  - 💡 _CREATE INDEX ON api_integration_log (triggered_by);_
+- **[rls/permissive-policy]** Policy on `company_profile` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260610000005_company_profile.sql`:36
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[rls/permissive-policy]** Policy on `company_profile` uses `USING (true)` — every row is exposed to anyone the policy applies to.
+  - 📍 `supabase/migrations/20260610000005_company_profile.sql`:48
+  - 💡 _Scope the policy with an ownership/role predicate instead of `true`._
+- **[index/missing-fk-index]** Foreign key `company_profile.logo_url` has no covering index — joins and cascade deletes will seq-scan. ✅ Suggestion: CREATE INDEX to improve performance.
+  - 📍 `supabase/migrations/20260610000006_company_profile_details.sql`:19
+  - 💡 _CREATE INDEX ON company_profile (logo_url);_
+
+## 🔵 Low (170)
+
+### Database
+
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:129
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:134
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:139
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:145
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:155
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `record_share` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:404
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `record_share` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:416
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `record_share` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124600_01_security_organization_foundation.sql`:421
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `view_definition` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:388
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `view_definition` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:398
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `view_definition` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124711_02_platform_metadata_foundation.sql`:404
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `account` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:284
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `account` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:289
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `account` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:295
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `contact` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:358
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `contact` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:363
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `lead` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:429
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `lead` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:434
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `opportunity` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:493
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `opportunity` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124814_03_sales_module.sql`:498
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `ticket` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124851_04_customer_support_module.sql`:159
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `ticket` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124851_04_customer_support_module.sql`:164
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `tickets` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124851_04_customer_support_module.sql`:204
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `ticket_comment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124851_04_customer_support_module.sql`:216
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `campaign` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:82
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `campaign` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:87
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `event` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:142
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `event` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:147
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `marketing_email` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:205
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `marketing_email` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:210
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `segment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:258
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `segment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:263
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `journey` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:316
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `journey` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326124951_05_marketing_module.sql`:321
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `audit_log` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326125115_06_audit_common_platform_and_seed.sql`:96
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `note` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326125115_06_audit_common_platform_and_seed.sql`:125
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `note` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326125115_06_audit_common_platform_and_seed.sql`:130
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `note` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326125115_06_audit_common_platform_and_seed.sql`:135
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `attachment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326125115_06_audit_common_platform_and_seed.sql`:165
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `attachment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326125115_06_audit_common_platform_and_seed.sql`:170
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `attachment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260326125115_06_audit_common_platform_and_seed.sql`:175
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `record_share` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327091908_19_fix_all_rls_crm_user_recursion.sql`:61
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `account` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327091908_19_fix_all_rls_crm_user_recursion.sql`:73
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `activity_log` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327122319_31_activity_log.sql`:60
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `activity_log` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327122319_31_activity_log.sql`:65
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `activity_log` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327122319_31_activity_log.sql`:71
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `recent_items` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327132014_33_recent_and_pinned_records.sql`:50
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `recent_items` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327132014_33_recent_and_pinned_records.sql`:55
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `recent_items` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327132014_33_recent_and_pinned_records.sql`:60
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `recent_items` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327132014_33_recent_and_pinned_records.sql`:66
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `pinned_records` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327132014_33_recent_and_pinned_records.sql`:88
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `pinned_records` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327132014_33_recent_and_pinned_records.sql`:93
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `pinned_records` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327132014_33_recent_and_pinned_records.sql`:98
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `pinned_records` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327132014_33_recent_and_pinned_records.sql`:104
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `saved_filter` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327140606_34_saved_filters.sql`:32
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `saved_filter` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327140606_34_saved_filters.sql`:37
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `saved_filter` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327140606_34_saved_filters.sql`:42
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `saved_filter` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327140606_34_saved_filters.sql`:48
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `account` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327204607_38_enforce_role_privileges_in_rls.sql`:88
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `account` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327204607_38_enforce_role_privileges_in_rls.sql`:97
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `account` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327204607_38_enforce_role_privileges_in_rls.sql`:110
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `contact` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327204607_38_enforce_role_privileges_in_rls.sql`:127
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `contact` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327204607_38_enforce_role_privileges_in_rls.sql`:136
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `lead` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327204607_38_enforce_role_privileges_in_rls.sql`:153
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `lead` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327204607_38_enforce_role_privileges_in_rls.sql`:162
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `opportunity` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327204607_38_enforce_role_privileges_in_rls.sql`:179
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `opportunity` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327204607_38_enforce_role_privileges_in_rls.sql`:188
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `ticket` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327204607_38_enforce_role_privileges_in_rls.sql`:205
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `ticket` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327204607_38_enforce_role_privileges_in_rls.sql`:214
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `user_notification` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327205247_39_notifications_system.sql`:61
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `user_notification` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327205247_39_notifications_system.sql`:71
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `field_change_log` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260327211600_40_field_change_log.sql`:45
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `currency_audit_log` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260409183457_52_currency_audit_log.sql`:87
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `account` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260409192101_56_fix_account_soft_delete_rls.sql`:21
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `account` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260409192101_56_fix_account_soft_delete_rls.sql`:35
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `privileges` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260409192328_57_fix_account_update_rls_merge_policies.sql`:19
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `account` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260409192607_58_fix_account_soft_delete_select_policy.sql`:16
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `privileges` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260411155456_67_fix_lead_soft_delete_rls.sql`:19
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `lead` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260411155456_67_fix_lead_soft_delete_rls.sql`:38
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product_business_unit_access` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:75
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product_business_unit_access` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:86
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product_role_access` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:115
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product_role_access` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:126
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product_team_access` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:155
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product_team_access` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:166
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product_user_access` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:196
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product_user_access` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:207
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product_user_access` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260411174145_76_product_access_control.sql`:225
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `privileges` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260412141506_83_fix_contact_soft_delete_rls.sql`:24
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `contact` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260412141506_83_fix_contact_soft_delete_rls.sql`:57
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `opportunity` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260412155053_84_fix_opportunity_soft_delete_rls.sql`:20
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `opportunity` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260412160208_87_fix_soft_delete_select_policies.sql`:21
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `contact` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260412160208_87_fix_soft_delete_select_policies.sql`:39
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `privileges` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260412160208_87_fix_soft_delete_select_policies.sql`:56
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `lead` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260412160208_87_fix_soft_delete_select_policies.sql`:89
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `privileges` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260412160208_87_fix_soft_delete_select_policies.sql`:106
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `ticket` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260412160208_87_fix_soft_delete_select_policies.sql`:139
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `privileges` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260412160208_87_fix_soft_delete_select_policies.sql`:157
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415104707_98_product_access_backend_enforcement.sql`:132
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415124313_106_restore_security_definer_fix_crm_user_recursion.sql`:121
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415124313_106_restore_security_definer_fix_crm_user_recursion.sql`:133
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415124336_107_fix_crm_user_insert_policy_recursion.sql`:15
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415124547_108_fix_crm_user_rls_with_security_definer_check.sql`:39
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415124547_108_fix_crm_user_rls_with_security_definer_check.sql`:48
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415124547_108_fix_crm_user_rls_with_security_definer_check.sql`:61
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `business_rule` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415124839_109_fix_business_rule_update_policy.sql`:20
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415125655_111_fix_crm_user_rls_and_admin_insert_policy.sql`:42
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415125655_111_fix_crm_user_rls_and_admin_insert_policy.sql`:47
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415125655_111_fix_crm_user_rls_and_admin_insert_policy.sql`:52
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415125655_111_fix_crm_user_rls_and_admin_insert_policy.sql`:58
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `process_flow` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415165959_117_fix_process_flow_update_policy.sql`:19
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `process_flow` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415165959_117_fix_process_flow_update_policy.sql`:25
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `process_flow` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260415165959_117_fix_process_flow_update_policy.sql`:32
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `record_transformation_instance` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260420085915_128_record_transformation_enhancements.sql`:99
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `record_transformation_instance` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260420085915_128_record_transformation_enhancements.sql`:104
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `process_instances` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260506090402_140_process_instance_and_stage_tracking.sql`:119
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `process_instances` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260506090402_140_process_instance_and_stage_tracking.sql`:124
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `process_stage_history` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260506090402_140_process_instance_and_stage_tracking.sql`:164
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `view_sharing` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260515120139_156_view_sharing_and_personal_views.sql`:47
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `view_sharing` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260515120139_156_view_sharing_and_personal_views.sql`:59
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `view_sharing` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260515120139_156_view_sharing_and_personal_views.sql`:65
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `view_sharing` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260515120139_156_view_sharing_and_personal_views.sql`:77
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `view_sharing` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260515120139_156_view_sharing_and_personal_views.sql`:96
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `admin_grid_column_pref` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260520055631_179_admin_grid_column_preferences.sql`:35
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `admin_grid_column_pref` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260520055631_179_admin_grid_column_preferences.sql`:41
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `admin_grid_column_pref` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260520055631_179_admin_grid_column_preferences.sql`:47
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `admin_grid_column_pref` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260520055631_179_admin_grid_column_preferences.sql`:54
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `process_flow_instance` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260521051444_199_security_hardening_search_path_rls_execute.sql`:323
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `process_flow_instance` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260521051444_199_security_hardening_search_path_rls_execute.sql`:329
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `process_flow_stage_history` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260521051444_199_security_hardening_search_path_rls_execute.sql`:339
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `workflow_run_log` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260521051444_199_security_hardening_search_path_rls_execute.sql`:441
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `workflow_run_log` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260521051444_199_security_hardening_search_path_rls_execute.sql`:447
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_sources` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260521102323_209_reload_postgrest_schema_cache.sql`:12
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `test_entity` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260522054600_216_security_hardening_revoke_anon_and_fix_rls.sql`:60
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `test_entity` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260522054600_216_security_hardening_revoke_anon_and_fix_rls.sql`:68
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260522080613_231_update_rls_policies_to_security_schema_part3.sql`:94
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `record_share` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260522080613_231_update_rls_policies_to_security_schema_part3.sql`:107
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `digital_rule_execution_log` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260526071214_create_digital_rules_schema.sql`:168
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_user` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260601065147_fix_insert_policies_to_security_schema.sql`:330
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `dashboard_widget` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260601065147_fix_insert_policies_to_security_schema.sql`:336
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `process_flow_instance` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260601065147_fix_insert_policies_to_security_schema.sql`:348
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `process_flow_stage_history` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260601065147_fix_insert_policies_to_security_schema.sql`:354
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `workflow_run_log` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260601065147_fix_insert_policies_to_security_schema.sql`:360
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `product` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260602110305_fix_product_access_and_privilege_based_rls.sql`:119
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_source` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260603104840_fix_rls_and_security_definer_issues.sql`:21
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `crm_source` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260603104840_fix_rls_and_security_definer_issues.sql`:36
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `record_share` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604050145_record_share_rls_and_team_support.sql`:26
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `record_share` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604050145_record_share_rls_and_team_support.sql`:47
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_note` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:74
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_note` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:78
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_note` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:83
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_appointment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:117
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_appointment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:121
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_appointment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:126
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_email` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:162
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_email` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:166
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_email` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:171
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_attachment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:201
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_attachment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604080319_timeline_feature.sql`:205
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_note` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604083641_activity_entity_privileges.sql`:262
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_appointment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604083641_activity_entity_privileges.sql`:291
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_email` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604083641_activity_entity_privileges.sql`:320
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_attachment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604083641_activity_entity_privileges.sql`:348
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_note` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604084723_activity_privilege_record_share_support.sql`:190
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_appointment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604084723_activity_privilege_record_share_support.sql`:217
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_email` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604084723_activity_privilege_record_share_support.sql`:244
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `timeline_attachment` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260604084723_activity_privilege_record_share_support.sql`:270
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `user_theme_pref` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260611130000_205_user_theme_pref.sql`:25
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `user_theme_pref` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260611130000_205_user_theme_pref.sql`:31
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._
+- **[rls/auth-uid-perf]** Policy on `user_theme_pref` calls `auth.uid()` directly; Postgres re-evaluates it per row.
+  - 📍 `supabase/migrations/20260611130000_205_user_theme_pref.sql`:37
+  - 💡 _Wrap as `(select auth.uid())` so the planner caches it (InitPlan)._

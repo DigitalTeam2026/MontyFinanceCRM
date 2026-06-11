@@ -25,7 +25,6 @@ interface FlowCanvasProps {
 }
 
 export default function FlowCanvas({ steps, workflowId, fields, onStepsChange }: FlowCanvasProps) {
-  const selectedId = steps.length > 0 ? null : null;
 
   const handleSelectStep = (stepId: string | null) => {
     onStepsChange(steps.map((s) => ({ ...s, _selected: s.workflow_step_id === stepId } as WorkflowStep)));

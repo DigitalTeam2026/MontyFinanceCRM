@@ -151,7 +151,7 @@ function LookupField({
       .maybeSingle()
       .then(({ data }) => {
         if (cancelled || !data) return;
-        const lbl = String((data as Record<string, unknown>)[meta.labelCol] ?? '');
+        const lbl = String((data as unknown as Record<string, unknown>)[meta.labelCol] ?? '');
         if (lbl) {
           setLocalLabel(lbl);
           onLabelChange?.(lbl);
@@ -1037,7 +1037,7 @@ export default function FormField({
         <label className={`flex items-center gap-1.5 ${ds.label} font-medium`}>
           <span className="text-slate-500">{label}</span>
           {required && <span className="text-red-500">*</span>}
-          {isPermissionLocked && <Lock size={10} className="text-slate-300" title="Read-only (restricted by your security role)" />}
+          {isPermissionLocked && <span title="Read-only (restricted by your security role)" className="inline-flex"><Lock size={10} className="text-slate-300" /></span>}
         </label>
         <div className="relative">
           {renderInput()}
@@ -1057,7 +1057,7 @@ export default function FormField({
       <div className={`flex flex-col ${ds.fieldGap} ${control.column_span === 2 ? 'col-span-2' : ''}`}>
         <label className={`flex items-center gap-1.5 ${ds.label} font-medium`}>
           <span className="text-slate-500">{label}</span>
-          <EyeOff size={10} className="text-slate-300 ml-0.5" title="You do not have permission to view this field" />
+          <span title="You do not have permission to view this field" className="inline-flex"><EyeOff size={10} className="text-slate-300 ml-0.5" /></span>
         </label>
         <div className={`flex items-center gap-2 ${ds.input} border border-slate-200 rounded-md bg-slate-50 text-slate-400 select-none cursor-not-allowed`}>
           <span className="tracking-widest text-[15px] leading-none">••••••••</span>
@@ -1081,11 +1081,9 @@ export default function FormField({
           </span>
         )}
         {isPermissionLocked && (
-          <Lock
-            size={10}
-            className="text-slate-400 ml-0.5"
-            title="Read-only (restricted by your security role)"
-          />
+          <span title="Read-only (restricted by your security role)" className="inline-flex">
+            <Lock size={10} className="text-slate-400 ml-0.5" />
+          </span>
         )}
         {helpText && !isPermissionLocked && (
           <HelpTooltip text={helpText} />

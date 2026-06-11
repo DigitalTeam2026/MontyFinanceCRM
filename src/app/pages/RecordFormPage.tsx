@@ -93,6 +93,7 @@ import CloseOpportunityModal from '../components/form/CloseOpportunityModal';
 import ReopenOpportunityModal from '../components/form/ReopenOpportunityModal';
 import ShareRecordModal from '../components/ShareRecordModal';
 import TimelinePanel from '../components/form/TimelinePanel';
+import DocumentUploader from '../components/DocumentUploader';
 import { fetchRulesForEntity, getRulesForManualTrigger } from '../services/recordTransformationEngine';
 import type { RecordTransformationRule } from '../../types/recordTransformation';
 import { fetchLifecycleRules, fetchFormAccessRules, evaluateFormAccess, getVisibleCommands, isCreationBlocked } from '../services/lifecycleRuleEngine';
@@ -678,6 +679,15 @@ function CollapsibleSection({
                     userId={userId}
                     readonly={formReadonly}
                   />
+                </div>
+              );
+            }
+
+            if (control.control_type === 'documents') {
+              if (!recordId) return null;
+              return (
+                <div key={control.id} className="col-span-2">
+                  <DocumentUploader entityLogicalName={entityName} recordId={recordId} />
                 </div>
               );
             }
@@ -3053,8 +3063,8 @@ function RecordFormInner({
   })();
 
   // Currency selector / lock indicator — shared so it stays available in the
-  // redesigned header too (not shown for leads or entities without a currency field).
-  const currencyChip = (entity !== 'leads' && currencies.length > 0 && values.currency_id !== undefined) ? (
+  // redesigned header too (not shown for leads/accounts or entities without a currency field).
+  const currencyChip = (entity !== 'leads' && entity !== 'accounts' && currencies.length > 0 && values.currency_id !== undefined) ? (
     <div className="shrink-0 flex items-center gap-1">
       {isCurrencyLocked ? (
         <>

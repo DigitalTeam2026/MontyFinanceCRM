@@ -3,7 +3,6 @@ import type {
   WorkflowDefinition,
   WorkflowStep,
   WorkflowTriggerType,
-  WorkflowTriggerConditions,
   WorkflowStepType,
   WorkflowStepConfig,
 } from '../types/workflow';

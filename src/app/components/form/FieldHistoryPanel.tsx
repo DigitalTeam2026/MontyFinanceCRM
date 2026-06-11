@@ -92,23 +92,6 @@ const SOURCE_COLOR_MAP: Record<string, string> = {
   orange: 'bg-orange-50 text-orange-700 border-orange-200',
 };
 
-function groupByDate(entries: FieldChangeEntry[]): { label: string; entries: FieldChangeEntry[] }[] {
-  const groups: Map<string, FieldChangeEntry[]> = new Map();
-  for (const e of entries) {
-    const d = new Date(e.changed_at);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
-    let label: string;
-    if (d.toDateString() === today.toDateString()) label = 'Today';
-    else if (d.toDateString() === yesterday.toDateString()) label = 'Yesterday';
-    else label = d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-    if (!groups.has(label)) groups.set(label, []);
-    groups.get(label)!.push(e);
-  }
-  return Array.from(groups.entries()).map(([label, entries]) => ({ label, entries }));
-}
-
 function getDateLabel(ts: string): string {
   const d = new Date(ts);
   const today = new Date();
@@ -191,7 +174,7 @@ export default function FieldHistoryPanel({ entity, recordId }: Props) {
             .select(`${pkCol}, ${nameCol}`)
             .in(pkCol, remaining)
             .limit(remaining.length);
-          for (const row of (data ?? []) as Record<string, unknown>[]) {
+          for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
             const id = String(row[pkCol] ?? '');
             const label = String(row[nameCol] ?? '');
             if (id && label) names[id] = label;

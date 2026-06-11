@@ -55,7 +55,7 @@ export async function resolveLookupLabel(
     .eq(meta.pk, id)
     .maybeSingle();
   if (!data) return null;
-  const label = String((data as Record<string, unknown>)[meta.labelField] ?? '');
+  const label = String((data as unknown as Record<string, unknown>)[meta.labelField] ?? '');
   if (label) lookupLabelCache.set(cacheKey, label);
   return label || null;
 }
@@ -87,7 +87,7 @@ export async function batchResolveLookupLabels(
     .in(meta.pk, uncached)
     .limit(1000);
 
-  for (const row of (data ?? []) as Record<string, unknown>[]) {
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
     const id = String(row[meta.pk]);
     const label = String(row[meta.labelField] ?? '');
     if (label) {

@@ -67,10 +67,8 @@ export default function AppHeader({
 
   return (
     <header className="h-[48px] flex items-center px-5 gap-4 shrink-0 relative" style={{ background: 'var(--sidebar-bg)', borderBottom: '1px solid var(--header-border)' }}>
-      {/* App name + breadcrumb */}
+      {/* Breadcrumb */}
       <div className="flex items-center gap-2 min-w-0 shrink-0">
-        <span className="text-[13px] font-semibold" style={{ color: 'var(--header-fg)' }}>Monty CRM</span>
-        <span className="text-[12px]" style={{ color: 'var(--header-sep)' }}>|</span>
         <span className="text-[12px] font-medium" style={{ color: 'var(--header-fg-muted)' }}>
           {MODULE_LABELS[module]}
         </span>

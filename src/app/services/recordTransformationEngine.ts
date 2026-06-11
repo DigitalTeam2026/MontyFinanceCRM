@@ -24,7 +24,7 @@ async function resolveRelationshipFkColumn(
     .maybeSingle();
 
   if (!data) return null;
-  const fd = data.field_definition as { physical_column_name: string } | null;
+  const fd = data.field_definition as unknown as { physical_column_name: string } | null;
   return fd?.physical_column_name ?? null;
 }
 

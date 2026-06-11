@@ -3,7 +3,7 @@ import {
   Plus, RefreshCw, ChevronDown, Zap, Pencil, Trash2,
   ToggleLeft, ToggleRight, AlertCircle, Filter, Play,
   Globe, FileText, Shield, Wrench, Copy, Lock,
-  Search, LayoutGrid, MonitorSmartphone, ShieldCheck, User, X, Download,
+  Search, LayoutGrid, User, X, Download,
   Sparkles,
 } from 'lucide-react';
 import type { EntityDefinition } from '../../types/entity';
@@ -20,13 +20,17 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import AiRuleCreatorModal from './AiRuleCreatorModal';
 
 const SCOPE_ICONS: Record<RuleScope, React.ReactNode> = {
-  all_forms:     <Globe size={10} />,
-  specific_form: <FileText size={10} />,
+  all_forms:         <Globe size={10} />,
+  specific_form:     <FileText size={10} />,
+  specific_bpf:      <Play size={10} />,
+  specific_bpf_stage: <Filter size={10} />,
 };
 
 const SCOPE_LABELS: Record<RuleScope, string> = {
-  all_forms:     'All Forms',
-  specific_form: 'Specific Form',
+  all_forms:         'All Forms',
+  specific_form:     'Specific Form',
+  specific_bpf:      'Specific BPF',
+  specific_bpf_stage: 'BPF Stage',
 };
 
 type CategoryTab = 'all' | 'system' | 'custom';

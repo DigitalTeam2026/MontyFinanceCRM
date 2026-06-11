@@ -187,6 +187,8 @@ export interface ProcessFlow {
   description: string;
   entity_definition_id: string;
   lob_id: string | null;
+  /** Optional denormalized line-of-business name, present when the list query joins it. */
+  line_of_business?: string | null;
   product_id: string | null;
   form_id: string | null;
   stage_field: string;

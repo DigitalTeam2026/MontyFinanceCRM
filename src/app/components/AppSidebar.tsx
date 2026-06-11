@@ -3,7 +3,7 @@ import {
   LayoutGrid, FileText, Users, Package, BarChart2, Settings as SettingsIcon,
   Star, Globe, Layers, FolderOpen, BookOpen, ShoppingCart, Briefcase,
   ChevronDown, ChevronRight, Settings, LogOut, PanelLeftClose, PanelLeftOpen,
-  UserCheck, UserPlus, Target, Ticket, Building2, Palette, RotateCcw,
+  UserCheck, UserPlus, Target, Ticket, Building2, RotateCcw, Check,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { AppModule, AppEntity } from '../types';
@@ -12,6 +12,8 @@ import { getInitials } from '../utils/initials';
 import RecentPinsPanel from './RecentPinsPanel';
 import { fetchFullNavTree } from '../../services/navigationService';
 import type { NavArea, NavGroup, NavItem } from '../../services/navigationService';
+import { fetchCompanyProfile, getCachedCompanyProfile, type CompanyProfile } from '../../services/companyProfileService';
+import { POPULAR_THEMES, DEFAULT_THEME_COLOR, DARK_THEME, getCachedTheme, fetchUserTheme, saveUserTheme } from '../../services/themeService';
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   TrendingUp:   <TrendingUp size={16} />,
@@ -72,40 +74,6 @@ interface AppSidebarProps {
   userId: string;
   recentRefreshKey?: number;
   isSystemAdmin?: boolean;
-}
-
-const SIDEBAR_PRESETS: { name: string; color: string }[] = [
-  { name: 'Default',       color: '#f7f8fa' },
-  { name: 'Pure White',    color: '#ffffff' },
-  { name: 'Mist',          color: '#eef2f7' },
-  { name: 'Midnight Navy', color: '#0a1d36' },
-  { name: 'Royal Blue',    color: '#0f2a5e' },
-  { name: 'Monty Blue',    color: '#163b6e' },
-  { name: 'Charcoal',      color: '#1e2328' },
-  { name: 'Graphite',      color: '#2d3239' },
-  { name: 'Pine',          color: '#0e2f24' },
-  { name: 'Emerald',       color: '#0a3622' },
-  { name: 'Plum',          color: '#2d1b3d' },
-  { name: 'Aubergine',     color: '#3b1a3e' },
-  { name: 'Espresso',      color: '#2c1e12' },
-  { name: 'Burgundy',      color: '#3b1320' },
-  { name: 'Steel',         color: '#2a3040' },
-];
-
-const LS_KEY = 'monty.sidebarColor';
-
-function loadSidebarColor(): string {
-  try {
-    return localStorage.getItem(LS_KEY) || '#f7f8fa';
-  } catch {
-    return '#f7f8fa';
-  }
-}
-
-function saveSidebarColor(color: string) {
-  try {
-    localStorage.setItem(LS_KEY, color);
-  } catch { /* noop */ }
 }
 
 function hexToHsl(hex: string): [number, number, number] {
@@ -179,6 +147,33 @@ function applySidebarCssVars(color: string) {
   }
 }
 
+/**
+ * Apply a theme value. The special `DARK_THEME` value turns on full system-wide
+ * dark mode (the `dark` class drives the override layer in index.css); any other
+ * value is treated as a top-bar color and removes dark mode.
+ */
+function applyTheme(value: string) {
+  const root = document.documentElement;
+  if (value === DARK_THEME) {
+    root.classList.add('dark');
+    const s = root.style;
+    s.setProperty('--sidebar-bg', '#11161f');
+    s.setProperty('--header-fg', '#e8ebf0');
+    s.setProperty('--header-fg-muted', 'rgba(255,255,255,0.55)');
+    s.setProperty('--header-sep', 'rgba(255,255,255,0.14)');
+    s.setProperty('--header-border', '#2a3340');
+    s.setProperty('--header-input-bg', 'rgba(255,255,255,0.06)');
+    s.setProperty('--header-input-border', 'rgba(255,255,255,0.12)');
+    s.setProperty('--header-hover-bg', 'rgba(255,255,255,0.08)');
+    // Let the :root.dark CSS values drive the accent/link in dark mode.
+    s.removeProperty('--navy-accent');
+    s.removeProperty('--link');
+  } else {
+    root.classList.remove('dark');
+    applySidebarCssVars(value);
+  }
+}
+
 function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="relative group/tip">
@@ -207,6 +202,8 @@ function SidebarThemePicker({ currentColor, onChange }: { currentColor: string; 
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  const active = POPULAR_THEMES.find((t) => t.color === currentColor);
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -215,47 +212,41 @@ function SidebarThemePicker({ currentColor, onChange }: { currentColor: string; 
       >
         <span
           className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
-          style={{ background: currentColor }}
+          style={{ background: currentColor === DARK_THEME ? '#11161f' : currentColor }}
         />
-        <span className="flex-1 text-left font-medium">Personalize top bar</span>
+        <span className="flex-1 text-left font-medium">Theme</span>
+        <span className="text-[10px] text-[#9ca3af] shrink-0">{active?.name ?? 'Custom'}</span>
         <ChevronRight size={11} className="text-[#9ca3af] shrink-0" />
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-1 w-[220px] bg-white rounded-lg shadow-2xl border border-[var(--border)] z-50 overflow-hidden">
+        <div className="absolute bottom-full left-0 mb-1 w-[230px] bg-white rounded-lg shadow-2xl border border-[var(--border)] z-50 overflow-hidden">
           <div className="px-3 pt-3 pb-2">
-            <p className="text-[11px] font-semibold text-[var(--ink-700)]">Top Bar Color</p>
-            <p className="text-[10px] text-[var(--ink-400)] mt-0.5">Choose a color for the top bar</p>
+            <p className="text-[11px] font-semibold text-[var(--ink-700)]">Popular themes</p>
+            <p className="text-[10px] text-[var(--ink-400)] mt-0.5">Pick a theme — it's saved to your account</p>
           </div>
-          <div className="px-3 pb-2 grid grid-cols-6 gap-2">
-            {SIDEBAR_PRESETS.map((p) => (
-              <button
-                key={p.color}
-                title={p.name}
-                onClick={() => onChange(p.color)}
-                className="relative w-7 h-7 rounded-md border border-[var(--border)] transition-transform hover:scale-110"
-                style={{ background: p.color }}
-              >
-                {currentColor === p.color && (
-                  <span className="absolute inset-0 flex items-center justify-center">
-                    <span className="w-2 h-2 rounded-full bg-white" />
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-          <div className="px-3 pb-2 flex items-center gap-2">
-            <label className="text-[10px] text-[var(--ink-500)] font-medium shrink-0">Custom:</label>
-            <input
-              type="color"
-              value={currentColor}
-              onChange={(e) => onChange(e.target.value)}
-              className="w-6 h-6 rounded border border-[var(--border)] cursor-pointer p-0"
-            />
+          <div className="px-2 pb-2 max-h-[260px] overflow-y-auto">
+            {POPULAR_THEMES.map((t) => {
+              const selected = currentColor === t.color;
+              return (
+                <button
+                  key={t.color}
+                  onClick={() => { onChange(t.color); setOpen(false); }}
+                  className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors ${selected ? 'bg-[#eef2f7]' : 'hover:bg-[#f3f4f6]'}`}
+                >
+                  <span
+                    className="w-5 h-5 rounded-md border border-black/10 shrink-0"
+                    style={{ background: t.color === DARK_THEME ? 'linear-gradient(135deg,#1b2230,#0e131a)' : t.color }}
+                  />
+                  <span className="flex-1 text-left text-[12px] font-medium text-[#374151]">{t.name}</span>
+                  {selected && <Check size={13} className="text-[#2b6cb0] shrink-0" />}
+                </button>
+              );
+            })}
           </div>
           <div className="border-t border-[var(--divider)] px-3 py-2">
             <button
-              onClick={() => onChange('#f7f8fa')}
+              onClick={() => { onChange(DEFAULT_THEME_COLOR); setOpen(false); }}
               className="flex items-center gap-1.5 text-[11px] text-[var(--link)] hover:underline font-medium"
             >
               <RotateCcw size={10} />
@@ -284,15 +275,29 @@ export default function AppSidebar({
   const [expanded, setExpanded] = useState<AppModule>(activeModule);
   const [collapsed, setCollapsed] = useState(false);
   const [myRecordsOpen, setMyRecordsOpen] = useState(false);
-  const [sidebarColor, setSidebarColor] = useState(loadSidebarColor);
+  const [sidebarColor, setSidebarColor] = useState(() => getCachedTheme(userId));
 
   const [areas, setAreas] = useState<NavArea[]>([]);
   const [groups, setGroups] = useState<NavGroup[]>([]);
   const [items, setItems] = useState<NavItem[]>([]);
+  const [brand, setBrand] = useState<CompanyProfile>(getCachedCompanyProfile);
 
   useEffect(() => {
-    applySidebarCssVars(sidebarColor);
+    let cancelled = false;
+    fetchCompanyProfile().then((p) => { if (!cancelled) setBrand(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    applyTheme(sidebarColor);
   }, [sidebarColor]);
+
+  // Load this user's saved theme from the database (cross-device), then apply.
+  useEffect(() => {
+    let cancelled = false;
+    fetchUserTheme(userId).then((color) => { if (!cancelled) setSidebarColor(color); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [userId]);
 
   useEffect(() => {
     fetchFullNavTree()
@@ -310,8 +315,8 @@ export default function AppSidebar({
 
   const handleColorChange = (color: string) => {
     setSidebarColor(color);
-    saveSidebarColor(color);
-    applySidebarCssVars(color);
+    applyTheme(color);
+    saveUserTheme(userId, color).catch(() => {});
   };
 
   const initials = getInitials(userName, userEmail);
@@ -346,8 +351,8 @@ export default function AppSidebar({
       className="text-[#374151] flex flex-col h-full shrink-0 select-none overflow-hidden transition-all duration-300 ease-in-out"
       style={{
         width: collapsed ? '56px' : '220px',
-        background: '#f7f8fa',
-        borderRight: '1px solid #e5e7eb',
+        background: 'var(--sidebar-bg)',
+        borderRight: '1px solid var(--header-border)',
       }}
     >
       {/* Brand block - 48px */}
@@ -356,23 +361,13 @@ export default function AppSidebar({
         style={{ borderBottom: '1px solid #e5e7eb' }}
       >
         {collapsed ? (
-          <div className="w-[22px] h-[22px] rounded-[5px] bg-[#2b6cb0] flex items-center justify-center shrink-0">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-              <polyline points="9 22 9 12 15 12 15 22" />
-            </svg>
+          <div className="w-[26px] h-[26px] rounded-[6px] bg-[#2b6cb0] flex items-center justify-center shrink-0 text-white text-[11px] font-bold">
+            {getInitials(brand.company_name)}
           </div>
         ) : (
           <>
-            <div className="w-[22px] h-[22px] rounded-[5px] bg-[#2b6cb0] flex items-center justify-center shrink-0">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                <polyline points="9 22 9 12 15 12 15 22" />
-              </svg>
-            </div>
-            <div className="min-w-0 flex-1 overflow-hidden">
-              <span className="text-[15px] font-semibold text-[#1f2937] leading-none">CRM </span>
-              <span className="text-[12px] text-[#6b7280] font-medium">Platform</span>
+            <div className="min-w-0 flex-1 overflow-hidden flex flex-col justify-center">
+              <span className="block text-[14px] font-semibold text-[#1f2937] leading-tight truncate">{brand.company_name}</span>
             </div>
             <button
               onClick={() => setCollapsed(true)}

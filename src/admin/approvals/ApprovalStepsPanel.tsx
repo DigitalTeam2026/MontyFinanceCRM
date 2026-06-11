@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Trash2, ChevronUp, ChevronDown, GripVertical, User, Shield, Users, ArrowUp, CircleUser as UserCircle, Clock, CheckCircle, XCircle, CornerDownRight, RefreshCw, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Trash2, ChevronUp, ChevronDown, User, Shield, Users, ArrowUp, CircleUser as UserCircle, Clock, CheckCircle, XCircle, CornerDownRight, RefreshCw, ToggleLeft, ToggleRight } from 'lucide-react';
 import type { ApprovalStepDraft, ApproverType, ApprovalAction, StepExecutionMode } from '../../types/approvalProcess';
 import { APPROVER_TYPE_META, APPROVAL_ACTION_META } from '../../types/approvalProcess';
 

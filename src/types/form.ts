@@ -6,7 +6,8 @@ export type ControlType =
   | 'spacer'
   | 'separator'
   | 'label'
-  | 'timeline';
+  | 'timeline'
+  | 'documents';
 
 export type EventType = 'onLoad' | 'onSave' | 'onChange' | 'onTabChange';
 

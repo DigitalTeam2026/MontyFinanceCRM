@@ -284,7 +284,6 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
   // Resolve the first opportunity-side stage in a cross-entity flow (if present)
   let oppFlowId: string | null = null;
   let oppFirstStageId: string | null = null;
-  let oppFirstStageKey: string | null = null;
   if (processFlow) {
     const ctx = buildStageEntityContext(processFlow);
     const primaryEntityId = processFlow.flow.entity_definition_id;
@@ -295,7 +294,6 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
     if (firstOppStage) {
       oppFlowId = processFlow.flow.process_flow_id;
       oppFirstStageId = firstOppStage.process_stage_id;
-      oppFirstStageKey = firstOppStage.stage_key;
     }
   }
 

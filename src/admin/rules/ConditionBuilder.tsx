@@ -76,15 +76,6 @@ function getOps(field?: FieldDefinition): ConditionOperator[] {
 const needsVal = (op: ConditionOperator) => op !== 'is_null' && op !== 'is_not_null';
 const needsTwo = (op: ConditionOperator) => op === 'between';
 
-function getConfigFlags(field?: FieldDefinition) {
-  const cfg = field?.config_json as Record<string, unknown> | null;
-  return {
-    isStatecodeField: !!(cfg?.is_statecode_field),
-    isStatusreasonField: !!(cfg?.is_statusreason_field),
-    choices: Array.isArray(cfg?.choices) ? (cfg!.choices as { value: string; label: string }[]) : [],
-  };
-}
-
 interface ConditionBuilderProps {
   fields: FieldDefinition[];
   group: RuleConditionGroup | null;
@@ -449,7 +440,7 @@ function CondValueInput({ field, fieldTypeName, value, onChange }: CondValueInpu
         const nameCol = TABLE_NAME_COL[table] ?? 'name';
         const { data } = await supabase.from(table).select(`${pkCol}, ${nameCol}`).order(nameCol).limit(200);
         setLookupOptions(
-          (data ?? []).map((r: Record<string, unknown>) => ({
+          ((data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => ({
             value: String(r[pkCol] ?? ''),
             label: String(r[nameCol] ?? r[pkCol] ?? ''),
           }))

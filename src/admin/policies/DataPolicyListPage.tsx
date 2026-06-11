@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Search, RefreshCw, Plus, X, Copy, Trash2,
   ToggleLeft, ToggleRight, ChevronRight,
-  AlertTriangle, ShieldAlert, AlertCircle, Info,
+  ShieldAlert, AlertCircle, Info,
   MonitorSmartphone, DatabaseZap,
 } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
@@ -25,7 +25,7 @@ interface DataPolicyListPageProps {
 }
 
 export default function DataPolicyListPage({ onOpen }: DataPolicyListPageProps) {
-  const { showSuccess, showError } = useToast();
+  const { showError } = useToast();
   const [policies, setPolicies] = useState<DataPolicy[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -361,7 +361,7 @@ function EmptyState({ onNew }: { onNew: () => void }) {
 // ─── New Policy Modal ─────────────────────────────────────────────────────────
 
 function NewPolicyModal({ onClose, onCreated }: { onClose: () => void; onCreated: (p: DataPolicy) => void }) {
-  const { showSuccess, showError } = useToast();
+  const { showError } = useToast();
   const [name, setName] = useState('');
   const [entity, setEntity] = useState('opportunity');
   const [category, setCategory] = useState<PolicyCategory>('custom');

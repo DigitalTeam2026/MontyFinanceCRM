@@ -32,6 +32,7 @@ import RelationshipEditorPage from './relationships/RelationshipEditorPage';
 import DatabaseValidationPage from './validation/DatabaseValidationPage';
 import ApiIntegrationsPage from './integrations/ApiIntegrationsPage';
 import CompanyProfilePage from './companyprofile/CompanyProfilePage';
+import DocumentLocationPage from './documents/DocumentLocationPage';
 import type { EntityDefinition } from '../types/entity';
 import type { RelationshipDefinitionWithEntities } from '../types/relationship';
 import { fetchEntities } from '../services/entityService';
@@ -320,6 +321,9 @@ export default function AdminStudio() {
     if (activeModule === 'companyprofile') {
       return { title: 'Company Profile', subtitle: 'Manage company details — logo, industry, country, contact info, status — and the branding shown on the login screen' };
     }
+    if (activeModule === 'documentlocation') {
+      return { title: 'Document Location', subtitle: 'Configure the root storage folder per entity — files are saved to <root>/<record id>/<file> by the local file server' };
+    }
     return { title: 'Admin Studio' };
   };
 
@@ -445,6 +449,7 @@ export default function AdminStudio() {
     if (activeModule === 'dbvalidation') return <DatabaseValidationPage />;
     if (activeModule === 'integrations') return <ApiIntegrationsPage />;
     if (activeModule === 'companyprofile') return <CompanyProfilePage />;
+    if (activeModule === 'documentlocation') return <DocumentLocationPage />;
 
     return (
       <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">

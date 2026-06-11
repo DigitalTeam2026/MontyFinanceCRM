@@ -7,6 +7,17 @@ import {
   Users, Package, BarChart2, Settings, Star, Globe, Layers,
   FolderOpen, BookOpen, ShoppingCart, Briefcase, Eye, EyeOff,
   ArrowUp, ArrowDown, MoreHorizontal,
+  // CRM & Sales
+  Handshake, Target, Trophy, Filter, Percent, Zap, Flag,
+  // People & Companies
+  User, UserPlus, Building2, Factory, CreditCard, Contact, Crown,
+  // Communication & Marketing
+  Mail, Phone, MessageCircle, Send, Bell, Video, Rocket, Ticket,
+  // Geography & Money
+  Map, MapPin, Compass, Landmark, Banknote, Coins, Wallet, CircleDollarSign, ArrowRightLeft,
+  // Data & Organization
+  BarChart3, PieChart, LineChart, Database, Kanban, Table, Tag, GitBranch,
+  Calendar, CalendarCheck, Clock, Waypoints,
 } from 'lucide-react';
 import type { NavArea, NavGroup, NavItem } from '../../services/navigationService';
 import {
@@ -23,16 +34,65 @@ import { fetchSecurityRoles } from '../../services/securityService';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 const ICON_MAP: Record<string, React.ReactNode> = {
-  TrendingUp: <TrendingUp size={13} />, Megaphone: <Megaphone size={13} />,
-  Headphones: <Headphones size={13} />, Layout: <Layout size={13} />,
-  FileText: <FileText size={13} />, Users: <Users size={13} />,
-  Package: <Package size={13} />, BarChart2: <BarChart2 size={13} />,
-  Settings: <Settings size={13} />, Star: <Star size={13} />,
-  Globe: <Globe size={13} />, Layers: <Layers size={13} />,
-  FolderOpen: <FolderOpen size={13} />, BookOpen: <BookOpen size={13} />,
-  ShoppingCart: <ShoppingCart size={13} />, Briefcase: <Briefcase size={13} />,
+  // CRM & Sales
+  TrendingUp: <TrendingUp size={13} />, Briefcase: <Briefcase size={13} />,
+  Handshake: <Handshake size={13} />, Target: <Target size={13} />,
+  Trophy: <Trophy size={13} />, Filter: <Filter size={13} />,
+  Percent: <Percent size={13} />, Zap: <Zap size={13} />, Flag: <Flag size={13} />,
+  // People & Companies
+  User: <User size={13} />, Users: <Users size={13} />, UserPlus: <UserPlus size={13} />,
+  Building2: <Building2 size={13} />, Factory: <Factory size={13} />,
+  CreditCard: <CreditCard size={13} />, Contact: <Contact size={13} />, Crown: <Crown size={13} />,
+  // Communication & Marketing
+  Mail: <Mail size={13} />, Phone: <Phone size={13} />, MessageCircle: <MessageCircle size={13} />,
+  Send: <Send size={13} />, Headphones: <Headphones size={13} />, Bell: <Bell size={13} />,
+  Video: <Video size={13} />, Megaphone: <Megaphone size={13} />, Rocket: <Rocket size={13} />,
+  Ticket: <Ticket size={13} />,
+  // Geography & Money
+  Globe: <Globe size={13} />, Map: <Map size={13} />, MapPin: <MapPin size={13} />,
+  Compass: <Compass size={13} />, Landmark: <Landmark size={13} />, Banknote: <Banknote size={13} />,
+  Coins: <Coins size={13} />, Wallet: <Wallet size={13} />,
+  CircleDollarSign: <CircleDollarSign size={13} />, ArrowRightLeft: <ArrowRightLeft size={13} />,
+  // Data & Organization
+  BarChart3: <BarChart3 size={13} />, PieChart: <PieChart size={13} />, LineChart: <LineChart size={13} />,
+  Database: <Database size={13} />, Layers: <Layers size={13} />, Kanban: <Kanban size={13} />,
+  Table: <Table size={13} />, Tag: <Tag size={13} />, Package: <Package size={13} />,
+  GitBranch: <GitBranch size={13} />, Calendar: <Calendar size={13} />,
+  CalendarCheck: <CalendarCheck size={13} />, Clock: <Clock size={13} />, Waypoints: <Waypoints size={13} />,
+  // Layout & General (legacy values retained so existing nav records still render)
+  Layout: <Layout size={13} />, FileText: <FileText size={13} />, FolderOpen: <FolderOpen size={13} />,
+  BookOpen: <BookOpen size={13} />, ShoppingCart: <ShoppingCart size={13} />,
+  Settings: <Settings size={13} />, Star: <Star size={13} />, BarChart2: <BarChart2 size={13} />,
 };
-const ICON_NAMES = Object.keys(ICON_MAP);
+
+const ICON_CATEGORIES: { label: string; names: string[] }[] = [
+  { label: 'CRM & Sales', names: ['TrendingUp', 'Briefcase', 'Handshake', 'Target', 'Trophy', 'Filter', 'Percent', 'Zap', 'Flag'] },
+  { label: 'People & Companies', names: ['User', 'Users', 'UserPlus', 'Building2', 'Factory', 'CreditCard', 'Contact', 'Crown'] },
+  { label: 'Communication & Marketing', names: ['Mail', 'Phone', 'MessageCircle', 'Send', 'Headphones', 'Bell', 'Video', 'Megaphone', 'Rocket', 'Ticket'] },
+  { label: 'Geography & Money', names: ['Globe', 'Map', 'MapPin', 'Compass', 'Landmark', 'Banknote', 'Coins', 'Wallet', 'CircleDollarSign', 'ArrowRightLeft'] },
+  { label: 'Data & Organization', names: ['BarChart3', 'PieChart', 'LineChart', 'Database', 'Layers', 'Kanban', 'Table', 'Tag', 'Package', 'GitBranch', 'Calendar', 'CalendarCheck', 'Clock', 'Waypoints'] },
+  { label: 'Layout & General', names: ['Layout', 'FileText', 'FolderOpen', 'BookOpen', 'ShoppingCart', 'Settings', 'Star', 'BarChart2'] },
+];
+
+/** Sensible default icon for an entity, keyed by substrings of its logical name. */
+const ENTITY_ICON_DEFAULTS: { match: RegExp; icon: string }[] = [
+  { match: /sale|opportunit|deal|revenue/i, icon: 'TrendingUp' },
+  { match: /market/i, icon: 'Rocket' },
+  { match: /campaign/i, icon: 'Megaphone' },
+  { match: /event/i, icon: 'CalendarCheck' },
+  { match: /countr|region|geo/i, icon: 'Globe' },
+  { match: /currenc/i, icon: 'CircleDollarSign' },
+  { match: /source/i, icon: 'Waypoints' },
+  { match: /industr|sector/i, icon: 'Factory' },
+  { match: /contact|person|people/i, icon: 'Contact' },
+  { match: /account|compan|organi[sz]ation|business/i, icon: 'Building2' },
+  { match: /lead/i, icon: 'UserPlus' },
+];
+
+function defaultIconForEntity(logicalName: string): string {
+  const hit = ENTITY_ICON_DEFAULTS.find((d) => d.match.test(logicalName));
+  return hit ? hit.icon : 'FileText';
+}
 
 type Selection =
   | { kind: 'area'; id: string }
@@ -831,7 +891,7 @@ function InlineItemForm({ form, entities, onChange, onSave, onCancel, saving }: 
   return (
     <div className="px-2 py-2 bg-blue-50/50 border-t border-blue-100 space-y-1.5 mx-1 my-1 rounded-lg">
       <input type="text" value={form.display_label} onChange={(e) => onChange({ ...form, display_label: e.target.value })} className={MINI_INPUT} placeholder="Label..." autoFocus onKeyDown={(e) => { if (e.key === 'Enter') onSave(); if (e.key === 'Escape') onCancel(); }} />
-      <EntityPicker entities={entities} value={form.entity_name} onChange={(v) => onChange({ ...form, entity_name: v })} />
+      <EntityPicker entities={entities} value={form.entity_name} onChange={(v) => onChange({ ...form, entity_name: v, icon_name: v ? defaultIconForEntity(v) : form.icon_name })} />
       <IconPicker value={form.icon_name} onChange={(v) => onChange({ ...form, icon_name: v })} />
       <div className="flex gap-1.5">
         <button onClick={onCancel} className="flex-1 py-1 text-[10px] border border-slate-200 rounded text-slate-600 bg-white">Cancel</button>
@@ -1079,14 +1139,23 @@ function ItemPropertiesPanel({ item, entities, roles, groups, areas, onChange, o
 
 function IconPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <div className="flex flex-wrap gap-1.5 mt-1">
-      {ICON_NAMES.map((name) => (
-        <button
-          key={name} onClick={() => onChange(name)} title={name}
-          className={`p-1.5 rounded-lg border-2 transition-colors ${value === name ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}
-        >
-          {ICON_MAP[name]}
-        </button>
+    <div className="mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+      {ICON_CATEGORIES.map((cat) => (
+        <div key={cat.label}>
+          <p className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400 border-b border-slate-100">
+            {cat.label}
+          </p>
+          <div className="flex flex-wrap gap-1.5 p-2">
+            {cat.names.map((name) => (
+              <button
+                key={name} onClick={() => onChange(name)} title={name} type="button"
+                className={`p-1.5 rounded-lg border-2 transition-colors ${value === name ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}
+              >
+                {ICON_MAP[name]}
+              </button>
+            ))}
+          </div>
+        </div>
       ))}
     </div>
   );

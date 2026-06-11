@@ -443,7 +443,7 @@ function FilterValueInput({
         const nameCol = TABLE_NAME_COL[table] ?? 'name';
         const { data } = await supabase.from(table).select(`${pkCol}, ${nameCol}`).order(nameCol).limit(200);
         setLookupOptions(
-          (data ?? []).map((r: Record<string, unknown>) => ({
+          ((data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => ({
             value: String(r[pkCol] ?? ''),
             label: String(r[nameCol] ?? r[pkCol] ?? ''),
           }))

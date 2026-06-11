@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Layers, LayoutGrid, Square, Eye, EyeOff } from 'lucide-react';
+import { ChevronDown, ChevronRight, Layers, LayoutGrid, Square, EyeOff } from 'lucide-react';
 import { useState } from 'react';
 import type { DesignerLayout, SelectionTarget } from '../../types/form';
 

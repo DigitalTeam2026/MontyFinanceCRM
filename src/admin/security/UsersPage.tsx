@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Plus, Search, Trash2, RefreshCw,
-  Shield, ShieldCheck, UserCheck, ChevronDown, X, Check,
+  Shield, ShieldCheck, UserCheck, X, Check,
   Users, ToggleLeft, ToggleRight, Building2,
 } from 'lucide-react';
 import SearchableSelect from '../../app/components/SearchableSelect';
@@ -16,6 +16,19 @@ import ConfirmDialog from '../components/ConfirmDialog';
 
 type Panel = 'edit' | 'roles';
 type ActiveFilter = 'all' | 'active' | 'inactive';
+
+const PASSWORD_MIN = 12;
+
+/** Returns an array of unmet complexity requirements (empty = valid). */
+function passwordIssues(pw: string): string[] {
+  const issues: string[] = [];
+  if (pw.length < PASSWORD_MIN) issues.push(`at least ${PASSWORD_MIN} characters`);
+  if (!/[a-z]/.test(pw)) issues.push('a lowercase letter');
+  if (!/[A-Z]/.test(pw)) issues.push('an uppercase letter');
+  if (!/[0-9]/.test(pw)) issues.push('a number');
+  if (!/[^A-Za-z0-9]/.test(pw)) issues.push('a special character');
+  return issues;
+}
 
 export default function UsersPage() {
   const { showSuccess, showError } = useToast();
@@ -76,6 +89,13 @@ export default function UsersPage() {
   };
 
   const handleSave = async () => {
+    if (creating) {
+      const issues = passwordIssues(password);
+      if (issues.length) {
+        showError(`Password must include ${issues.join(', ')}.`);
+        return;
+      }
+    }
     setSaving(true);
     try {
       if (creating) {
@@ -356,11 +376,21 @@ function UserEditForm({
           <input type="email" value={form.email ?? ''} onChange={(e) => onChange({ ...form, email: e.target.value })} className={INPUT} />
         </Field>
       </div>
-      {creating && (
-        <Field label="Password" required>
-          <input type="password" value={password ?? ''} onChange={(e) => onPasswordChange?.(e.target.value)} className={INPUT} placeholder="Min. 6 characters" autoComplete="new-password" />
-        </Field>
-      )}
+      {creating && (() => {
+        const issues = passwordIssues(password ?? '');
+        const touched = (password ?? '').length > 0;
+        return (
+          <Field label="Password" required>
+            <input type="password" value={password ?? ''} onChange={(e) => onPasswordChange?.(e.target.value)} className={INPUT} placeholder={`Min. ${PASSWORD_MIN} chars, mixed case, number & symbol`} autoComplete="new-password" />
+            {touched && issues.length > 0 && (
+              <p className="mt-1 text-xs text-red-600">Must include {issues.join(', ')}.</p>
+            )}
+            {touched && issues.length === 0 && (
+              <p className="mt-1 text-xs text-green-600">Strong password.</p>
+            )}
+          </Field>
+        );
+      })()}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Username">
           <input type="text" value={form.username ?? ''} onChange={(e) => onChange({ ...form, username: e.target.value })} className={INPUT} />

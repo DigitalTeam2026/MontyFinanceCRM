@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { X, Building2, User, Briefcase, AlertTriangle, CheckCircle2, Loader2, ChevronRight, Info, ShieldAlert, Link2Off, RefreshCw, PlusCircle, Ban } from 'lucide-react';
-import type { LeadQualificationRule } from '../../../types/leadQualification';
 import type { RecordData } from '../../services/recordService';
 import type { QualifyLeadPreview, EntityDuplicateWarning, ExistingOpportunity } from '../../services/leadQualificationEngine';
 import {
@@ -511,7 +510,6 @@ export default function QualifyLeadModal({ leadId, leadValues, userId, processFl
 
   const isReqal = preview?.isRequalification ?? false;
   const existingOpps = preview?.existingOpportunities ?? [];
-  const showRequalPanel = isReqal && existingOpps.length > 0 && (preview?.requalificationBehavior === 'ask_user' || preview?.requalificationBehavior === 'update_existing');
 
   const handleConfirm = async () => {
     if (!preview || isBlocked) return;

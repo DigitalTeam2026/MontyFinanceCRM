@@ -263,7 +263,7 @@ async function loadStatusReasons(entityDefId: string): Promise<ReasonOption[]> {
     value: String(r.reason_value),
     label: r.display_label,
     color: r.color ?? '#6B7280',
-    statecodeValue: String((r.statecode_definition as { state_value: number }).state_value),
+    statecodeValue: String((r.statecode_definition as unknown as { state_value: number }).state_value),
   }));
   reasonCache[key] = items;
   return items;
@@ -334,7 +334,7 @@ function BulkFieldInput({
       if (lookupQuery.trim()) q = q.ilike(cfg.labelCol, `%${lookupQuery}%`);
       const { data } = await q;
       setLookupResults(
-        (data ?? []).map((r: Record<string, unknown>) => ({
+        ((data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => ({
           id: String(r[cfg.pk] ?? ''),
           label: String(r[cfg.labelCol] ?? ''),
         }))

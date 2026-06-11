@@ -33,7 +33,7 @@ export default function ReopenOpportunityModal({
       .order('sort_order')
       .then(({ data }) => {
         if (!data) return;
-        const openReasons = (data as { reason_value: number; display_label: string; statecode_definition: { state_value: number } }[])
+        const openReasons = (data as unknown as { reason_value: number; display_label: string; statecode_definition: { state_value: number } }[])
           .filter((d) => d.statecode_definition.state_value === 1)
           .map((d) => ({ value: d.reason_value, label: d.display_label }));
         if (openReasons.length === 0) openReasons.push({ value: 1, label: 'In Progress' });

@@ -297,7 +297,7 @@ export default function LookupDialog({
 
         if (applyViewFilters && av?.filter_json) {
           for (const cond of av.filter_json.conditions ?? []) {
-            const physCol = (cond as Record<string, unknown>).field_physical_column as string | undefined;
+            const physCol = (cond as unknown as Record<string, unknown>).field_physical_column as string | undefined;
             const resolvedFromView = vc.find((v) => v.field_logical_name === cond.field_logical_name)?.field_physical_column;
             const col = physCol || resolvedFromView || LOGICAL_TO_PHYSICAL[cond.field_logical_name] || cond.field_logical_name;
             if (!col) continue;
@@ -336,7 +336,7 @@ export default function LookupDialog({
       }
 
       setTotal(countRes.count ?? 0);
-      const rows = (dataRes.data ?? []).map((row: Record<string, unknown>) => ({
+      const rows = ((dataRes.data ?? []) as unknown as Record<string, unknown>[]).map((row: Record<string, unknown>) => ({
         id: row[cfg.pk] as string,
         cells: row,
       }));

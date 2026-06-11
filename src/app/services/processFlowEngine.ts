@@ -899,7 +899,7 @@ export function mergeStageVisibilityIntoRuleState(
         defaultValue: undefined,
         clearValue: false,
         message: null,
-        filteredOptions: undefined,
+        filteredOptions: null,
       };
     }
   }

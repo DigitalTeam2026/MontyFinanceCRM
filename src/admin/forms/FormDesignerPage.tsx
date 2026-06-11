@@ -97,7 +97,7 @@ export default function FormDesignerPage({
           .eq('form_id', form.form_id);
         if (flowRefs) {
           for (const r of flowRefs) {
-            const name = (r.process_flow as { name: string } | null)?.name;
+            const name = (r.process_flow as unknown as { name: string } | null)?.name;
             if (name) usages.push(`Used by "${name}" process flow`);
           }
         }

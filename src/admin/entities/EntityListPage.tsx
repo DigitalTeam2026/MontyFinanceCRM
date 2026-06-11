@@ -112,8 +112,8 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
     if (sort.dir) {
       const key = sort.key;
       list = [...list].sort((a, b) => {
-        const av = String((a as Record<string, unknown>)[key] ?? '').toLowerCase();
-        const bv = String((b as Record<string, unknown>)[key] ?? '').toLowerCase();
+        const av = String((a as unknown as Record<string, unknown>)[key] ?? '').toLowerCase();
+        const bv = String((b as unknown as Record<string, unknown>)[key] ?? '').toLowerCase();
         const cmp = av.localeCompare(bv);
         return sort.dir === 'desc' ? -cmp : cmp;
       });

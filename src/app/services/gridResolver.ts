@@ -143,7 +143,7 @@ async function batchResolveLookup(
   if (!data) return {};
 
   const map: Record<string, string> = {};
-  for (const r of data as Record<string, unknown>[]) {
+  for (const r of data as unknown as Record<string, unknown>[]) {
     const id = String(r[pk]);
     let label = r[spec.lookupLabelField] as string | null;
     if ((!label || (typeof label === 'string' && !label.trim())) && spec.fallbackFields) {

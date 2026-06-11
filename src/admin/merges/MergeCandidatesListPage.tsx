@@ -23,15 +23,6 @@ const ENTITY_ICONS: Record<string, React.ReactNode> = {
   opportunity: <GitMerge size={12} />,
 };
 
-const STATUS_FILTERS: { value: MergeCandidateStatus | ''; label: string }[] = [
-  { value: '',              label: 'All statuses' },
-  { value: 'pending',       label: 'Pending' },
-  { value: 'in_review',     label: 'In Review' },
-  { value: 'merged',        label: 'Merged' },
-  { value: 'not_duplicate', label: 'Not Duplicate' },
-  { value: 'skipped',       label: 'Skipped' },
-];
-
 function SimScore({ score }: { score: number | null }) {
   if (score === null) return <span className="text-gray-400 text-xs">—</span>;
   const pct = Math.round(score * 100);

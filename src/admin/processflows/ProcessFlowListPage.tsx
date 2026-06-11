@@ -54,7 +54,7 @@ export default function ProcessFlowListPage({ onOpen }: ProcessFlowListPageProps
     const matchesSearch =
       f.name.toLowerCase().includes(search.toLowerCase()) ||
       (entity?.display_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      f.line_of_business.toLowerCase().includes(search.toLowerCase());
+      (f.line_of_business ?? '').toLowerCase().includes(search.toLowerCase());
     const matchesTab =
       filterTab === 'all' ||
       (filterTab === 'system' && f.is_system) ||

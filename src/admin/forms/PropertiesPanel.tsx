@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Settings, Eye, EyeOff, ChevronLeft, ChevronRight, Trash2, Plus, X,
+  Settings, EyeOff, ChevronLeft, ChevronRight, Trash2, Plus, X,
   LayoutGrid, Link2, ChevronDown, Loader2, Info,
 } from 'lucide-react';
 import type { DesignerStore } from './designerStore';

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
   ArrowLeft, Save, AlertTriangle, Plus, Trash2,
-  ShieldAlert, AlertCircle, Info, ToggleLeft, ToggleRight,
-  Zap, Search, CheckSquare,
+  ShieldAlert, AlertCircle, ToggleLeft, ToggleRight,
+  Zap, Search, CheckSquare, X,
 } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
 import type { DuplicateDetectionRule, DuplicateDetectionRuleFormData, FuzzyMatchField } from '../../types/duplicateDetection';

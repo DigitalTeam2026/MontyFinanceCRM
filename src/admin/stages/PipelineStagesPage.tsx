@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Search, RefreshCw, Filter, GitMerge, X,
-  ChevronUp, ChevronDown, Lock, AlertTriangle,
+  ChevronUp, ChevronDown, AlertTriangle,
 } from 'lucide-react';
 import type { ProcessStage, ProcessFlow, StageType, StageCategory } from '../../types/processFlow';
 import { STAGE_TYPE_META, STAGE_CATEGORIES } from '../../types/processFlow';

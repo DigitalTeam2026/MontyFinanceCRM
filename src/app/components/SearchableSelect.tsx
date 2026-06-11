@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useId } from 'react';
+import { useState, useRef, useEffect, useId, useCallback, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Search, X } from 'lucide-react';
 
 export interface SearchableSelectOption {
@@ -18,6 +19,13 @@ interface SearchableSelectProps {
   heightClass?: string;
 }
 
+interface MenuRect {
+  top: number;
+  left: number;
+  width: number;
+  openUp: boolean;
+}
+
 export default function SearchableSelect({
   options,
   value,
@@ -29,7 +37,10 @@ export default function SearchableSelect({
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [rect, setRect] = useState<MenuRect | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const id = useId();
 
@@ -42,16 +53,46 @@ export default function SearchableSelect({
       )
     : options;
 
+  // Position the portal menu relative to the trigger, flipping up if there
+  // isn't enough room below in the viewport.
+  const reposition = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const MENU_MAX = 300; // approx max menu height (search + options)
+    const spaceBelow = window.innerHeight - r.bottom;
+    const openUp = spaceBelow < MENU_MAX && r.top > spaceBelow;
+    setRect({
+      top: openUp ? r.top : r.bottom,
+      left: r.left,
+      width: r.width,
+      openUp,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (open) reposition();
+  }, [open, reposition]);
+
   useEffect(() => {
     if (!open) { setSearch(''); return; }
-    setTimeout(() => searchRef.current?.focus(), 30);
-  }, [open]);
+    const t = setTimeout(() => searchRef.current?.focus(), 30);
+    const onScroll = () => reposition();
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [open, reposition]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (containerRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -75,6 +116,7 @@ export default function SearchableSelect({
     >
       {/* Trigger */}
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
@@ -105,9 +147,20 @@ export default function SearchableSelect({
         </span>
       </button>
 
-      {/* Dropdown */}
-      {open && (
-        <div className="absolute z-[200] left-0 top-full mt-1 w-full min-w-[180px] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+      {/* Dropdown — rendered in a portal so no overflow:hidden ancestor can clip it */}
+      {open && rect && createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: 'fixed',
+            left: rect.left,
+            width: rect.width,
+            ...(rect.openUp
+              ? { bottom: window.innerHeight - rect.top + 4 }
+              : { top: rect.top + 4 }),
+          }}
+          className="z-[1000] min-w-[200px] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+        >
           {/* Search */}
           <div className="p-2 border-b border-slate-100">
             <div className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-50 rounded-lg border border-slate-200">
@@ -160,7 +213,8 @@ export default function SearchableSelect({
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

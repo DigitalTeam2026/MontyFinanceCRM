@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Save, X, Lock, Info,
+  Save, X, Info,
   ToggleLeft, ToggleRight, ShieldCheck, ArrowLeftRight, CheckCircle2,
   ChevronDown, ChevronUp, Tag, GitMerge,
 } from 'lucide-react';

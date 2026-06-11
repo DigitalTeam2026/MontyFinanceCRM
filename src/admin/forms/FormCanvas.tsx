@@ -68,7 +68,7 @@ interface FormCanvasProps {
 export default function FormCanvas({ store, onActiveSectionChange }: FormCanvasProps) {
   const {
     layout, selection, setSelection,
-    addSection, updateSection,
+    addSection,
     removeSection, removeControl,
     addControl, moveControlCrossSection,
   } = store;
@@ -555,7 +555,7 @@ function TwoColLayout({
 
   return (
     <div className="space-y-0">
-      {rows.map((row, rowIdx) => {
+      {rows.map((row, _rowIdx) => {
         // The horizontal drop slot before this row uses the row's first control index
         const rowInsertIdx = row.leftIdx;
         const isSpan2 = row.left?.column_span === 2;

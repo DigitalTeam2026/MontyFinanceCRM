@@ -138,7 +138,7 @@ async function checkColumnInViews(
     .eq('field_definition_id', fieldDefinitionId);
 
   for (const row of colRows ?? []) {
-    const vd = row.view_definition as { name: string; view_id?: string } | null;
+    const vd = row.view_definition as unknown as { name: string; view_id?: string } | null;
     deps.push({
       type: 'view',
       name: vd?.name ?? 'Unknown View',

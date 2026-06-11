@@ -42,7 +42,7 @@ export async function createEntityWithTable(form: EntityFormData): Promise<Entit
   const result = data as { ok: boolean; entity?: Record<string, unknown>; error?: string } | null;
   if (!result?.ok) throw new Error(result?.error ?? 'Failed to create entity');
 
-  supabase.rpc('sync_system_admin_privileges').then(() => {}).catch(() => {});
+  supabase.rpc('sync_system_admin_privileges').then(() => {}, () => {});
   return result.entity as unknown as EntityDefinition;
 }
 
@@ -57,7 +57,7 @@ export async function createEntity(form: EntityFormData): Promise<EntityDefiniti
     if (error.code === '23505') throw new Error(`An entity with the logical name "${form.logical_name}" already exists.`);
     throw error;
   }
-  supabase.rpc('sync_system_admin_privileges').then(() => {}).catch(() => {});
+  supabase.rpc('sync_system_admin_privileges').then(() => {}, () => {});
   return data as EntityDefinition;
 }
 

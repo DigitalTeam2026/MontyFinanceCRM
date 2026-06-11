@@ -1,4 +1,4 @@
-import { Database, Settings, ChevronRight, GitBranch, ShieldCheck, Map, BarChart2, LogOut, ExternalLink, GitMerge, Milestone, ScanSearch, ClipboardCheck, FileWarning, KeyRound, ShieldAlert, Activity, Zap, Building2 } from 'lucide-react';
+import { Database, Settings, ChevronRight, GitBranch, ShieldCheck, Map, BarChart2, LogOut, ExternalLink, GitMerge, Milestone, ScanSearch, ClipboardCheck, FileWarning, KeyRound, ShieldAlert, Activity, Zap, Building2, FolderCog } from 'lucide-react';
 import { getInitials } from '../../app/utils/initials';
 
 interface SideNavItem {
@@ -42,6 +42,7 @@ const SECTIONS: { label: string; items: SideNavItem[] }[] = [
       { id: 'digitalrules',     label: 'Digital Rules',       icon: <ShieldAlert size={14} /> },
       { id: 'merges',            label: 'Merge Center',        icon: <GitMerge size={14} /> },
       { id: 'integrations',      label: 'API Integrations',    icon: <Zap size={14} /> },
+      { id: 'documentlocation',  label: 'Document Location',    icon: <FolderCog size={14} /> },
     ],
   },
   {

@@ -758,7 +758,7 @@ interface FieldEditorPanelProps {
 }
 
 export default function FieldEditorPanel({ entityId, field, fieldTypes, entities, onSave, onClose }: FieldEditorPanelProps) {
-  const { showSuccess, showError } = useToast();
+  const { showError } = useToast();
   const isEdit = !!field;
   const isSystemField = field?.is_system === true;
   const schemaLocked = isSystemField || (isEdit && field?.is_schema_editable === false);

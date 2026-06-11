@@ -45,7 +45,7 @@ export default function CloseOpportunityModal({
       .order('sort_order')
       .then(({ data }) => {
         if (!data) return;
-        const stateReasons = (data as { reason_value: number; display_label: string; color: string | null; statecode_definition: { state_value: number } }[])
+        const stateReasons = (data as unknown as { reason_value: number; display_label: string; color: string | null; statecode_definition: { state_value: number } }[])
           .filter((d) => d.statecode_definition.state_value === targetState)
           .map((d) => ({ value: d.reason_value, label: d.display_label }));
 

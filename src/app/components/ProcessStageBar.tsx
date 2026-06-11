@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Trophy, XCircle, AlertTriangle, X, Clock, ChevronDown, ChevronRight, ChevronLeft, ArrowLeftRight, AlertCircle, Link2, GitBranch, Lock, Maximize2, Minimize2 } from 'lucide-react';
+import { Check, Trophy, XCircle, AlertTriangle, X, Clock, ChevronRight, ChevronLeft, ArrowLeftRight, AlertCircle, Link2, GitBranch, Lock, Maximize2, Minimize2 } from 'lucide-react';
 import type { RecordData } from '../services/recordService';
 import type { FormRuleState } from '../services/businessRulesEngine';
 import type { DesignerLayout } from '../../types/form';
@@ -76,7 +76,7 @@ function StagePopup({
   onNextStage,
   onPrevStage,
   onFinish,
-  isQualifyFlow = false,
+  isQualifyFlow: _isQualifyFlow = false,
   onClose,
   isCurrentStage,
   isPast,
@@ -762,7 +762,7 @@ export default function ProcessStageBar({
         .eq('is_active', true);
 
       const fdMap = new Map<string, { display_name: string; field_type_name: string; config_json: Record<string, unknown> | null; lookup_entity_id: string | null }>();
-      for (const fd of (fieldDefs ?? []) as Array<{ logical_name: string; display_name: string; config_json: Record<string, unknown> | null; lookup_entity_id: string | null; field_type: { name: string } | null }>) {
+      for (const fd of (fieldDefs ?? []) as unknown as Array<{ logical_name: string; display_name: string; config_json: Record<string, unknown> | null; lookup_entity_id: string | null; field_type: { name: string } | null }>) {
         fdMap.set(fd.logical_name, {
           display_name: fd.display_name,
           field_type_name: fd.field_type?.name ?? 'text',
@@ -1031,10 +1031,7 @@ export default function ProcessStageBar({
   const effectiveLength = runtimeIdx >= 0 ? activeStages.length : displayStages.length;
   const hasSameEntityNextStage = !isTerminal && !isFinished && currentIdx >= 0 && effectiveIdx < effectiveLength - 1;
   const hasNextStage = hasSameEntityNextStage;
-  const isFinalActiveStage = !isTerminal && !isFinished && !hasNextStage && currentIdx >= 0;
   const canGoNext = !isReadonly && hasNextStage;
-  // Allow going back even when finished — stages are never permanently locked
-  const canGoPrev = !isReadonly && !isTerminal && (isFinished ? currentIdx >= 0 : currentIdx > 0);
 
   // Separate active (track) stages from terminal stages
   const trackStages = pipelineStages.filter((s) => s.stage_type === 'active');

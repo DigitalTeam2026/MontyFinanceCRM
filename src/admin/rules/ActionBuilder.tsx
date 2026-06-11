@@ -189,23 +189,6 @@ interface ActionBuilderProps {
   onChange: (set: RuleActionSet) => void;
 }
 
-function normalizeActionIds(set: RuleActionSet): RuleActionSet {
-  const seen = new Set<string>();
-  const fix = (a: RuleAction): RuleAction => {
-    if (!a.id || seen.has(a.id)) {
-      const newId = uid();
-      seen.add(newId);
-      return { ...a, id: newId };
-    }
-    seen.add(a.id);
-    return a;
-  };
-  return {
-    if_actions: set.if_actions.map(fix),
-    else_actions: set.else_actions.map(fix),
-  };
-}
-
 export default function ActionBuilder({ fields, actionSet, onChange }: ActionBuilderProps) {
   const [selectedIfId, setSelectedIfId] = useState<string | null>(null);
   const [selectedElseId, setSelectedElseId] = useState<string | null>(null);
@@ -948,7 +931,7 @@ function FieldValueInput({
         const nameCol = TABLE_NAME_COL[table] ?? 'name';
         const { data } = await supabase.from(table).select(`${pkCol}, ${nameCol}`).order(nameCol).limit(200);
         setLookupOptions(
-          (data ?? []).map((r: Record<string, unknown>) => ({
+          ((data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => ({
             value: String(r[pkCol] ?? ''),
             label: String(r[nameCol] ?? r[pkCol] ?? ''),
           }))

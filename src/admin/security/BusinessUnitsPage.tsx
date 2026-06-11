@@ -88,7 +88,6 @@ export default function BusinessUnitsPage() {
 
   if (loading) return <div className="flex-1 flex items-center justify-center"><RefreshCw size={20} className="animate-spin text-slate-400" /></div>;
 
-  const parentMap = Object.fromEntries(units.map((u) => [u.business_unit_id, u.name]));
 
   const buildTree = (parentId: string | null, depth = 0): BusinessUnit[] => {
     const children = units.filter((u) => (u.parent_business_unit_id ?? null) === parentId);

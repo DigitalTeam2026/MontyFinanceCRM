@@ -4,7 +4,6 @@ import type {
   RelationshipDefinitionWithEntities,
   RelationshipFormData,
   RelationshipType,
-  RelationshipStorageType,
 } from '../../types/relationship';
 import type { EntityDefinition } from '../../types/entity';
 import type { FieldDefinition } from '../../types/field';
