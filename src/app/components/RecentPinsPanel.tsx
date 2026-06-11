@@ -42,18 +42,18 @@ function Section({ label, icon, items, onNavigate, defaultOpen = true, onClear }
       <div className="flex items-center">
         <button
           onClick={() => setOpen((v) => !v)}
-          className="flex-1 flex items-center gap-2 px-4 py-1.5 text-[10.5px] font-medium uppercase text-[#7a8ca8] hover:text-[#d4dceb] transition-colors"
-          style={{ letterSpacing: '1.1px' }}
+          className="flex-1 flex items-center gap-2 px-3 py-1.5 text-[10px] font-semibold uppercase text-[#9ca3af] hover:text-[#374151] transition-colors"
+          style={{ letterSpacing: '0.8px' }}
         >
-          <span className="text-[#7a8ca8]">{icon}</span>
+          <span className="text-[#9ca3af]">{icon}</span>
           <span className="flex-1 text-left">{label}</span>
-          {open ? <ChevronDown size={10} className="text-[#7a8ca8]" /> : <ChevronRight size={10} className="text-[#7a8ca8]" />}
+          {open ? <ChevronDown size={10} className="text-[#9ca3af]" /> : <ChevronRight size={10} className="text-[#9ca3af]" />}
         </button>
         {onClear && (
           <button
             onClick={onClear}
             title="Clear recent"
-            className="pr-3 pl-1 py-1.5 text-[#7a8ca8] hover:text-[#d4dceb] transition-colors"
+            className="pr-3 pl-1 py-1.5 text-[#9ca3af] hover:text-[#374151] transition-colors"
           >
             <X size={11} />
           </button>
@@ -67,22 +67,22 @@ function Section({ label, icon, items, onNavigate, defaultOpen = true, onClear }
               key={item.id}
               onClick={() => onNavigate(item.module, item.entity, item.record_id)}
               title={item.record_label}
-              className="w-full flex items-center gap-2 text-[11px] text-[#d4dceb] transition-colors group"
-              style={{ padding: '4px 16px' }}
+              className="w-full flex items-center gap-2 text-[11px] text-[#374151] transition-colors group"
+              style={{ padding: '4px 14px' }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#13284a';
-                e.currentTarget.style.color = 'white';
+                e.currentTarget.style.background = '#eceef1';
+                e.currentTarget.style.color = '#1f2937';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = '#d4dceb';
+                e.currentTarget.style.color = '#374151';
               }}
             >
-              <span className="text-[#7a8ca8] shrink-0">
+              <span className="text-[#9ca3af] shrink-0">
                 {ENTITY_ICONS[item.entity]}
               </span>
               <span className="truncate text-left">{item.record_label || item.record_id}</span>
-              <span className="ml-auto text-[9px] text-[#7a8ca8] shrink-0 capitalize">{item.entity.slice(0, 4)}</span>
+              <span className="ml-auto text-[9px] text-[#9ca3af] shrink-0 capitalize">{item.entity.slice(0, 4)}</span>
             </button>
           ))}
         </div>
@@ -116,7 +116,7 @@ export default function RecentPinsPanel({ userId, onNavigate, refreshKey }: Rece
   if (recent.length === 0 && pinned.length === 0) return null;
 
   return (
-    <div className="pt-1 space-y-0.5" style={{ borderTop: '1px solid var(--sidebar-border)' }}>
+    <div className="pt-1 space-y-0.5" style={{ borderTop: '1px solid #e5e7eb' }}>
       <Section
         label="Pinned"
         icon={<Star size={10} />}

@@ -85,14 +85,13 @@ function HighlightLegend({ entity }: { entity: AppEntity }) {
   if (rules.length === 0) return null;
   return (
     <div
-      className="flex items-center gap-3 px-4 py-1.5 overflow-x-auto shrink-0"
-      style={{ background: 'var(--ink-50)', borderBottom: '1px solid var(--divider)' }}
+      className="flex items-center justify-end gap-4 px-5 py-1.5 overflow-x-auto shrink-0 bg-white"
+      style={{ borderBottom: '1px solid #e7eaf1' }}
     >
-      <span className="text-[10px] font-semibold text-[var(--ink-400)] uppercase tracking-wide shrink-0">Highlights</span>
       {rules.map((r) => (
-        <span key={r.id} className="flex items-center gap-1 shrink-0">
+        <span key={r.id} className="flex items-center gap-1.5 shrink-0">
           <span className={`w-2 h-2 rounded-full ${HIGHLIGHT_DOT_COLORS[r.color] ?? 'bg-[var(--ink-300)]'}`} />
-          <span className="text-[10px] text-[var(--ink-500)]">{r.label}</span>
+          <span className="text-[11px] text-[#5b6472]">{r.label}</span>
         </span>
       ))}
     </div>
@@ -186,7 +185,8 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
   }, [entityName, staticEntityDefId]);
 
   const entityDefinitionId = resolvedEntityDefId;
-  const isRedesign = entity === 'accounts';
+  // Apply the Dynamics-style redesign consistently across every entity list.
+  const isRedesign = true;
   const priv = getEntityPrivilege(entityName);
   const canRead = priv.can_read;
   const canCreate = priv.can_create && !creationBlocked;
@@ -751,7 +751,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
     }
 
     if (colType === 'currency') {
-      return <span className="text-[var(--ink-700)] text-[12px] font-medium">{formatCurrency(val, row.currency_code as string | null)}</span>;
+      return <span className="text-[var(--ink-700)] text-[14px] font-medium">{formatCurrency(val, row.currency_code as string | null)}</span>;
     }
 
     if (colType === 'badge') {
@@ -790,7 +790,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
     if (colType === 'link') {
       return (
         <span
-          className="text-[var(--link)] cursor-pointer font-medium text-[12px] hover:underline"
+          className="text-[var(--link)] cursor-pointer font-semibold text-[14px] hover:underline"
           onClick={(e) => { e.stopPropagation(); onOpenRecord?.(row.id, strVal); }}
         >
           {strVal || '—'}
@@ -801,13 +801,16 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
     if (colType === 'owner') {
       const emailStr = String(row[colKey] ?? '');
       if (!emailStr || emailStr === '—' || /^[0-9a-f]{8}-/i.test(emailStr)) return <span className="text-[var(--ink-300)] text-[11px]">—</span>;
-      const initials = emailStr.split('@')[0].slice(0, 2).toUpperCase();
       const shortName = emailStr.split('@')[0];
+      const nameParts = shortName.split(/[.\-_+\s]+/).filter(Boolean);
+      const initials = (nameParts.length >= 2
+        ? nameParts[0][0] + nameParts[1][0]
+        : shortName.slice(0, 2)).toUpperCase();
       if (isRedesign) {
         return (
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-2">
             <span className="rd-avatar">{initials}</span>
-            <span className="text-[12px] text-[#374151] font-medium truncate max-w-[100px]">{shortName}</span>
+            <span className="text-[13px] text-[#374151] font-medium truncate max-w-[120px]">{shortName}</span>
           </span>
         );
       }
@@ -894,17 +897,18 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           .rd-pill-amber{background:#fdf4e3;color:#c2820a;}.rd-pill-amber .rd-pill-dot{background:#c2820a;}
           .rd-pill-red{background:#fee2e2;color:#dc2626;}.rd-pill-red .rd-pill-dot{background:#dc2626;}
           .rd-pill-blue{background:#eff6ff;color:#3b6fff;}.rd-pill-blue .rd-pill-dot{background:#3b6fff;}
-          .rd-avatar{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#3b6fff,#22d3ee);color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-transform:uppercase;}
+          .rd-avatar{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#3b6fff,#22d3ee);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-transform:uppercase;}
           .rd-active .rd-row:hover td{background:#eef3ff !important;}
         `}</style>
       )}
-      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: isRedesign ? '#eef1f7' : 'var(--bg)' }}>
-        {/* --- Command bar (44px, white/gradient, bottom border) --- */}
+      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: '#ffffff' }}>
+        <div className="flex-1 flex flex-col overflow-hidden bg-white">
+        {/* --- Command bar (48px, white/gradient, bottom border) --- */}
         <div
-          className="h-[44px] flex items-center gap-0.5 px-3 shrink-0"
+          className="h-[48px] flex items-center gap-1 px-3 shrink-0"
           style={{
-            borderBottom: selected.size > 0 ? '1px solid #d9e4ff' : '1px solid #e7eaf1',
-            background: selected.size > 0 ? 'linear-gradient(90deg,#eef3ff,#f3f9ff)' : 'white',
+            borderBottom: selected.size > 0 ? '1px solid #dbe4f3' : '1px solid #e7eaf1',
+            background: selected.size > 0 ? '#f4f7fc' : 'white',
             fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif",
           }}
           ref={toolbarRef}
@@ -912,7 +916,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           {selected.size > 0 ? (
             /* Contextual command bar when rows selected */
             <div className="flex items-center gap-0.5 flex-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-semibold text-[#3b6fff] shrink-0" style={{ background: 'white', border: '1px solid #cdddff', borderRadius: 99, boxShadow: '0 1px 4px rgba(59,111,255,.12)' }}>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-semibold text-[#2563eb] shrink-0" style={{ background: 'white', border: '1px solid #cdddff', borderRadius: 6 }}>
                 {selected.size} selected
                 <button onClick={() => setSelected(new Set())} className="ml-0.5 opacity-70 hover:opacity-100 leading-none">
                   <X size={11} />
@@ -957,10 +961,10 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
               {canCreate && onNewRecord && (
                 <button
                   onClick={onNewRecord}
-                  className="flex items-center gap-1.5 px-3 h-[30px] text-[12px] font-semibold text-white shrink-0 transition"
-                  style={{ background: 'linear-gradient(135deg,#3b6fff,#5b87ff)', borderRadius: 10, boxShadow: '0 7px 16px -5px rgba(59,111,255,.55)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.07)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.filter = ''; }}
+                  className="flex items-center gap-1.5 px-3 h-[32px] text-[12px] font-semibold text-white shrink-0 transition-colors"
+                  style={{ background: '#2563eb', borderRadius: 6 }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#1d4ed8'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = '#2563eb'; }}
                 >
                   <Plus size={13} />
                   <span>New</span>
@@ -1080,7 +1084,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
 
         {/* --- View row (white, bottom border) --- */}
         <div
-          className="flex items-center gap-2 px-3 py-2 bg-white shrink-0"
+          className="flex items-center gap-3 px-4 py-2 bg-white shrink-0"
           style={{ borderBottom: '1px solid #e7eaf1', fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif" }}
         >
           <ViewSelector
@@ -1097,18 +1101,16 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           <div className="flex-1" />
           <button
             onClick={() => setShowColCustomizer((v) => !v)}
-            className="flex items-center gap-1.5 px-2.5 h-[28px] text-[12px] font-medium text-[#5b6472] bg-white shrink-0 transition hover:bg-[#f4f6fb] hover:text-[#161a22]"
-            style={{ border: '1px solid #e7eaf1', borderRadius: 10 }}
+            className="flex items-center gap-1.5 px-2 h-[32px] text-[13px] font-medium text-[#5b6472] shrink-0 transition rounded-md hover:bg-[#f4f6fb] hover:text-[#161a22]"
           >
-            <Columns3 size={13} />
+            <Columns3 size={14} />
             <span>Edit columns</span>
           </button>
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className="flex items-center gap-1.5 px-2.5 h-[28px] text-[12px] font-medium text-[#5b6472] bg-white shrink-0 transition hover:bg-[#f4f6fb] hover:text-[#161a22]"
-            style={{ border: '1px solid #e7eaf1', borderRadius: 10 }}
+            className="flex items-center gap-1.5 px-2 h-[32px] text-[13px] font-medium text-[#5b6472] shrink-0 transition rounded-md hover:bg-[#f4f6fb] hover:text-[#161a22]"
           >
-            <Filter size={13} />
+            <Filter size={14} />
             <span>Edit filters</span>
           </button>
           <div className="relative w-[210px]">
@@ -1118,7 +1120,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
               value={search}
               onChange={(e) => onSearchChange?.(e.target.value)}
               placeholder="Filter by keyword"
-              className="w-full h-[28px] pl-8 pr-7 text-[12px] text-[#374151] placeholder-[#9ca3af] focus:outline-none transition"
+              className="w-full h-[32px] pl-8 pr-7 text-[12px] text-[#374151] placeholder-[#9ca3af] focus:outline-none transition"
               style={{ background: '#f4f6fb', border: '1px solid transparent', borderRadius: 10 }}
               onFocus={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.border = '1px solid #e7eaf1'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.12)'; }}
               onBlur={(e) => { if (!e.currentTarget.value) { e.currentTarget.style.background = '#f4f6fb'; e.currentTarget.style.border = '1px solid transparent'; } e.currentTarget.style.boxShadow = ''; }}
@@ -1174,7 +1176,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
             <table className="w-full text-sm border-separate border-spacing-0">
               <thead className="sticky top-0 z-10">
                 <tr>
-                  <th className={`w-10 px-3 py-2 ${isRedesign ? 'bg-[#f0f4ff]' : 'bg-[#fafbfc]'}`} style={{ borderBottom: '1px solid var(--divider)' }}>
+                  <th className={`w-10 px-3 py-2 ${isRedesign ? 'bg-[#f3f4f6]' : 'bg-[#fafbfc]'}`} style={{ borderBottom: '1px solid var(--divider)' }}>
                     <input
                       type="checkbox"
                       checked={allSelected}
@@ -1190,18 +1192,18 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                       <th
                         key={col.key}
                         style={col.width ? { width: col.width, borderBottom: '1px solid var(--divider)' } : { borderBottom: '1px solid var(--divider)' }}
-                        className={`${isRedesign ? 'bg-[#f0f4ff]' : 'bg-[#fafbfc]'} text-left whitespace-nowrap select-none relative group/th`}
+                        className={`${isRedesign ? 'bg-[#f3f4f6]' : 'bg-[#fafbfc]'} text-left whitespace-nowrap select-none relative group/th`}
                       >
                         <button
                           onClick={(e) => openColMenu(e, col.key)}
-                          className={`w-full flex items-center gap-1.5 px-3 py-2 text-left transition-colors ${
+                          className={`w-full flex items-center gap-1.5 px-3.5 py-2.5 text-left transition-colors ${
                             colPanelOpen || colHasFilter
                               ? 'bg-[var(--ink-50)]'
                               : 'hover:bg-[var(--ink-50)]'
                           }`}
                         >
-                          <span className={`text-[11.5px] font-semibold truncate ${
-                            colHasFilter ? 'text-[var(--navy-accent)]' : 'text-[var(--navy-accent)]'
+                          <span className={`text-[12px] font-semibold truncate ${
+                            colHasFilter ? 'text-[var(--navy-accent)]' : 'text-[#3d4453]'
                           }`}>
                             {col.labelOverride || col.label}
                           </span>
@@ -1219,13 +1221,13 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                             {colHasFilter && (
                               <Filter size={10} className="text-[var(--navy-accent)]" />
                             )}
-                            <ChevronDown size={11} className={`transition-transform ${colPanelOpen ? 'rotate-180 text-[var(--navy-accent)]' : 'text-[var(--ink-300)]'}`} />
+                            <ChevronDown size={11} className={`transition-all ${colPanelOpen ? 'rotate-180 text-[var(--navy-accent)] opacity-100' : 'text-[var(--ink-300)] opacity-0 group-hover/th:opacity-100'}`} />
                           </span>
                         </button>
                       </th>
                     );
                   })}
-                  <th className={`w-36 px-3 py-2 ${isRedesign ? 'bg-[#f0f4ff]' : 'bg-[#fafbfc]'}`} style={{ borderBottom: '1px solid var(--divider)' }} />
+                  <th className={`w-36 px-3 py-2 ${isRedesign ? 'bg-[#f3f4f6]' : 'bg-[#fafbfc]'}`} style={{ borderBottom: '1px solid var(--divider)' }} />
                 </tr>
               </thead>
               <tbody>
@@ -1288,7 +1290,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                             onOpenRecord?.(row.id, label);
                           }
                         }}
-                        style={{ height: 34 }}
+                        style={{ height: 44 }}
                         className={`group transition-colors duration-100 cursor-pointer${isRedesign ? ' rd-row' : ''} ${
                           isEditingThis
                             ? 'bg-blue-50'
@@ -1317,8 +1319,8 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                         {visibleColumns.map((col) => (
                           <td
                             key={col.key}
-                            className={`px-3 whitespace-nowrap ${isEditingThis ? 'py-1' : 'py-1'}`}
-                            style={{ borderBottom: '1px solid var(--divider)', padding: '6px 10px' }}
+                            className="whitespace-nowrap text-[14px]"
+                            style={{ borderBottom: '1px solid var(--divider)', padding: '9px 14px' }}
                             onClick={isEditingThis ? (e) => e.stopPropagation() : undefined}
                           >
                             {renderCell(row, col)}
@@ -1380,17 +1382,17 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
         {/* --- Alphabet bar (30px) --- */}
         <AlphabetBar />
 
-        {/* --- Pagination footer (36px) --- */}
+        {/* --- Pagination footer (42px) --- */}
         <div
-          className="h-[36px] px-4 flex items-center justify-between shrink-0 bg-white"
+          className="h-[42px] px-5 flex items-center justify-between shrink-0 bg-white"
           style={{ borderTop: '1px solid var(--border)' }}
         >
           <div className="flex items-center gap-3">
             {selected.size > 0 && (
-              <span className="text-[11px] text-[var(--navy-accent)] font-semibold">{selected.size} selected</span>
+              <span className="text-[12px] text-[var(--navy-accent)] font-semibold">{selected.size} selected</span>
             )}
             {selected.size > 0 && <span className="text-[var(--ink-200)]">|</span>}
-            <span className="text-[11px] text-[var(--ink-500)] tabular-nums">
+            <span className="text-[12px] text-[var(--ink-500)] tabular-nums">
               {loading
                 ? <span className="inline-block w-28 h-3 rounded animate-pulse align-middle" style={{ background: 'var(--ink-100)' }} />
                 : total === 0
@@ -1445,6 +1447,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
               </PgBtn>
             </div>
           </div>
+        </div>
         </div>
       </div>
 
@@ -1546,12 +1549,12 @@ function CmdBtn({ children, onClick, active }: { children: React.ReactNode; onCl
   return (
     <button
       onClick={onClick}
-      className={`h-[30px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors ${
+      className={`h-[32px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors ${
         active
-          ? 'text-[#3b6fff] bg-[#eef3ff]'
-          : 'text-[#5b6472] hover:bg-[#f4f6fb] hover:text-[#161a22]'
+          ? 'text-[#2563eb] bg-[#eef2f7]'
+          : 'text-[#4b5563] hover:bg-[#f1f3f5] hover:text-[#1f2937]'
       }`}
-      style={{ borderRadius: 10, border: 'none' }}
+      style={{ borderRadius: 6, border: 'none' }}
     >
       {children}
     </button>
@@ -1580,13 +1583,13 @@ function AlphabetBar() {
   const letters = ['All', '#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
   return (
     <div
-      className="h-[30px] flex items-center justify-center gap-0 px-2 shrink-0 bg-white"
+      className="h-[34px] flex items-center justify-center gap-0 px-3 shrink-0 bg-white"
       style={{ borderTop: '1px solid var(--divider)' }}
     >
       {letters.map((l) => (
         <button
           key={l}
-          className="flex-1 max-w-[28px] h-full flex items-center justify-center text-[11px] font-medium text-[var(--ink-500)] hover:text-[var(--navy-accent)] hover:bg-[var(--ink-50)] transition-colors"
+          className="flex-1 max-w-[30px] h-full flex items-center justify-center text-[12px] font-medium text-[var(--ink-500)] hover:text-[var(--navy-accent)] hover:bg-[var(--ink-50)] transition-colors"
         >
           {l}
         </button>

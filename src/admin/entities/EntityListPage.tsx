@@ -3,10 +3,46 @@ import {
   Plus, Search, Database, Trash2, RefreshCw, Lock,
   ChevronUp, ChevronDown, MoreHorizontal, Download, Upload,
   Filter, X, ArrowUpDown,
+  Building2, Users, UserPlus, Target, Ticket, Package, Factory,
+  DollarSign, Map, Globe, Megaphone, Award, ShoppingCart, FileText,
+  Briefcase, Truck, Tag, Calendar, Mail, Phone, Box, Boxes, Wrench,
+  BookOpen, Layers, Folder, Star, Component, Hash, Grid3x3,
+  type LucideIcon,
 } from 'lucide-react';
 import type { EntityDefinition } from '../../types/entity';
 import { fetchEntities, softDeleteEntity } from '../../services/entityService';
 import ConfirmDialog from '../components/ConfirmDialog';
+
+// Per-entity icon resolution — each entity gets its own icon by logical name,
+// with a deterministic fallback so unrecognized entities still differ visually.
+const ENTITY_ICON_MAP: Record<string, LucideIcon> = {
+  account: Building2, contact: Users, lead: UserPlus,
+  opportunity: Target, ticket: Ticket, case: Ticket,
+  product: Package, industry: Factory, currency: DollarSign,
+  territory: Map, region: Globe, campaign: Megaphone,
+  competitor: Award, order: ShoppingCart, invoice: FileText,
+  quote: FileText, contract: Briefcase, vendor: Truck,
+  supplier: Truck, category: Tag, activity: Calendar,
+  task: Calendar, email: Mail, call: Phone, note: FileText,
+  document: FileText, user: Users, team: Users, role: Lock,
+  price: DollarSign, unit: Box, warehouse: Boxes, asset: Package,
+  service: Wrench, knowledge: BookOpen, article: BookOpen,
+  segment: Layers,
+};
+const FALLBACK_ICONS: LucideIcon[] = [
+  Box, Layers, Tag, Folder, FileText, Briefcase, Star,
+  ShoppingCart, Globe, Boxes, Component, Hash, Grid3x3, Calendar,
+];
+
+function resolveEntityIcon(entity: EntityDefinition): LucideIcon {
+  const name = (entity.logical_name || entity.display_name || '').toLowerCase();
+  for (const key of Object.keys(ENTITY_ICON_MAP)) {
+    if (name === key || name.includes(key)) return ENTITY_ICON_MAP[key];
+  }
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return FALLBACK_ICONS[h % FALLBACK_ICONS.length] ?? Database;
+}
 
 interface EntityListPageProps {
   onNew: () => void;
@@ -123,7 +159,7 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
   const selectedCustom = [...selected].filter((id) => entities.find((e) => e.entity_definition_id === id)?.is_custom);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-[#fafbfc]">
+    <div className="flex-1 flex flex-col min-h-0 bg-white">
       {/* Command Bar */}
       <div className="bg-white border-b border-slate-200 px-5 py-2 flex items-center gap-1.5 shrink-0">
         <CmdButton primary onClick={onNew} icon={<Plus size={13} />}>New table</CmdButton>
@@ -170,7 +206,7 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
             placeholder="Search tables..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 pr-8 py-1.5 text-[12px] border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 w-64 placeholder:text-slate-400 transition"
+            className="pl-8 pr-8 h-[32px] text-[12px] border border-[#e7eaf1] rounded-lg bg-[#f4f6fb] focus:outline-none focus:bg-white focus:border-[#d1d5db] focus:ring-2 focus:ring-blue-500/15 w-64 placeholder:text-[#9ca3af] transition"
           />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -210,7 +246,7 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
         ) : (
           <table className="w-full text-[12px] border-collapse">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-slate-50 border-b border-slate-200">
+              <tr className="bg-[#f3f4f6] border-b border-[#e5e7eb]">
                 <th className="w-9 px-3 py-0">
                   <input
                     type="checkbox"
@@ -231,6 +267,7 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
             <tbody>
               {filtered.map((entity) => {
                 const isSelected = selected.has(entity.entity_definition_id);
+                const EntityIcon = resolveEntityIcon(entity);
                 return (
                   <tr
                     key={entity.entity_definition_id}
@@ -252,7 +289,7 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
                         <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
                           entity.is_custom ? 'bg-amber-50 ring-1 ring-amber-200' : 'bg-slate-50 ring-1 ring-slate-200'
                         }`}>
-                          <Database size={13} className={entity.is_custom ? 'text-amber-500' : 'text-slate-400'} />
+                          <EntityIcon size={13} className={entity.is_custom ? 'text-amber-500' : 'text-slate-400'} />
                         </div>
                         <div className="min-w-0">
                           <p className="font-semibold text-slate-800 truncate leading-tight">{entity.display_name}</p>
@@ -372,12 +409,12 @@ function StatusDot({ active }: { active: boolean }) {
 function CmdButton({ children, onClick, icon, primary, danger }: {
   children: React.ReactNode; onClick?: () => void; icon?: React.ReactNode; primary?: boolean; danger?: boolean;
 }) {
-  const base = 'flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium rounded transition-all';
+  const base = 'flex items-center gap-1.5 h-[32px] px-3 text-[12px] font-medium rounded-md transition-all';
   const style = primary
-    ? `${base} bg-blue-600 hover:bg-blue-700 text-white shadow-sm`
+    ? `${base} bg-[#2563eb] hover:bg-[#1d4ed8] text-white`
     : danger
-      ? `${base} text-red-600 hover:bg-red-50`
-      : `${base} text-slate-600 hover:bg-slate-100`;
+      ? `${base} text-red-600 bg-white border border-red-200 hover:bg-red-50`
+      : `${base} text-[#5b6472] bg-white border border-[#e2e6ee] hover:bg-[#f4f6fb] hover:text-[#161a22]`;
   return <button className={style} onClick={onClick}>{icon}{children}</button>;
 }
 

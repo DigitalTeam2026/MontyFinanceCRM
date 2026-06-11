@@ -301,14 +301,14 @@ export default function ViewSelector({
       {/* Trigger */}
       <button
         onClick={() => { const w = !open; setOpen(w); if (w) load(); }}
-        className="flex items-center gap-1.5 max-w-[220px] transition"
+        className="flex items-center gap-1.5 max-w-[260px] transition"
       >
-        <span className="text-[18px] font-semibold text-[var(--ink-900)] truncate">
+        <span className="text-[20px] font-semibold text-[var(--ink-900)] truncate">
           {activeView?.name ?? (loading ? '' : 'All Records')}
         </span>
         {loading
-          ? <Loader2 size={12} className="animate-spin text-[var(--ink-300)] shrink-0" />
-          : <ChevronDown size={13} className="text-[var(--ink-400)] shrink-0" />
+          ? <Loader2 size={14} className="animate-spin text-[var(--ink-300)] shrink-0" />
+          : <ChevronDown size={15} className="text-[var(--ink-400)] shrink-0" />
         }
       </button>
 

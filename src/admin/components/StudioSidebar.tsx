@@ -63,21 +63,21 @@ export default function StudioSidebar({ activeModule, onNavigate, userEmail, use
   const initials = getInitials(userName, userEmail);
 
   return (
-    <aside className="w-52 bg-[#1a2332] text-slate-300 flex flex-col h-full shrink-0 border-r border-[#0d1520]">
-      <div className="px-4 py-3.5 border-b border-[#0d1520] flex items-center gap-2.5">
+    <aside className="w-52 bg-[#f7f8fa] text-[#374151] flex flex-col h-full shrink-0 border-r border-[#e5e7eb]">
+      <div className="px-4 py-3.5 border-b border-[#e5e7eb] flex items-center gap-2.5">
         <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center shrink-0">
           <Settings size={12} className="text-white" />
         </div>
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold text-white leading-none truncate">Admin Studio</p>
-          <p className="text-[9px] text-slate-500 mt-0.5 leading-none">Configuration</p>
+          <p className="text-[11px] font-semibold text-[#1e293b] leading-none truncate">Admin Studio</p>
+          <p className="text-[9px] text-[#9ca3af] mt-0.5 leading-none">Configuration</p>
         </div>
       </div>
 
       <nav className="flex-1 overflow-y-auto py-2">
         {SECTIONS.map((section) => (
           <div key={section.label} className="mb-1">
-            <p className="px-4 pt-3 pb-1 text-[9px] font-semibold text-slate-600 uppercase tracking-widest select-none">
+            <p className="px-4 pt-3 pb-1 text-[9px] font-semibold text-[#9ca3af] uppercase tracking-widest select-none">
               {section.label}
             </p>
             {section.items.map((item) => {
@@ -88,16 +88,16 @@ export default function StudioSidebar({ activeModule, onNavigate, userEmail, use
                   onClick={() => onNavigate(item.id)}
                   className={`w-full flex items-center gap-2.5 px-4 py-2 text-[12px] transition-colors relative ${
                     active
-                      ? 'bg-blue-600/20 text-white'
-                      : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                      ? 'bg-[#e9eef7] text-[#1e293b]'
+                      : 'text-[#4b5563] hover:bg-[#eceef1] hover:text-[#1f2937]'
                   }`}
                 >
                   {active && (
-                    <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-500" />
+                    <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#2563eb]" />
                   )}
-                  <span className={active ? 'text-blue-400' : 'text-slate-500'}>{item.icon}</span>
+                  <span className={active ? 'text-[#2563eb]' : 'text-[#6b7280]'}>{item.icon}</span>
                   <span className="flex-1 text-left font-medium">{item.label}</span>
-                  {active && <ChevronRight size={11} className="text-blue-400 shrink-0" />}
+                  {active && <ChevronRight size={11} className="text-[#2563eb] shrink-0" />}
                 </button>
               );
             })}
@@ -105,29 +105,29 @@ export default function StudioSidebar({ activeModule, onNavigate, userEmail, use
         ))}
       </nav>
 
-      <div className="px-3 py-2 border-t border-[#0d1520]">
+      <div className="px-3 py-2 border-t border-[#e5e7eb]">
         <a
           href="#/"
-          className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px] text-slate-400 hover:text-white hover:bg-white/5 transition-colors w-full"
+          className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px] text-[#4b5563] hover:text-[#1f2937] hover:bg-[#eceef1] transition-colors w-full"
         >
-          <ExternalLink size={12} className="text-slate-500" />
+          <ExternalLink size={12} className="text-[#9ca3af]" />
           <span className="font-medium">Go to CRM</span>
         </a>
       </div>
 
-      <div className="px-3 py-2.5 border-t border-[#0d1520] flex items-center gap-2.5">
+      <div className="px-3 py-2.5 border-t border-[#e5e7eb] flex items-center gap-2.5">
         <div className="w-6 h-6 rounded-full bg-blue-700 flex items-center justify-center shrink-0">
           <span className="text-[9px] font-bold text-white">{initials}</span>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] text-slate-300 truncate leading-none">{userEmail ?? 'System Admin'}</p>
-          <p className="text-[9px] text-slate-600 mt-0.5">Administrator</p>
+          <p className="text-[10px] text-[#374151] truncate leading-none">{userEmail ?? 'System Admin'}</p>
+          <p className="text-[9px] text-[#9ca3af] mt-0.5">Administrator</p>
         </div>
         {onSignOut && (
           <button
             onClick={onSignOut}
             title="Sign out"
-            className="text-slate-600 hover:text-slate-300 transition-colors"
+            className="text-[#9ca3af] hover:text-[#374151] transition-colors"
           >
             <LogOut size={13} />
           </button>

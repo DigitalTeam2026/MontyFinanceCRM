@@ -358,33 +358,34 @@ export default function CrmApp({
     <PermissionProvider userId={session.user.id}>
     <ToastProvider>
     <NotificationProvider userId={session.user.id}>
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
-      <AppSidebar
-        activeModule={activeModule}
-        activeEntity={activeEntity}
-        onNavigate={handleNavigate}
-        onNavigateToRecord={handleSidebarNavigateToRecord}
-        onNavigateAssignedToMe={handleNavigateAssignedToMe}
-        userEmail={session.user.email}
+    <div className="flex flex-col h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
+      {/* Full-width app bar */}
+      <AppHeader
+        module={activeModule}
+        entity={activeEntity}
+        search={search}
+        onSearchChange={setSearch}
+        onGlobalSearch={() => setGlobalSearchOpen(true)}
+        onNotificationNavigate={handleNotificationNavigate}
         userName={userName}
-        onSignOut={handleSignOut}
-        userId={session.user.id}
-        recentRefreshKey={recentRefreshKey}
-        isSystemAdmin={isSystemAdmin}
+        userEmail={session.user.email}
       />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {(view.type === 'list' || view.type === 'filtered-list') && (
-          <>
-            <AppHeader
-              module={activeModule}
-              entity={activeEntity}
-              search={search}
-              onSearchChange={setSearch}
-              onGlobalSearch={() => setGlobalSearchOpen(true)}
-              onNotificationNavigate={handleNotificationNavigate}
-              userName={userName}
-              userEmail={session.user.email}
-            />
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <AppSidebar
+          activeModule={activeModule}
+          activeEntity={activeEntity}
+          onNavigate={handleNavigate}
+          onNavigateToRecord={handleSidebarNavigateToRecord}
+          onNavigateAssignedToMe={handleNavigateAssignedToMe}
+          userEmail={session.user.email}
+          userName={userName}
+          onSignOut={handleSignOut}
+          userId={session.user.id}
+          recentRefreshKey={recentRefreshKey}
+          isSystemAdmin={isSystemAdmin}
+        />
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {(view.type === 'list' || view.type === 'filtered-list') && (
             <EntityListPage
               module={activeModule}
               entity={activeEntity}
@@ -402,10 +403,9 @@ export default function CrmApp({
               creationBlocked={creationCheck.blocked}
               creationBlockedMessage={creationCheck.message}
             />
-          </>
-        )}
+          )}
 
-        {(view.type === 'record' || view.type === 'new') && (
+          {(view.type === 'record' || view.type === 'new') && (
           <RecordFormPage
             module={activeModule}
             entity={activeEntity}
@@ -429,7 +429,8 @@ export default function CrmApp({
             creationBlockedMessage={creationCheck.message}
             creationControlRules={creationRules}
           />
-        )}
+          )}
+        </div>
       </div>
     </div>
 
