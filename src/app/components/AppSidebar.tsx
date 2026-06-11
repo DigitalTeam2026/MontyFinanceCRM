@@ -66,12 +66,14 @@ interface AppSidebarProps {
   onNavigate: (module: AppModule, entity: AppEntity) => void;
   onNavigateToRecord: (module: AppModule, entity: AppEntity, recordId: string) => void;
   onNavigateAssignedToMe: (module: AppModule, entity: AppEntity) => void;
+  onNavigateToDashboard?: (module: AppModule, entity: AppEntity) => void;
   userEmail?: string;
   userName?: string;
   onSignOut?: () => void;
   userId: string;
   recentRefreshKey?: number;
   isSystemAdmin?: boolean;
+  viewType?: string;
 }
 
 const SIDEBAR_PRESETS: { name: string; color: string }[] = [
@@ -274,12 +276,14 @@ export default function AppSidebar({
   onNavigate,
   onNavigateToRecord,
   onNavigateAssignedToMe,
+  onNavigateToDashboard,
   userEmail,
   userName,
   onSignOut,
   userId,
   recentRefreshKey,
   isSystemAdmin = false,
+  viewType,
 }: AppSidebarProps) {
   const [expanded, setExpanded] = useState<AppModule>(activeModule);
   const [collapsed, setCollapsed] = useState(false);
@@ -400,6 +404,28 @@ export default function AppSidebar({
 
           <div className="w-6 mb-1" style={{ borderTop: '1px solid #e5e7eb' }} />
 
+          {/* Dashboard button */}
+          <Tooltip label="Personal Dashboard">
+            <button
+              onClick={() => onNavigateToDashboard?.('sales', 'accounts')}
+              className="w-8 h-8 flex items-center justify-center rounded-md transition-colors"
+              style={{
+                background: viewType === 'dashboard' ? '#e9eef7' : 'transparent',
+                color: viewType === 'dashboard' ? '#2563eb' : '#6b7280',
+              }}
+              onMouseEnter={(e) => {
+                if (viewType !== 'dashboard') { e.currentTarget.style.background = '#eceef1'; e.currentTarget.style.color = '#374151'; }
+              }}
+              onMouseLeave={(e) => {
+                if (viewType !== 'dashboard') { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
+              }}
+            >
+              <LayoutGrid size={16} />
+            </button>
+          </Tooltip>
+
+          <div className="w-6 mb-1" style={{ borderTop: '1px solid #e5e7eb' }} />
+
           {areas.map((area) => {
             const isActiveModule = activeModule === area.name;
             return (
@@ -457,6 +483,29 @@ export default function AppSidebar({
         </nav>
       ) : (
         <nav className="flex-1 overflow-y-auto sidebar-scroll py-1">
+          {/* Dashboard button */}
+          <button
+            onClick={() => onNavigateToDashboard?.('sales', 'accounts')}
+            className="w-full flex items-center gap-2 px-3 h-[36px] text-[13px] font-semibold transition-colors"
+            style={{
+              color: viewType === 'dashboard' ? '#1f2937' : '#374151',
+              background: viewType === 'dashboard' ? '#eceef1' : 'transparent',
+            }}
+            onMouseEnter={(e) => {
+              if (viewType !== 'dashboard') e.currentTarget.style.background = '#eceef1';
+            }}
+            onMouseLeave={(e) => {
+              if (viewType !== 'dashboard') e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            <span className={viewType === 'dashboard' ? 'text-[#2563eb]' : 'text-[#6b7280]'}>
+              <LayoutGrid size={16} />
+            </span>
+            <span className="flex-1 text-left truncate">Dashboard</span>
+          </button>
+
+          <div style={{ borderTop: '1px solid #e5e7eb', margin: '4px 0' }} />
+
           {areas.map((area) => {
             const isOpen = expanded === area.name;
             const isActiveModule = activeModule === area.name;

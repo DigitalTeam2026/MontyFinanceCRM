@@ -6,6 +6,7 @@ import AppHeader from './components/AppHeader';
 import { useCurrentUserName } from './hooks/useCurrentUserName';
 import EntityListPage from './pages/EntityListPage';
 import RecordFormPage from './pages/RecordFormPage';
+import PersonalDashboard from './pages/PersonalDashboard';
 import type { AppEntity, AppModule } from './types';
 import { ENTITY_LOGICAL_NAME } from './types';
 import LoginPage from '../LoginPage';
@@ -24,6 +25,7 @@ import { buildCrmHash, replaceHash } from '../lib/appRoute';
 import type { CrmRouteView } from '../lib/appRoute';
 
 type AppView =
+  | { type: 'dashboard' }
   | { type: 'list' }
   | { type: 'record'; id: string }
   | { type: 'new' }
@@ -55,6 +57,8 @@ function routeViewToAppView(v: CrmRouteView | undefined): AppView {
         contextLabel: v.data.contextLabel,
         parentFilter: v.data.parentFilter,
       };
+    case 'dashboard':
+      return { type: 'dashboard' };
     default:
       return { type: 'list' };
   }
@@ -283,6 +287,24 @@ export default function CrmApp({
     });
   };
 
+  const handleNavigateToDashboard = (module: AppModule, entity: AppEntity) => {
+    setActiveModule(module);
+    setActiveEntity(entity);
+    setSearch('');
+    setView({ type: 'dashboard' });
+  };
+
+  const handleDashboardNavigateFiltered = (entity: AppEntity, module: AppModule, filters: ActiveFilter[]) => {
+    setActiveModule(module);
+    setActiveEntity(entity);
+    setSearch('');
+    setView({
+      type: 'filtered-list',
+      filters,
+      contextLabel: 'Personal Dashboard',
+    });
+  };
+
   const handleSignOut = async () => {
     try {
       await supabase.auth.signOut();
@@ -377,14 +399,22 @@ export default function CrmApp({
           onNavigate={handleNavigate}
           onNavigateToRecord={handleSidebarNavigateToRecord}
           onNavigateAssignedToMe={handleNavigateAssignedToMe}
+          onNavigateToDashboard={handleNavigateToDashboard}
           userEmail={session.user.email}
           userName={userName}
           onSignOut={handleSignOut}
           userId={session.user.id}
           recentRefreshKey={recentRefreshKey}
           isSystemAdmin={isSystemAdmin}
+          viewType={view.type}
         />
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {view.type === 'dashboard' && (
+            <PersonalDashboard
+              userId={session.user.id}
+            />
+          )}
+
           {(view.type === 'list' || view.type === 'filtered-list') && (
             <EntityListPage
               module={activeModule}
