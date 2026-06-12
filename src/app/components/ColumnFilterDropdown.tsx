@@ -1,3 +1,4 @@
+import FilterSelect from './FilterSelect';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, X, Check, Loader2, ArrowUpAZ, ArrowDownZA, EyeOff } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -523,7 +524,7 @@ export default function ColumnFilterDropdown({
 
           {/* ── BOOLEAN ── */}
           {colType === 'boolean' && (
-            <select
+            <FilterSelect
               value={boolValue}
               onChange={(e) => setBoolValue(e.target.value as 'true' | 'false' | '')}
               className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[var(--text)] focus:outline-none transition"
@@ -534,7 +535,7 @@ export default function ColumnFilterDropdown({
               <option value="">Any</option>
               <option value="true">Yes</option>
               <option value="false">No</option>
-            </select>
+            </FilterSelect>
           )}
 
           {/* ── CHOICE / STATUS ── */}
@@ -695,7 +696,7 @@ function StyledSelect({ value, onChange, options }: {
 }) {
   return (
     <div className="relative">
-      <select
+      <FilterSelect
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[var(--text)] focus:outline-none appearance-none pr-6 transition"
@@ -704,7 +705,7 @@ function StyledSelect({ value, onChange, options }: {
         onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
       >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+      </FilterSelect>
       <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="none">
         <path d="M2 3.5L5 6.5L8 3.5" stroke="var(--muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>

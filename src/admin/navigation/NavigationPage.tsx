@@ -1,24 +1,13 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useToast } from '../../app/context/ToastContext';
 import {
   Plus, Trash2, RefreshCw, ChevronRight, ChevronDown,
   GripVertical, Check, Shield, Wrench, Save, Undo2,
-  TrendingUp, Megaphone, Headphones, LayoutGrid as Layout, FileText,
-  Users, Package, BarChart2, Settings, Star, Globe, Layers,
-  FolderOpen, BookOpen, ShoppingCart, Briefcase, Eye, EyeOff,
-  ArrowUp, ArrowDown, MoreHorizontal,
-  // CRM & Sales
-  Handshake, Target, Trophy, Filter, Percent, Zap, Flag,
-  // People & Companies
-  User, UserPlus, Building2, Factory, CreditCard, Contact, Crown,
-  // Communication & Marketing
-  Mail, Phone, MessageCircle, Send, Bell, Video, Rocket, Ticket,
-  // Geography & Money
-  Map, MapPin, Compass, Landmark, Banknote, Coins, Wallet, CircleDollarSign, ArrowRightLeft,
-  // Data & Organization
-  BarChart3, PieChart, LineChart, Database, Kanban, Table, Tag, GitBranch,
-  Calendar, CalendarCheck, Clock, Waypoints,
+  LayoutGrid as Layout, FileText, Eye, EyeOff,
+  ArrowUp, ArrowDown, MoreHorizontal, FolderOpen,
 } from 'lucide-react';
+import { NAV_ICONS, NAV_ICON_CATEGORIES } from '../../app/utils/navIcons';
 import type { NavArea, NavGroup, NavItem } from '../../services/navigationService';
 import {
   fetchFullNavTree,
@@ -33,46 +22,13 @@ import type { SecurityRole } from '../../types/security';
 import { fetchSecurityRoles } from '../../services/securityService';
 import ConfirmDialog from '../components/ConfirmDialog';
 
-const ICON_MAP: Record<string, React.ReactNode> = {
-  // CRM & Sales
-  TrendingUp: <TrendingUp size={13} />, Briefcase: <Briefcase size={13} />,
-  Handshake: <Handshake size={13} />, Target: <Target size={13} />,
-  Trophy: <Trophy size={13} />, Filter: <Filter size={13} />,
-  Percent: <Percent size={13} />, Zap: <Zap size={13} />, Flag: <Flag size={13} />,
-  // People & Companies
-  User: <User size={13} />, Users: <Users size={13} />, UserPlus: <UserPlus size={13} />,
-  Building2: <Building2 size={13} />, Factory: <Factory size={13} />,
-  CreditCard: <CreditCard size={13} />, Contact: <Contact size={13} />, Crown: <Crown size={13} />,
-  // Communication & Marketing
-  Mail: <Mail size={13} />, Phone: <Phone size={13} />, MessageCircle: <MessageCircle size={13} />,
-  Send: <Send size={13} />, Headphones: <Headphones size={13} />, Bell: <Bell size={13} />,
-  Video: <Video size={13} />, Megaphone: <Megaphone size={13} />, Rocket: <Rocket size={13} />,
-  Ticket: <Ticket size={13} />,
-  // Geography & Money
-  Globe: <Globe size={13} />, Map: <Map size={13} />, MapPin: <MapPin size={13} />,
-  Compass: <Compass size={13} />, Landmark: <Landmark size={13} />, Banknote: <Banknote size={13} />,
-  Coins: <Coins size={13} />, Wallet: <Wallet size={13} />,
-  CircleDollarSign: <CircleDollarSign size={13} />, ArrowRightLeft: <ArrowRightLeft size={13} />,
-  // Data & Organization
-  BarChart3: <BarChart3 size={13} />, PieChart: <PieChart size={13} />, LineChart: <LineChart size={13} />,
-  Database: <Database size={13} />, Layers: <Layers size={13} />, Kanban: <Kanban size={13} />,
-  Table: <Table size={13} />, Tag: <Tag size={13} />, Package: <Package size={13} />,
-  GitBranch: <GitBranch size={13} />, Calendar: <Calendar size={13} />,
-  CalendarCheck: <CalendarCheck size={13} />, Clock: <Clock size={13} />, Waypoints: <Waypoints size={13} />,
-  // Layout & General (legacy values retained so existing nav records still render)
-  Layout: <Layout size={13} />, FileText: <FileText size={13} />, FolderOpen: <FolderOpen size={13} />,
-  BookOpen: <BookOpen size={13} />, ShoppingCart: <ShoppingCart size={13} />,
-  Settings: <Settings size={13} />, Star: <Star size={13} />, BarChart2: <BarChart2 size={13} />,
-};
+// Built once from the shared registry (src/app/utils/navIcons) so the picker and
+// the CRM sidebar always offer/render exactly the same icon set.
+const ICON_MAP: Record<string, React.ReactNode> = Object.fromEntries(
+  Object.entries(NAV_ICONS).map(([name, Icon]) => [name, <Icon size={13} />]),
+);
 
-const ICON_CATEGORIES: { label: string; names: string[] }[] = [
-  { label: 'CRM & Sales', names: ['TrendingUp', 'Briefcase', 'Handshake', 'Target', 'Trophy', 'Filter', 'Percent', 'Zap', 'Flag'] },
-  { label: 'People & Companies', names: ['User', 'Users', 'UserPlus', 'Building2', 'Factory', 'CreditCard', 'Contact', 'Crown'] },
-  { label: 'Communication & Marketing', names: ['Mail', 'Phone', 'MessageCircle', 'Send', 'Headphones', 'Bell', 'Video', 'Megaphone', 'Rocket', 'Ticket'] },
-  { label: 'Geography & Money', names: ['Globe', 'Map', 'MapPin', 'Compass', 'Landmark', 'Banknote', 'Coins', 'Wallet', 'CircleDollarSign', 'ArrowRightLeft'] },
-  { label: 'Data & Organization', names: ['BarChart3', 'PieChart', 'LineChart', 'Database', 'Layers', 'Kanban', 'Table', 'Tag', 'Package', 'GitBranch', 'Calendar', 'CalendarCheck', 'Clock', 'Waypoints'] },
-  { label: 'Layout & General', names: ['Layout', 'FileText', 'FolderOpen', 'BookOpen', 'ShoppingCart', 'Settings', 'Star', 'BarChart2'] },
-];
+const ICON_CATEGORIES = NAV_ICON_CATEGORIES;
 
 /** Sensible default icon for an entity, keyed by substrings of its logical name. */
 const ENTITY_ICON_DEFAULTS: { match: RegExp; icon: string }[] = [
@@ -977,15 +933,14 @@ function GroupPropertiesPanel({ group, areas, onChange, onSave, onDelete, saving
         <div>
           <label className={LBL}>Parent Area</label>
           <div className="relative">
-            <select
+            <FilterSelect
               value={group.nav_area_id}
               onChange={(e) => onChange({ ...group, nav_area_id: e.target.value })}
               className={INPUT + ' pr-8 appearance-none'}
             >
               {areas.map((a) => <option key={a.nav_area_id} value={a.nav_area_id}>{a.display_label}</option>)}
-            </select>
-            <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
+            </FilterSelect>
+            </div>
         </div>
         <div className="flex items-center gap-2">
           <input type="checkbox" id="grp-active" checked={group.is_active} onChange={(e) => onChange({ ...group, is_active: e.target.checked })} className="w-3.5 h-3.5 accent-blue-600" />
@@ -1052,7 +1007,7 @@ function ItemPropertiesPanel({ item, entities, roles, groups, areas, onChange, o
         <div>
           <label className={LBL}>Parent Group</label>
           <div className="relative">
-            <select
+            <FilterSelect
               value={item.nav_group_id}
               onChange={(e) => onChange({ ...item, nav_group_id: e.target.value })}
               className={INPUT + ' pr-8 appearance-none'}
@@ -1066,9 +1021,8 @@ function ItemPropertiesPanel({ item, entities, roles, groups, areas, onChange, o
                   </optgroup>
                 );
               })}
-            </select>
-            <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
+            </FilterSelect>
+            </div>
         </div>
         <div>
           <label className={LBL}>Linked Entity (optional)</label>
@@ -1164,12 +1118,11 @@ function IconPicker({ value, onChange }: { value: string; onChange: (v: string) 
 function EntityPicker({ entities, value, onChange }: { entities: EntityDefinition[]; value: string; onChange: (v: string) => void }) {
   return (
     <div className="relative">
-      <select value={value} onChange={(e) => onChange(e.target.value)} className={INPUT + ' pr-8 appearance-none'}>
+      <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={INPUT + ' pr-8 appearance-none'}>
         <option value="">-- None (custom page) --</option>
         {entities.map((e) => <option key={e.entity_definition_id} value={e.logical_name}>{e.display_name}</option>)}
-      </select>
-      <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-    </div>
+      </FilterSelect>
+      </div>
   );
 }
 

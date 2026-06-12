@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState, useCallback } from 'react';
 import {
   Search, RefreshCw, Plus, X, Copy, Trash2,
@@ -148,15 +149,15 @@ export default function DuplicateRulesListPage({ onOpen }: DuplicateRulesListPag
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Filter size={12} className="text-gray-400 flex-shrink-0" />
-          <select
+          <FilterSelect
             value={filterEntity}
             onChange={(e) => setFilterEntity(e.target.value)}
             className="py-1 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
           >
             <option value="">All Entities</option>
             {KNOWN_ENTITIES.map((e) => <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>)}
-          </select>
-          <select
+          </FilterSelect>
+          <FilterSelect
             value={filterBehavior}
             onChange={(e) => setFilterBehavior(e.target.value as '' | 'warn' | 'block')}
             className="py-1 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -164,8 +165,8 @@ export default function DuplicateRulesListPage({ onOpen }: DuplicateRulesListPag
             <option value="">All Behaviors</option>
             <option value="warn">Warning</option>
             <option value="block">Block</option>
-          </select>
-          <select
+          </FilterSelect>
+          <FilterSelect
             value={filterActive}
             onChange={(e) => setFilterActive(e.target.value as '' | 'active' | 'inactive')}
             className="py-1 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -173,7 +174,7 @@ export default function DuplicateRulesListPage({ onOpen }: DuplicateRulesListPag
             <option value="">Active + Inactive</option>
             <option value="active">Active only</option>
             <option value="inactive">Inactive only</option>
-          </select>
+          </FilterSelect>
           {hasFilters && (
             <button
               onClick={() => { setSearch(''); setFilterEntity(''); setFilterActive(''); setFilterBehavior(''); }}
@@ -455,14 +456,14 @@ function NewRuleModal({ onClose, onCreated }: NewRuleModalProps) {
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Target Entity <span className="text-red-500">*</span></label>
-            <select
+            <FilterSelect
               value={entity}
               onChange={(e) => setEntity(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             >
               <option value="">Select an entity...</option>
               {KNOWN_ENTITIES.map((e) => <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>)}
-            </select>
+            </FilterSelect>
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Rule Name <span className="text-red-500">*</span></label>

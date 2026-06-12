@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect } from 'react';
 import {
   Save, Loader2, Plus, ChevronDown, ChevronUp, GripVertical,
@@ -29,8 +30,15 @@ interface Props {
   onCancel: () => void;
 }
 
-const INPUT = 'w-full text-[12px] text-slate-800 border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition';
-const LABEL = 'block text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5';
+const INPUT = 'w-full text-[12px] text-slate-800 border border-slate-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition';
+const LABEL = 'block text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-1.5';
+const HELP = 'text-[10px] text-slate-500 mt-1';
+
+const FORM_ACCESS_OPTIONS: { value: string; label: string }[] = [
+  { value: 'allow_edit', label: 'Allow Edit' },
+  { value: 'read_only', label: 'Read Only' },
+  { value: 'not_allow', label: 'Not Allowed' },
+];
 
 let tempCounter = 0;
 function tempId(): string { return `_t${++tempCounter}_${Date.now()}`; }
@@ -190,9 +198,9 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Toolbar */}
-      <div className="shrink-0 px-6 py-3 border-b border-slate-200 bg-white flex items-center justify-between gap-3">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      {/* Sticky command bar — pinned above the single scroll area */}
+      <div className="shrink-0 z-20 px-6 py-3 border-b border-slate-200 bg-white flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button onClick={onCancel} className="text-[12px] text-slate-500 hover:text-slate-800 font-medium transition">Cancel</button>
           <div className="h-5 w-px bg-slate-200" />
@@ -217,9 +225,9 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto px-6 py-5 space-y-6">
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 pb-8 space-y-4" style={{ background: '#f6f8fb' }}>
         {/* General settings */}
-        <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
+        <section className="bg-white border border-slate-200 rounded-lg shadow-sm p-5 space-y-4">
           <h3 className="text-[12px] font-semibold text-slate-700 uppercase tracking-wide">General</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -228,25 +236,25 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
             </div>
             <div>
               <label className={LABEL}>Entity *</label>
-              <select value={entityLogicalName} onChange={(e) => setEntityLogicalName(e.target.value)} className={INPUT}>
+              <FilterSelect value={entityLogicalName} onChange={(e) => setEntityLogicalName(e.target.value)} className={INPUT}>
                 <option value="">Select entity...</option>
                 {KNOWN_ENTITIES.map((e) => (
                   <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>
                 ))}
-              </select>
+              </FilterSelect>
             </div>
             <div>
               <label className={LABEL}>Trigger Event</label>
-              <select value={triggerEvent} onChange={(e) => setTriggerEvent(e.target.value as TriggerEvent)} className={INPUT}>
+              <FilterSelect value={triggerEvent} onChange={(e) => setTriggerEvent(e.target.value as TriggerEvent)} className={INPUT}>
                 {ALL_TRIGGER_EVENTS.map((t) => (
                   <option key={t} value={t}>{TRIGGER_EVENT_META[t].label}</option>
                 ))}
-              </select>
+              </FilterSelect>
             </div>
             <div>
               <label className={LABEL}>Priority</label>
               <input type="number" value={priority} onChange={(e) => setPriority(Number(e.target.value))} className={INPUT} min={1} max={1000} />
-              <p className="text-[10px] text-slate-400 mt-1">Lower number runs first</p>
+              <p className={HELP}>Lower number runs first</p>
             </div>
             <div className="md:col-span-2">
               <label className={LABEL}>Description</label>
@@ -265,7 +273,7 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
         </section>
 
         {/* Conditions */}
-        <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-3">
+        <section className="bg-white border border-slate-200 rounded-lg shadow-sm p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-[12px] font-semibold text-slate-700 uppercase tracking-wide">Conditions ({conditions.length})</h3>
             <button onClick={addCondition} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium text-blue-600 hover:bg-blue-50 rounded-md transition">
@@ -273,7 +281,10 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
             </button>
           </div>
           {conditions.length === 0 && (
-            <p className="text-[11px] text-slate-400 py-2">No conditions -- rule will always fire on the configured trigger.</p>
+            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3">
+              <p className="text-[12px] font-medium text-slate-600">No conditions configured.</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">This rule will run whenever the selected trigger occurs.</p>
+            </div>
           )}
           {conditions.map((cond, idx) => {
             const meta = CONDITION_TYPE_META[cond.condition_type];
@@ -294,19 +305,19 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
                         <label className={LABEL}>Condition Type</label>
-                        <select value={cond.condition_type} onChange={(e) => updateConditionField(cond._tempId, 'condition_type', e.target.value)} className={INPUT}>
+                        <FilterSelect value={cond.condition_type} onChange={(e) => updateConditionField(cond._tempId, 'condition_type', e.target.value)} className={INPUT}>
                           {ALL_CONDITION_TYPES.map((t) => (
                             <option key={t} value={t}>{CONDITION_TYPE_META[t].label}</option>
                           ))}
-                        </select>
+                        </FilterSelect>
                       </div>
                       <div>
                         <label className={LABEL}>Operator</label>
-                        <select value={cond.operator} onChange={(e) => updateConditionField(cond._tempId, 'operator', e.target.value)} className={INPUT}>
+                        <FilterSelect value={cond.operator} onChange={(e) => updateConditionField(cond._tempId, 'operator', e.target.value)} className={INPUT}>
                           {(Object.keys(CONDITION_OPERATOR_META) as ConditionOperator[]).map((o) => (
                             <option key={o} value={o}>{CONDITION_OPERATOR_META[o].label}</option>
                           ))}
-                        </select>
+                        </FilterSelect>
                       </div>
                       {meta?.needsSourceField && (
                         <div>
@@ -318,12 +329,12 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
                         <>
                           <div>
                             <label className={LABEL}>Target Entity</label>
-                            <select value={cond.target_entity ?? ''} onChange={(e) => updateConditionField(cond._tempId, 'target_entity', e.target.value || null)} className={INPUT}>
+                            <FilterSelect value={cond.target_entity ?? ''} onChange={(e) => updateConditionField(cond._tempId, 'target_entity', e.target.value || null)} className={INPUT}>
                               <option value="">Select...</option>
                               {KNOWN_ENTITIES.map((e) => (
                                 <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>
                               ))}
-                            </select>
+                            </FilterSelect>
                           </div>
                           <div>
                             <label className={LABEL}>Target Field (FK column on target)</label>
@@ -346,7 +357,7 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
         </section>
 
         {/* Actions */}
-        <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-3">
+        <section className="bg-white border border-slate-200 rounded-lg shadow-sm p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-[12px] font-semibold text-slate-700 uppercase tracking-wide">Actions ({actions.length})</h3>
             <button onClick={addAction} className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium text-blue-600 hover:bg-blue-50 rounded-md transition">
@@ -354,7 +365,10 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
             </button>
           </div>
           {actions.length === 0 && (
-            <p className="text-[11px] text-slate-400 py-2">No actions defined. Add at least one action.</p>
+            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3">
+              <p className="text-[12px] font-medium text-slate-600">No actions configured.</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Add at least one action to define what this rule does.</p>
+            </div>
           )}
           {actions.map((act, idx) => {
             const meta = ACTION_TYPE_META[act.action_type];
@@ -380,22 +394,22 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
                         <label className={LABEL}>Action Type</label>
-                        <select value={act.action_type} onChange={(e) => updateActionField(act._tempId, 'action_type', e.target.value)} className={INPUT}>
+                        <FilterSelect value={act.action_type} onChange={(e) => updateActionField(act._tempId, 'action_type', e.target.value)} className={INPUT}>
                           {ALL_ACTION_TYPES.map((t) => (
                             <option key={t} value={t}>{ACTION_TYPE_META[t].label}</option>
                           ))}
-                        </select>
-                        <p className="text-[10px] text-slate-400 mt-1">{meta?.description}</p>
+                        </FilterSelect>
+                        <p className={HELP}>{meta?.description}</p>
                       </div>
                       {meta?.needsTarget && (
                         <div>
                           <label className={LABEL}>Target Entity</label>
-                          <select value={act.target_entity ?? ''} onChange={(e) => updateActionField(act._tempId, 'target_entity', e.target.value || null)} className={INPUT}>
+                          <FilterSelect value={act.target_entity ?? ''} onChange={(e) => updateActionField(act._tempId, 'target_entity', e.target.value || null)} className={INPUT}>
                             <option value="">Select...</option>
                             {KNOWN_ENTITIES.map((e) => (
                               <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>
                             ))}
-                          </select>
+                          </FilterSelect>
                         </div>
                       )}
                       {meta?.needsSource && (
@@ -410,7 +424,18 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
                           <input type="text" value={act.target_field ?? ''} onChange={(e) => updateActionField(act._tempId, 'target_field', e.target.value || null)} className={INPUT} placeholder="e.g. state_code" />
                         </div>
                       )}
-                      {meta?.needsValue && (
+                      {meta?.needsValue && act.action_type === 'set_form_access' && (
+                        <div>
+                          <label className={LABEL}>Form Access</label>
+                          <FilterSelect value={act.field_value ?? 'read_only'} onChange={(e) => updateActionField(act._tempId, 'field_value', e.target.value)} className={INPUT}>
+                            {FORM_ACCESS_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </FilterSelect>
+                          <p className={HELP}>Controls whether users can edit, only view, or cannot open the form.</p>
+                        </div>
+                      )}
+                      {meta?.needsValue && act.action_type !== 'set_form_access' && (
                         <div>
                           <label className={LABEL}>Field Value</label>
                           <input type="text" value={act.field_value ?? ''} onChange={(e) => updateActionField(act._tempId, 'field_value', e.target.value || null)} className={INPUT} placeholder="e.g. 1" />

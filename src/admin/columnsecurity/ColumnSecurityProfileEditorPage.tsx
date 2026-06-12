@@ -1,8 +1,7 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect, useCallback } from 'react';
 import {
-  ArrowLeft, Save, RefreshCw, ShieldCheck, ChevronDown, Search,
-  Plus, Trash2, Users, User, Users as UsersIcon,
-} from 'lucide-react';
+  ArrowLeft, Save, RefreshCw, ShieldCheck, Search, Plus, Trash2, Users, User, Users as UsersIcon } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
 import type { ColumnSecurityProfile, ColumnSecurityProfileAssignment } from '../../services/columnSecurityService';
 import {
@@ -448,18 +447,17 @@ export default function ColumnSecurityProfileEditorPage({ profile, onBack, onSav
                 </p>
                 <div className="flex items-center gap-2">
                   <div className="relative">
-                    <select
+                    <FilterSelect
                       value={principalType}
                       onChange={(e) => { setPrincipalType(e.target.value as 'user' | 'team'); setPrincipalId(''); }}
                       className="appearance-none pl-2.5 pr-6 py-1.5 text-[12px] border border-slate-300 rounded bg-white focus:outline-none focus:border-blue-400"
                     >
                       <option value="user">User</option>
                       <option value="team">Team</option>
-                    </select>
-                    <ChevronDown size={11} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
+                    </FilterSelect>
+                    </div>
                   <div className="relative flex-1">
-                    <select
+                    <FilterSelect
                       value={principalId}
                       onChange={(e) => setPrincipalId(e.target.value)}
                       className="appearance-none w-full pl-2.5 pr-6 py-1.5 text-[12px] border border-slate-300 rounded bg-white focus:outline-none focus:border-blue-400"
@@ -475,9 +473,8 @@ export default function ColumnSecurityProfileEditorPage({ profile, onBack, onSav
                           </option>
                         );
                       })}
-                    </select>
-                    <ChevronDown size={11} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
+                    </FilterSelect>
+                    </div>
                   <button
                     onClick={handleAddAssignment}
                     disabled={!principalId || addingPrincipal}

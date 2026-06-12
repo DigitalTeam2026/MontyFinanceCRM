@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { Plus, Trash2, ChevronUp, ChevronDown, ArrowUpDown } from 'lucide-react';
 import type { FieldDefinition } from '../../types/field';
 import type { SortDefinition } from '../../types/view';
@@ -71,7 +72,7 @@ export default function SortBuilder({ fields, sorts, onChange }: SortBuilderProp
               {idx + 1}
             </span>
 
-            <select
+            <FilterSelect
               value={sort.field_logical_name}
               onChange={(e) => {
                 const field = fields.find((f) => f.logical_name === e.target.value);
@@ -91,7 +92,7 @@ export default function SortBuilder({ fields, sorts, onChange }: SortBuilderProp
                   {f.display_name}
                 </option>
               ))}
-            </select>
+            </FilterSelect>
 
             <div className="flex rounded-lg overflow-hidden border border-slate-200 shrink-0">
               {(['asc', 'desc'] as const).map((dir) => (

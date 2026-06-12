@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { Plus, Trash2, ChevronUp, ChevronDown, AlertCircle } from 'lucide-react';
 import type { PolicyConditionDraft, PolicyConditionOperator } from '../../types/dataPolicy';
 import { POLICY_CONDITION_OPERATOR_META } from '../../types/dataPolicy';
@@ -86,7 +87,7 @@ export default function PolicyConditionsPanel({ conditions, onChange, disabled }
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-500 mb-1">Operator</label>
-                    <select
+                    <FilterSelect
                       value={cond.operator}
                       onChange={(e) => {
                         const op = e.target.value as PolicyConditionOperator;
@@ -101,7 +102,7 @@ export default function PolicyConditionsPanel({ conditions, onChange, disabled }
                       {(Object.entries(POLICY_CONDITION_OPERATOR_META) as [PolicyConditionOperator, typeof POLICY_CONDITION_OPERATOR_META[PolicyConditionOperator]][]).map(([k, m]) => (
                         <option key={k} value={k}>{m.label}</option>
                       ))}
-                    </select>
+                    </FilterSelect>
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-500 mb-1">Value</label>

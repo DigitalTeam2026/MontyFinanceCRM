@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect, useCallback } from 'react';
 import { FolderCog, Plus, Check, X, CreditCard as Edit2, Trash2, ToggleLeft, ToggleRight, FolderOpen, Plug, KeyRound, Loader2 } from 'lucide-react';
 import SearchableSelect from '../../app/components/SearchableSelect';
@@ -406,13 +407,13 @@ function EditForm({ row, entityOptions, secretSaved, onChange, onSave, onCancel,
 
         <div>
           <div className={credLabel}>Storage type</div>
-          <select
+          <FilterSelect
             value={row.storage_type}
             onChange={(e) => onChange({ ...row, storage_type: e.target.value as StorageType })}
             className={`${inputCls} h-9`}
           >
             {STORAGE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
+          </FilterSelect>
         </div>
 
         <div className="col-span-2">

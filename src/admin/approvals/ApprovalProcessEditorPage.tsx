@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Save, AlertTriangle,
@@ -214,13 +215,13 @@ export default function ApprovalProcessEditorPage({ proc, onBack, onUpdated }: P
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1.5">Entity</label>
-                  <select
+                  <FilterSelect
                     value={form.entity_logical_name}
                     onChange={(e) => set('entity_logical_name', e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                   >
                     {KNOWN_ENTITIES.map((e) => <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>)}
-                  </select>
+                  </FilterSelect>
                 </div>
               </div>
 

@@ -510,15 +510,32 @@ async function resolveStatusReasonLabels(entityDefId: string): Promise<Record<st
   return map;
 }
 
+// A BPF stage key (e.g. "stage_1780914561053" / "condition_…") must never surface
+// in the lifecycle Status / Status Reason columns. It leaks in when a process flow
+// is misconfigured to write its stage into state_code/status_reason instead of
+// bpf_stage. Such records are lifecycle-Open, so resolve any stray stage key to the
+// default ('1') label rather than exposing the raw id in the grid — for every entity.
+const STAGE_KEY_RE = /^(stage|condition)_/i;
+
 function applyStatusLabels(
   rows: ListRow[],
   stateCodeMap: Record<string, string>,
   statusReasonMap: Record<string, string>,
 ): ListRow[] {
+  const resolve = (
+    value: unknown,
+    map: Record<string, string>,
+    fallback: string,
+  ): string | null => {
+    if (value == null) return null;
+    const code = String(value);
+    if (STAGE_KEY_RE.test(code)) return map['1'] ?? fallback;
+    return map[code] ?? code;
+  };
   return rows.map((r) => ({
     ...r,
-    state_code: r.state_code != null ? (stateCodeMap[String(r.state_code)] ?? String(r.state_code)) : null,
-    status_reason: r.status_reason != null ? (statusReasonMap[String(r.status_reason)] ?? String(r.status_reason)) : null,
+    state_code: resolve(r.state_code, stateCodeMap, 'Open'),
+    status_reason: resolve(r.status_reason, statusReasonMap, 'New'),
   }));
 }
 

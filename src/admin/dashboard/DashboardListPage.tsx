@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect, useCallback } from 'react';
 import {
   BarChart2, Shield, Wrench, Copy, Trash2, Lock, Search,
@@ -270,7 +271,7 @@ function NewDashboardModal({ onConfirm, onCancel, loading }: NewDashboardModalPr
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Module</label>
-            <select
+            <FilterSelect
               value={module}
               onChange={(e) => setModule(e.target.value as DashboardModule)}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-white"
@@ -279,7 +280,7 @@ function NewDashboardModal({ onConfirm, onCancel, loading }: NewDashboardModalPr
               <option value="marketing">Marketing</option>
               <option value="support">Support</option>
               <option value="all">All Modules</option>
-            </select>
+            </FilterSelect>
           </div>
         </div>
 
@@ -425,7 +426,7 @@ export default function DashboardListPage({ onEdit }: DashboardListPageProps) {
               className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-blue-500 bg-white"
             />
           </div>
-          <select
+          <FilterSelect
             value={moduleFilter}
             onChange={(e) => setModuleFilter(e.target.value)}
             className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-blue-500 bg-white"
@@ -434,7 +435,7 @@ export default function DashboardListPage({ onEdit }: DashboardListPageProps) {
             <option value="sales">Sales</option>
             <option value="marketing">Marketing</option>
             <option value="support">Support</option>
-          </select>
+          </FilterSelect>
         </div>
 
         <button

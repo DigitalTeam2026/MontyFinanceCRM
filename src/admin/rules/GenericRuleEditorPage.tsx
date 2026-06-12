@@ -1,8 +1,7 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState } from 'react';
 import {
-  ArrowLeft, Save, Plus, Trash2, ChevronDown,
-  Info, AlertTriangle, Ban, Lightbulb, X,
-} from 'lucide-react';
+  ArrowLeft, Save, Plus, Trash2, Info, AlertTriangle, Ban, Lightbulb, X } from 'lucide-react';
 import type {
   GenericRule, GenericCondition, GenericConditionsBlock,
   GenericAction, GenericActionType, GenericFieldSchema,
@@ -291,7 +290,7 @@ function ConditionRow({
 
         {/* Field selector */}
         <div className="relative w-44 shrink-0">
-          <select
+          <FilterSelect
             value={cond.field}
             onChange={(e) => handleFieldChange(e.target.value)}
             className="w-full appearance-none text-[12px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 pr-6"
@@ -299,13 +298,12 @@ function ConditionRow({
             {schema.map((f) => (
               <option key={f.key} value={f.key}>{f.label}</option>
             ))}
-          </select>
-          <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
 
         {/* Operator selector */}
         <div className="relative w-44 shrink-0">
-          <select
+          <FilterSelect
             value={cond.operator}
             onChange={(e) => handleOperatorChange(e.target.value as GenericConditionOperator)}
             className="w-full appearance-none text-[12px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 pr-6"
@@ -313,28 +311,26 @@ function ConditionRow({
             {operators.map((op) => (
               <option key={op} value={op}>{OPERATOR_LABELS[op]}</option>
             ))}
-          </select>
-          <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
 
         {/* Value input */}
         {!noValue && !multiValue && (
           <div className="flex-1 flex items-center gap-2">
             {field?.type === 'optionset' && field.options ? (
               <div className="relative flex-1">
-                <select
+                <FilterSelect
                   value={String(cond.value ?? '')}
                   onChange={(e) => onChange({ ...cond, value: e.target.value })}
                   className="w-full appearance-none text-[12px] text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 pr-6"
                 >
                   <option value="">— Select —</option>
                   {field.options.map((o) => <option key={o} value={o}>{o}</option>)}
-                </select>
-                <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              </div>
+                </FilterSelect>
+                </div>
             ) : field?.type === 'boolean' ? (
               <div className="relative flex-1">
-                <select
+                <FilterSelect
                   value={String(cond.value ?? '')}
                   onChange={(e) => onChange({ ...cond, value: e.target.value })}
                   className="w-full appearance-none text-[12px] text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 pr-6"
@@ -342,9 +338,8 @@ function ConditionRow({
                   <option value="">— Select —</option>
                   <option value="true">True</option>
                   <option value="false">False</option>
-                </select>
-                <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              </div>
+                </FilterSelect>
+                </div>
             ) : field?.type === 'date' ? (
               <input
                 type="date"
@@ -535,7 +530,7 @@ function ActionRow({
             {meta.group}
           </span>
           <div className="relative flex-1">
-            <select
+            <FilterSelect
               value={action.type}
               onChange={(e) => handleTypeChange(e.target.value as GenericActionType)}
               className="w-full appearance-none text-[12px] font-medium text-slate-700 bg-transparent border-0 focus:outline-none pr-5"
@@ -543,9 +538,8 @@ function ActionRow({
               {ACTION_TYPE_OPTIONS.map(({ type, label }) => (
                 <option key={type} value={type}>{label}</option>
               ))}
-            </select>
-            <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
+            </FilterSelect>
+            </div>
         </div>
 
         {/* Field selector */}
@@ -553,7 +547,7 @@ function ActionRow({
           <div className="flex items-center gap-2 pl-1">
             <span className="text-[10px] text-slate-400 shrink-0 w-12">Field:</span>
             <div className="relative flex-1">
-              <select
+              <FilterSelect
                 value={action.field ?? ''}
                 onChange={(e) => onChange({ ...action, field: e.target.value })}
                 className="w-full appearance-none text-[12px] text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 pr-6"
@@ -561,9 +555,8 @@ function ActionRow({
                 {schema.map((f) => (
                   <option key={f.key} value={f.key}>{f.label}</option>
                 ))}
-              </select>
-              <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </div>
+              </FilterSelect>
+              </div>
           </div>
         )}
 

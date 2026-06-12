@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect, useCallback } from 'react';
 import {
   Save, ArrowLeft, Plus, Trash2, Eye, EyeOff, Play,
@@ -424,7 +425,7 @@ export default function ApiIntegrationEditor({ integration, onBack, onSaved }: P
 
               <div>
                 <label className="field-label">CRM Entity *</label>
-                <select
+                <FilterSelect
                   className={`field-input ${errors.entity_id ? 'border-red-300' : ''}`}
                   value={form.entity_id}
                   onChange={(e) => {
@@ -438,31 +439,31 @@ export default function ApiIntegrationEditor({ integration, onBack, onSaved }: P
                   {entities.map((e) => (
                     <option key={e.entity_definition_id} value={e.entity_definition_id}>{e.display_name}</option>
                   ))}
-                </select>
+                </FilterSelect>
                 <FieldError msg={errors.entity_id} />
               </div>
 
               {isIncoming ? (
                 <div>
                   <label className="field-label">Operation</label>
-                  <select
+                  <FilterSelect
                     className="field-input"
                     value={form.operation}
                     onChange={(e) => set('operation', e.target.value as InboundOperation)}
                   >
                     {OPERATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </FilterSelect>
                 </div>
               ) : (
                 <div>
                   <label className="field-label">Trigger Event</label>
-                  <select
+                  <FilterSelect
                     className="field-input"
                     value={form.trigger_event}
                     onChange={(e) => set('trigger_event', e.target.value as TriggerEvent)}
                   >
                     {TRIGGER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </FilterSelect>
                 </div>
               )}
 
@@ -498,13 +499,13 @@ export default function ApiIntegrationEditor({ integration, onBack, onSaved }: P
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="field-label">Accepted HTTP Method</label>
-                    <select
+                    <FilterSelect
                       className="field-input"
                       value={INBOUND_METHODS.includes(form.http_method) ? form.http_method : 'POST'}
                       onChange={(e) => set('http_method', e.target.value as HttpMethod)}
                     >
                       {INBOUND_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-                    </select>
+                    </FilterSelect>
                   </div>
                 </div>
                 <div>
@@ -526,13 +527,13 @@ export default function ApiIntegrationEditor({ integration, onBack, onSaved }: P
               <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-4">
                 <div>
                   <label className="field-label">HTTP Method *</label>
-                  <select
+                  <FilterSelect
                     className="field-input"
                     value={form.http_method}
                     onChange={(e) => set('http_method', e.target.value as HttpMethod)}
                   >
                     {HTTP_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-                  </select>
+                  </FilterSelect>
                 </div>
                 <div>
                   <label className="field-label">Endpoint URL *</label>
@@ -553,13 +554,13 @@ export default function ApiIntegrationEditor({ integration, onBack, onSaved }: P
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
                 <label className="field-label">Authentication Type</label>
-                <select
+                <FilterSelect
                   className="field-input"
                   value={form.auth_type}
                   onChange={(e) => set('auth_type', e.target.value as AuthType)}
                 >
                   {AUTH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                </FilterSelect>
               </div>
 
               {form.auth_type === 'bearer' && (
@@ -711,10 +712,10 @@ export default function ApiIntegrationEditor({ integration, onBack, onSaved }: P
                 {sampleRecords.length > 0 && (
                   <div>
                     <label className="field-label">Test with record</label>
-                    <select className="field-input" value={selectedRecordId} onChange={(e) => setSelectedRecordId(e.target.value)}>
+                    <FilterSelect className="field-input" value={selectedRecordId} onChange={(e) => setSelectedRecordId(e.target.value)}>
                       <option value="">(no record — empty body)</option>
                       {sampleRecords.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-                    </select>
+                    </FilterSelect>
                   </div>
                 )}
                 <button

@@ -1,9 +1,7 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState } from 'react';
 import {
-  Plus, RefreshCw, FileText, Zap, Eye, Pencil, Trash2, ChevronDown,
-  CheckCircle, Shield, Wrench, Copy, Lock, Search, LayoutGrid, User,
-  Filter, X, Download,
-} from 'lucide-react';
+  Plus, RefreshCw, FileText, Zap, Eye, Pencil, Trash2, CheckCircle, Shield, Wrench, Copy, Lock, Search, LayoutGrid, User, Filter, X, Download } from 'lucide-react';
 import type { EntityDefinition } from '../../types/entity';
 import type { FormDefinition, FormType } from '../../types/form';
 import { fetchEntities } from '../../services/entityService';
@@ -172,7 +170,7 @@ export default function FormListPage({ onOpen, preselectedEntityId }: FormListPa
       {/* Filter Chips + Entity Selector + Search */}
       <div className="bg-white border-b border-slate-100 px-5 py-2 flex items-center gap-3 shrink-0">
         <div className="relative">
-          <select
+          <FilterSelect
             value={selectedEntityId}
             onChange={(e) => { setSelectedEntityId(e.target.value); setCategoryTab('all'); setSearch(''); }}
             className="appearance-none pl-2.5 pr-7 py-1.5 text-[12px] font-medium border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 text-slate-700"
@@ -180,9 +178,8 @@ export default function FormListPage({ onOpen, preselectedEntityId }: FormListPa
             {entities.map((e) => (
               <option key={e.entity_definition_id} value={e.entity_definition_id}>{e.display_name}</option>
             ))}
-          </select>
-          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
 
         <div className="w-px h-5 bg-slate-200" />
 

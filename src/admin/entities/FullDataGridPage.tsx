@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   Plus, Save, RefreshCw, Download, X, ChevronDown, ChevronLeft, ChevronRight,
@@ -847,13 +848,13 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <span className="text-[var(--ink-400)]">Rows per page</span>
-            <select
+            <FilterSelect
               value={rowsPerPage}
               onChange={(e) => { setRowsPerPage(Number(e.target.value)); setPage(0); }}
               className="px-1.5 py-0.5 border border-[var(--border)] rounded text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-[var(--navy-accent)] text-[var(--ink-700)]"
             >
               {ROWS_PER_PAGE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
+            </FilterSelect>
           </div>
           <div className="flex items-center gap-1">
             <PagBtn onClick={() => setPage(0)} disabled={page === 0}><ChevronsLeft size={13} /></PagBtn>
@@ -992,21 +993,21 @@ function CellEditor({ field, value, onChange, onBlur, autoFocus, lookupMeta, loo
 
   if (typeName === 'boolean') {
     return (
-      <select value={strVal === 'true' || strVal === '1' ? 'true' : strVal === 'false' || strVal === '0' ? 'false' : ''} onChange={(e) => onChange(e.target.value === 'true' ? true : e.target.value === 'false' ? false : null)} onBlur={onBlur} autoFocus={autoFocus} className={cls}>
+      <FilterSelect value={strVal === 'true' || strVal === '1' ? 'true' : strVal === 'false' || strVal === '0' ? 'false' : ''} onChange={(e) => onChange(e.target.value === 'true' ? true : e.target.value === 'false' ? false : null)} onBlur={onBlur} autoFocus={autoFocus} className={cls}>
         <option value="">--</option>
         <option value="true">Yes</option>
         <option value="false">No</option>
-      </select>
+      </FilterSelect>
     );
   }
 
   if (typeName === 'choice' || typeName === 'optionset' || typeName === 'statecode' || typeName === 'statusreason') {
     const choices = (field.config_json as { choices?: { value: string; label: string }[] } | null)?.choices ?? [];
     return (
-      <select value={strVal} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} autoFocus={autoFocus} className={cls}>
+      <FilterSelect value={strVal} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} autoFocus={autoFocus} className={cls}>
         <option value="">--</option>
         {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-      </select>
+      </FilterSelect>
     );
   }
 

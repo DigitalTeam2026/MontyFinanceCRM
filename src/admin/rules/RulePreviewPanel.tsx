@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useMemo } from 'react';
 import {
   Play, AlertCircle, AlertTriangle, Info, CheckCircle2, Eye, EyeOff,
@@ -151,7 +152,7 @@ export default function RulePreviewPanel({
                     Active Process Flow
                   </label>
                   <div className="relative">
-                    <select
+                    <FilterSelect
                       value={selectedFlowId}
                       onChange={(e) => handleFlowChange(e.target.value)}
                       className="w-full appearance-none text-xs text-slate-700 border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-teal-400 pr-7"
@@ -160,9 +161,8 @@ export default function RulePreviewPanel({
                       {processFlows.map((f) => (
                         <option key={f.process_flow_id} value={f.process_flow_id}>{f.name}</option>
                       ))}
-                    </select>
-                    <ChevronDown size={10} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
+                    </FilterSelect>
+                    </div>
                 </div>
 
                 <div>
@@ -173,7 +173,7 @@ export default function RulePreviewPanel({
                     {loadingStages ? (
                       <div className="text-[10px] text-slate-400 italic px-3 py-2">Loading stages...</div>
                     ) : (
-                      <select
+                      <FilterSelect
                         value={selectedStageId}
                         onChange={(e) => setSelectedStageId(e.target.value)}
                         disabled={!selectedFlowId || flowStages.length === 0}
@@ -183,7 +183,7 @@ export default function RulePreviewPanel({
                         {flowStages.map((s) => (
                           <option key={s.process_stage_id} value={s.process_stage_id}>{s.name}</option>
                         ))}
-                      </select>
+                      </FilterSelect>
                     )}
                     <ChevronDown size={10} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   </div>

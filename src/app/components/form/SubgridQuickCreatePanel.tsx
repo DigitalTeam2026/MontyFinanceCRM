@@ -1,3 +1,4 @@
+import FilterSelect from '../FilterSelect';
 import { useState, useEffect, useRef } from 'react';
 import { X, Save, Loader2, AlertCircle, FileText, Plus } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
@@ -76,7 +77,7 @@ function FieldInput({
 
   if (ft === 'boolean') {
     return (
-      <select
+      <FilterSelect
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value === 'true' ? true : e.target.value === 'false' ? false : null)}
         disabled={disabled}
@@ -85,13 +86,13 @@ function FieldInput({
         <option value="">— Select —</option>
         <option value="true">Yes</option>
         <option value="false">No</option>
-      </select>
+      </FilterSelect>
     );
   }
 
   if (ft === 'choice' || ft === 'option_set') {
     return (
-      <select
+      <FilterSelect
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value || null)}
         disabled={disabled}
@@ -101,7 +102,7 @@ function FieldInput({
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
-      </select>
+      </FilterSelect>
     );
   }
 

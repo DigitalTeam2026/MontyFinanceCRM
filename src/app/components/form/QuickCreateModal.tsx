@@ -1,3 +1,4 @@
+import FilterSelect from '../FilterSelect';
 import { useState } from 'react';
 import { X, Save, Loader2 } from 'lucide-react';
 import { useToast, toFriendlyError } from '../../context/ToastContext';
@@ -92,7 +93,7 @@ export default function QuickCreateModal({ title, fields, onSave, onClose }: Qui
                   className={`${inputBase} resize-none`}
                 />
               ) : f.type === 'select' ? (
-                <select
+                <FilterSelect
                   value={String(values[f.key] ?? '')}
                   onChange={(e) => set(f.key, e.target.value || null)}
                   className={inputBase}
@@ -101,7 +102,7 @@ export default function QuickCreateModal({ title, fields, onSave, onClose }: Qui
                   {(f.options ?? []).map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
-                </select>
+                </FilterSelect>
               ) : (
                 <input
                   type={f.type}

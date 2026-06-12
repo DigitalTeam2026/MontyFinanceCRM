@@ -1,3 +1,4 @@
+import FilterSelect from '../FilterSelect';
 import { X } from 'lucide-react';
 import type { FieldDefinition } from '../../../types/field';
 
@@ -71,7 +72,7 @@ export default function FieldControl({
         : value === false || value === 'false' ? 'false'
         : '';
       return (
-        <select
+        <FilterSelect
           value={boolStr}
           onChange={(e) => {
             if (e.target.value === '') onChange(null);
@@ -83,7 +84,7 @@ export default function FieldControl({
           <option value="">-- Select --</option>
           <option value="true">Yes</option>
           <option value="false">No</option>
-        </select>
+        </FilterSelect>
       );
     }
 
@@ -217,7 +218,7 @@ export default function FieldControl({
     if (typeName === 'choice') {
       const choices = (field.config_json as { choices?: { value: string; label: string }[] } | null)?.choices ?? [];
       return (
-        <select
+        <FilterSelect
           value={strVal}
           onChange={(e) => onChange(e.target.value)}
           disabled={isReadonly}
@@ -227,7 +228,7 @@ export default function FieldControl({
           {choices.map((c) => (
             <option key={c.value} value={c.value}>{c.label}</option>
           ))}
-        </select>
+        </FilterSelect>
       );
     }
 

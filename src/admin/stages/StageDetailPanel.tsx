@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState } from 'react';
 import {
   Save, X, Info,
@@ -412,13 +413,13 @@ function ConditionList({ label, conditions, onChange }: ConditionListProps) {
                 placeholder="field_name"
                 className="flex-1 px-2 py-1.5 text-xs font-mono border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
-              <select
+              <FilterSelect
                 value={c.operator}
                 onChange={(e) => update(i, { operator: e.target.value })}
                 className="px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
               >
                 {OPERATORS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              </FilterSelect>
               {!noValue(c.operator) && (
                 <input
                   value={String(c.value ?? '')}

@@ -1,3 +1,4 @@
+import FilterSelect from './FilterSelect';
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Trophy, XCircle, AlertTriangle, X, Clock, ChevronRight, ChevronLeft, ArrowLeftRight, AlertCircle, Link2, GitBranch, Lock, Maximize2, Minimize2 } from 'lucide-react';
@@ -142,7 +143,7 @@ function StagePopup({
         : (val === false || strVal === 'false') ? 'false'
         : '';
       return (
-        <select
+        <FilterSelect
           value={boolStr}
           disabled={fieldReadonly}
           onChange={(e) => {
@@ -154,7 +155,7 @@ function StagePopup({
           <option value="">-- Select --</option>
           <option value="true">Yes</option>
           <option value="false">No</option>
-        </select>
+        </FilterSelect>
       );
     }
 
@@ -185,12 +186,12 @@ function StagePopup({
     if (typeName === 'choice' || typeName === 'optionset') {
       const choices = (sf.config_json as { choices?: { value: string; label: string }[] } | null)?.choices ?? [];
       return (
-        <select value={strVal} disabled={fieldReadonly} className={`${inputBase} appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px] bg-[right_8px_center] bg-no-repeat pr-8`}
+        <FilterSelect value={strVal} disabled={fieldReadonly} className={`${inputBase} appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px] bg-[right_8px_center] bg-no-repeat pr-8`}
           onChange={(e) => { onChange(sf.field_logical_name, e.target.value); setValidationErrors((prev) => { const s = new Set(prev); s.delete(sf.field_logical_name); return s; }); }}
         >
           <option value="">-- Select --</option>
           {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
+        </FilterSelect>
       );
     }
 

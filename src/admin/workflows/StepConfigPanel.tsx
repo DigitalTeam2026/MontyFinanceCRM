@@ -1,4 +1,5 @@
-import { Plus, Trash2, ChevronDown, X } from 'lucide-react';
+import FilterSelect from '../../app/components/FilterSelect';
+import { Plus, Trash2, X } from 'lucide-react';
 import SearchableSelect from '../../app/components/SearchableSelect';
 import type { WorkflowStep, WorkflowStepType, WorkflowStepConfig } from '../../types/workflow';
 import type { FieldDefinition } from '../../types/field';
@@ -63,7 +64,7 @@ export default function StepConfigPanel({ step, fields, onUpdate, onClose }: Ste
             Step Type
           </label>
           <div className="relative">
-            <select
+            <FilterSelect
               value={step.step_type}
               onChange={(e) => onUpdate({
                 ...step,
@@ -75,9 +76,8 @@ export default function StepConfigPanel({ step, fields, onUpdate, onClose }: Ste
               {(Object.keys(STEP_META) as WorkflowStepType[]).map((t) => (
                 <option key={t} value={t}>{STEP_META[t].label}</option>
               ))}
-            </select>
-            <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
+            </FilterSelect>
+            </div>
         </div>
       </div>
 
@@ -142,11 +142,11 @@ function UpdateRecordForm({
             <button onClick={() => remove(u.id)} className="p-1 text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
           </div>
           <div className="flex gap-1.5">
-            <select value={u.value_type} onChange={(e) => set(u.id, { value_type: e.target.value })} className="text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none w-24">
+            <FilterSelect value={u.value_type} onChange={(e) => set(u.id, { value_type: e.target.value })} className="text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none w-24">
               <option value="static">Static</option>
               <option value="field_ref">From Field</option>
               <option value="formula">Formula</option>
-            </select>
+            </FilterSelect>
             <input type="text" value={u.value} onChange={(e) => set(u.id, { value: e.target.value })} placeholder="Value..." className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-slate-300" />
           </div>
         </div>
@@ -215,12 +215,12 @@ function SendNotificationForm({ config, onChange }: { config: Record<string, unk
         <div className="space-y-1.5">
           {recipients.map((r) => (
             <div key={r.id} className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
-              <select value={r.type} onChange={(e) => {
+              <FilterSelect value={r.type} onChange={(e) => {
                 const t = RECIPIENT_TYPES.find((x) => x.value === e.target.value);
                 onChange({ ...config, recipients: recipients.map((x) => x.id === r.id ? { ...x, type: e.target.value, label: t?.label ?? e.target.value } : x) });
               }} className="flex-1 text-[10px] bg-transparent border-0 focus:outline-none">
                 {RECIPIENT_TYPES.map((rt) => <option key={rt.value} value={rt.value}>{rt.label}</option>)}
-              </select>
+              </FilterSelect>
               <button onClick={() => removeRecipient(r.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
             </div>
           ))}
@@ -272,11 +272,11 @@ function CreateRecordForm({ config, fields, onChange }: { config: Record<string,
                 <button onClick={() => removeMapping(m.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
               </div>
               <div className="flex gap-1.5">
-                <select value={m.source_type} onChange={(e) => setMapping(m.id, { source_type: e.target.value })} className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none w-24">
+                <FilterSelect value={m.source_type} onChange={(e) => setMapping(m.id, { source_type: e.target.value })} className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none w-24">
                   <option value="static">Static</option>
                   <option value="field_ref">From Field</option>
                   <option value="current_user">Current User</option>
-                </select>
+                </FilterSelect>
                 {m.source_type !== 'current_user' && (
                   m.source_type === 'field_ref' ? (
                     <FieldSelect fields={fields} value={m.source_value} onChange={(ln) => setMapping(m.id, { source_value: ln })} />
@@ -319,9 +319,9 @@ function ConditionForm({ config, fields, onChange }: { config: Record<string, un
             <button onClick={() => remove(c.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
           </div>
           <div className="flex gap-1.5">
-            <select value={c.operator} onChange={(e) => set(c.id, { operator: e.target.value })} className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none">
+            <FilterSelect value={c.operator} onChange={(e) => set(c.id, { operator: e.target.value })} className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none">
               {OPERATORS.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
+            </FilterSelect>
             {!['is_null', 'is_not_null'].includes(c.operator) && (
               <input type="text" value={c.value} onChange={(e) => set(c.id, { value: e.target.value })} placeholder="Value..." className="flex-1 text-[10px] border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none placeholder:text-slate-300" />
             )}
@@ -350,11 +350,11 @@ function WaitForm({ config, onChange }: { config: Record<string, unknown>; onCha
       {waitType === 'duration' && (
         <div className="flex gap-2">
           <input type="number" min={1} value={(config.duration_value as number) ?? 1} onChange={(e) => onChange({ ...config, duration_value: parseInt(e.target.value) || 1 })} className="w-20 text-xs border border-slate-200 rounded-lg px-2 py-2 bg-slate-50 focus:outline-none" />
-          <select value={(config.duration_unit as string) ?? 'hours'} onChange={(e) => onChange({ ...config, duration_unit: e.target.value })} className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-2 bg-slate-50 focus:outline-none">
+          <FilterSelect value={(config.duration_unit as string) ?? 'hours'} onChange={(e) => onChange({ ...config, duration_unit: e.target.value })} className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-2 bg-slate-50 focus:outline-none">
             <option value="minutes">Minutes</option>
             <option value="hours">Hours</option>
             <option value="days">Days</option>
-          </select>
+          </FilterSelect>
         </div>
       )}
       {waitType === 'until_field' && (
@@ -428,11 +428,10 @@ function SelectField({ label, value, onChange, children }: { label: string; valu
     <div className="flex-1">
       <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">{label}</label>
       <div className="relative">
-        <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full appearance-none text-xs border border-slate-200 rounded-lg px-2.5 py-2 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 pr-7">
+        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className="w-full appearance-none text-xs border border-slate-200 rounded-lg px-2.5 py-2 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-blue-400 pr-7">
           {children}
-        </select>
-        <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     </div>
   );
 }

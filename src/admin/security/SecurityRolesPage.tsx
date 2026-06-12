@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Plus, Trash2, RefreshCw, Search,
@@ -887,7 +888,7 @@ function PrivilegeLevelCell({
       <div style={{ width: 52, height: 16, position: 'relative' }}>
         {/* Enabled: select dropdown */}
         <div style={{ position: 'absolute', inset: 0, display: enabled ? 'flex' : 'none', alignItems: 'center' }}>
-          <select
+          <FilterSelect
             id={selectId}
             name={selectId}
             value={level}
@@ -899,7 +900,7 @@ function PrivilegeLevelCell({
             {ACCESS_LEVELS.map((al) => (
               <option key={al} value={al}>{LEVEL_SHORT[al]}</option>
             ))}
-          </select>
+          </FilterSelect>
           <ChevronDown size={7} style={{ position: 'absolute', right: 2, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.6 }} />
         </div>
         {/* Disabled: static None pill */}

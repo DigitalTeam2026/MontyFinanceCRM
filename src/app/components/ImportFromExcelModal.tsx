@@ -1,8 +1,7 @@
+import FilterSelect from './FilterSelect';
 import { useState, useCallback, useRef } from 'react';
 import {
-  X, Download, Upload, FileSpreadsheet, AlertTriangle,
-  CheckCircle2, Loader2, ChevronDown, ArrowLeft,
-} from 'lucide-react';
+  X, Download, Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, Loader2, ArrowLeft } from 'lucide-react';
 import type { AppEntity } from '../types';
 import type { ColumnState } from './ColumnCustomizer';
 import type {
@@ -243,7 +242,7 @@ export default function ImportFromExcelModal({
                       Match records by
                     </label>
                     <div className="relative">
-                      <select
+                      <FilterSelect
                         value={matchColumn ?? ''}
                         onChange={(e) => setMatchColumn(e.target.value || null)}
                         className="w-full h-[32px] pl-3 pr-8 text-[12px] bg-white border rounded appearance-none text-[var(--ink-700)]
@@ -255,9 +254,8 @@ export default function ImportFromExcelModal({
                         {matchableCols.map((c) => (
                           <option key={c.key} value={c.key}>{c.label}</option>
                         ))}
-                      </select>
-                      <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ink-400)] pointer-events-none" />
-                    </div>
+                      </FilterSelect>
+                      </div>
                     {isPkMatch && (
                       <p className="text-[11px] text-emerald-700 mt-1.5 flex items-center gap-1">
                         <CheckCircle2 size={11} />

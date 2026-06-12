@@ -7,7 +7,8 @@ export type TriggerEvent =
   | 'close_opportunity_lost'
   | 'reopen_opportunity'
   | 'before_create'
-  | 'on_form_load';
+  | 'on_form_load'
+  | 'convert_prospect';
 
 export type FormAccessLevel = 'allow_edit' | 'read_only' | 'not_allow';
 
@@ -144,6 +145,7 @@ export const TRIGGER_EVENT_META: Record<TriggerEvent, { label: string; descripti
   reopen_opportunity:     { label: 'Reopen Opportunity',       description: 'Runs when a closed Opportunity is reopened',                category: 'lifecycle' },
   before_create:          { label: 'Before Create',            description: 'Runs before a new record is created (can block creation)',   category: 'governance' },
   on_form_load:           { label: 'On Form Load',             description: 'Evaluated when a record form opens; controls form access',    category: 'governance' },
+  convert_prospect:       { label: 'Convert Prospect',         description: 'Runs when a Prospect is converted to a Lead',                category: 'lifecycle' },
 };
 
 export const CONDITION_TYPE_META: Record<ConditionType, { label: string; description: string; needsTarget: boolean; needsSourceField: boolean; needsValue: boolean }> = {
@@ -189,6 +191,7 @@ export const KNOWN_ENTITIES = [
   { logical_name: 'opportunity',    display_name: 'Opportunity' },
   { logical_name: 'account',        display_name: 'Account' },
   { logical_name: 'contact',        display_name: 'Contact' },
+  { logical_name: 'prospect',       display_name: 'Prospect' },
   { logical_name: 'ticket',         display_name: 'Ticket' },
   { logical_name: 'product',        display_name: 'Product' },
   { logical_name: 'product_family', display_name: 'Product Family' },
@@ -200,6 +203,7 @@ export const ALL_TRIGGER_EVENTS: TriggerEvent[] = [
   'close_opportunity_won', 'close_opportunity_lost', 'reopen_opportunity',
   'before_create',
   'on_form_load',
+  'convert_prospect',
 ];
 
 export const ALL_CONDITION_TYPES: ConditionType[] = ['related_record_exists', 'field_equals', 'status_equals', 'lookup_not_null', 'custom'];

@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect } from 'react';
 import {
   Settings, EyeOff, ChevronLeft, ChevronRight, Trash2, Plus, X,
@@ -212,24 +213,24 @@ function SectionProperties({
           />
         </PropField>
         <PropField label="Layout">
-          <select
+          <FilterSelect
             value={section.columns}
             onChange={(e) => store.updateSection(tab.id, section.id, { columns: Number(e.target.value) as 1 | 2 })}
             className={pi()}
           >
             <option value={1}>1 Column</option>
             <option value={2}>2 Columns</option>
-          </select>
+          </FilterSelect>
         </PropField>
         <PropField label="Section Width">
-          <select
+          <FilterSelect
             value={section.column_span ?? 2}
             onChange={(e) => store.updateSection(tab.id, section.id, { column_span: Number(e.target.value) as 1 | 2 })}
             className={pi()}
           >
             <option value={2}>Full row</option>
             <option value={1}>Half (side by side)</option>
-          </select>
+          </FilterSelect>
         </PropField>
         <PropToggle
           label="Visible"
@@ -350,14 +351,14 @@ function ControlProperties({
           />
         </PropField>
         <PropField label="Width">
-          <select
+          <FilterSelect
             value={control.column_span}
             onChange={(e) => upd({ column_span: Number(e.target.value) as 1 | 2 })}
             className={pi()}
           >
             <option value={1}>Half width</option>
             <option value={2}>Full width</option>
-          </select>
+          </FilterSelect>
         </PropField>
         <PropButton label="Remove" icon={<Trash2 size={11} />} danger onClick={() => store.removeControl(tab.id, section.id, control.id)} />
       </PropSection>
@@ -411,14 +412,14 @@ function ControlProperties({
           />
         </PropField>
         <PropField label="Width">
-          <select
+          <FilterSelect
             value={control.column_span}
             onChange={(e) => upd({ column_span: Number(e.target.value) as 1 | 2 })}
             className={pi()}
           >
             <option value={1}>Half width</option>
             <option value={2}>Full width</option>
-          </select>
+          </FilterSelect>
         </PropField>
         <PropToggle
           label="Visible"
@@ -555,7 +556,7 @@ function LookupConfigPanel({
                 <Loader2 size={11} className="animate-spin" /> Loading views…
               </div>
             ) : (
-              <select
+              <FilterSelect
                 value={cfg.default_view_id ?? ''}
                 onChange={(e) => patch({ default_view_id: e.target.value || null })}
                 className={pi()}
@@ -567,7 +568,7 @@ function LookupConfigPanel({
                     {v.view_type === 'system' ? ' (System)' : v.view_type === 'personal' ? ' (Personal)' : ''}
                   </option>
                 ))}
-              </select>
+              </FilterSelect>
             )}
             {cfg.default_view_id && (
               <p className="text-[10px] text-blue-600 mt-1 flex items-center gap-1">
@@ -600,7 +601,7 @@ function LookupConfigPanel({
             ) : (
               <>
                 <PropField label="Filter By Field">
-                  <select
+                  <FilterSelect
                     value={cfg.filter_by_field_logical_name ?? ''}
                     onChange={(e) => {
                       patch({
@@ -617,7 +618,7 @@ function LookupConfigPanel({
                         {c.field_display_name ?? c.field_logical_name}
                       </option>
                     ))}
-                  </select>
+                  </FilterSelect>
                 </PropField>
 
                 {cfg.filter_by_field_logical_name && (
@@ -636,7 +637,7 @@ function LookupConfigPanel({
                             </p>
                           </div>
                         ) : (
-                          <select
+                          <FilterSelect
                             value={cfg.filter_relationship_id ?? ''}
                             onChange={(e) => {
                               const rel = relationships.find(
@@ -655,7 +656,7 @@ function LookupConfigPanel({
                                 {r.display_name}
                               </option>
                             ))}
-                          </select>
+                          </FilterSelect>
                         )}
                       </PropField>
                     </div>
@@ -781,13 +782,13 @@ function EventsPanel({
         <div className="border border-slate-200 rounded-lg p-3 space-y-2.5">
           <p className="text-xs font-semibold text-slate-700">New Event Handler</p>
           <PropField label="Event">
-            <select
+            <FilterSelect
               value={newHandler.event_type}
               onChange={(e) => setNewHandler({ ...newHandler, event_type: e.target.value as EventType })}
               className={pi()}
             >
               {EVENT_TYPES.map((et) => <option key={et} value={et}>{et}</option>)}
-            </select>
+            </FilterSelect>
           </PropField>
           {newHandler.event_type === 'onChange' && (
             <PropField label="Field (logical name)">
@@ -892,14 +893,14 @@ function ScriptsPanel({
             />
           </PropField>
           <PropField label="Type">
-            <select
+            <FilterSelect
               value={newScript.script_type}
               onChange={(e) => setNewScript({ ...newScript, script_type: e.target.value as 'js_library' | 'inline' })}
               className={pi()}
             >
               <option value="js_library">JS Library URL</option>
               <option value="inline">Inline Script</option>
-            </select>
+            </FilterSelect>
           </PropField>
           {newScript.script_type === 'js_library' ? (
             <PropField label="URL">

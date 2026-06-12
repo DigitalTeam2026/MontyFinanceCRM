@@ -1,5 +1,6 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Filter, X, Search, Check, ChevronDown } from 'lucide-react';
+import { Filter, X, Search, Check } from 'lucide-react';
 import type { FieldDefinition } from '../../types/field';
 
 export interface ColumnFilter {
@@ -175,15 +176,14 @@ export default function ColumnFilterDropdown({
         <div>
           <label className="text-[10px] font-semibold text-[var(--ink-400)] uppercase tracking-wider">Condition</label>
           <div className="relative mt-1">
-            <select
+            <FilterSelect
               value={operator}
               onChange={(e) => { setOperator(e.target.value); setValue(''); setValueTo(''); }}
               className="w-full px-2.5 py-1.5 text-[12px] border border-[var(--border)] rounded bg-white pr-7 appearance-none focus:outline-none focus:ring-1 focus:ring-[var(--navy-accent)] text-[var(--ink-700)]"
             >
               {ops.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
-            </select>
-            <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ink-300)] pointer-events-none" />
-          </div>
+            </FilterSelect>
+            </div>
         </div>
 
         {/* Value Input */}
@@ -286,7 +286,7 @@ function BooleanInput({ value, onChange }: { value: unknown; onChange: (v: unkno
     : '';
   return (
     <div className="relative">
-      <select
+      <FilterSelect
         value={boolStr}
         onChange={(e) => onChange(e.target.value)}
         className="w-full px-2.5 py-1.5 text-[12px] border border-[var(--border)] rounded bg-white pr-7 appearance-none focus:outline-none focus:ring-1 focus:ring-[var(--navy-accent)] text-[var(--ink-700)]"
@@ -294,9 +294,8 @@ function BooleanInput({ value, onChange }: { value: unknown; onChange: (v: unkno
         <option value="">Any</option>
         <option value="true">Yes</option>
         <option value="false">No</option>
-      </select>
-      <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ink-300)] pointer-events-none" />
-    </div>
+      </FilterSelect>
+      </div>
   );
 }
 

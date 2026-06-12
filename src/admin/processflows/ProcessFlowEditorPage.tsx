@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   ArrowLeft, ArrowDown, Save, Settings, GitMerge, Plus,
@@ -132,14 +133,14 @@ function ConditionGroupEditor({ group, onChange, fields, entityId, depth = 0, va
         ) : (
           <div key={i} className="flex items-center gap-1.5 flex-wrap">
             {/* Field — dynamic dropdown of the selected entity's fields */}
-            <select value={r.field} onChange={(e) => setRule(i, { ...r, field: e.target.value, value: '' })} className={`${selCls} flex-1 min-w-[6.5rem]`}>
+            <FilterSelect value={r.field} onChange={(e) => setRule(i, { ...r, field: e.target.value, value: '' })} className={`${selCls} flex-1 min-w-[6.5rem]`}>
               <option value="">— field —</option>
               {fields.map((f) => <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>)}
-            </select>
+            </FilterSelect>
             {/* Operator — fixed width so it can't squeeze the field/value out of view */}
-            <select value={r.operator} onChange={(e) => setRule(i, { ...r, operator: e.target.value })} className={`${selCls} w-[7.5rem] shrink-0`}>
+            <FilterSelect value={r.operator} onChange={(e) => setRule(i, { ...r, operator: e.target.value })} className={`${selCls} w-[7.5rem] shrink-0`}>
               {CONDITION_OPERATORS.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
-            </select>
+            </FilterSelect>
             {/* Value — type-aware control (lookup search / choice dropdown / plain input) */}
             {r.operator !== 'empty' && r.operator !== 'not_empty' && (() => {
               const f = fields.find((ff) => ff.logical_name === r.field);
@@ -283,12 +284,12 @@ function ConditionChoiceValueInput({
   return (
     <div>
       {!hideLabel && <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>}
-      <select value={value} onChange={(e) => onChange(e.target.value)} className={inputCls}>
+      <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={inputCls}>
         <option value="">-- Select --</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
-      </select>
+      </FilterSelect>
     </div>
   );
 }
@@ -2804,7 +2805,7 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <select
+                        <FilterSelect
                           value={selectedFieldId} onChange={(e) => setSelectedFieldId(e.target.value)}
                           disabled={entityFieldsLoading}
                           className="flex-1 min-w-0 px-2 py-1.5 text-[11px] border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white disabled:bg-gray-50"
@@ -2812,7 +2813,7 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
                           <option value="">{entityFieldsLoading ? 'Loading…' : '— Select field —'}</option>
                           {entityFields.filter((f) => !steps.some((s) => s.field_logical_name === f.logical_name))
                             .map((f) => <option key={f.field_definition_id} value={f.field_definition_id}>{f.display_name}</option>)}
-                        </select>
+                        </FilterSelect>
                         <button
                           onClick={handleAddField}
                           disabled={!selectedFieldId || addingStep}
@@ -2893,7 +2894,7 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
                       <Loader2 size={12} className="animate-spin" /> Loading…
                     </div>
                   ) : (
-                    <select
+                    <FilterSelect
                       value={relationshipDefId ?? ''}
                       onChange={(e) => {
                         const rel = relationships.find(r => r.relationship_definition_id === e.target.value);
@@ -2913,7 +2914,7 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
                           {r.lookup_field_physical_column ? ` · ${r.lookup_field_physical_column}` : ''}
                         </option>
                       ))}
-                    </select>
+                    </FilterSelect>
                   )}
                   {!loadingRel && relationships.length === 0 && (
                     <p className="text-[10px] text-amber-600 mt-1 flex items-center gap-1">
@@ -3390,33 +3391,33 @@ function SettingsPanel({
         {scope === 'lob' && (
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Line of Business</label>
-            <select value={form.lob_id ?? ''} onChange={(e) => set('lob_id', e.target.value || null)} disabled={flow.is_system}
+            <FilterSelect value={form.lob_id ?? ''} onChange={(e) => set('lob_id', e.target.value || null)} disabled={flow.is_system}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none">
               <option value="">Select line of business…</option>
               {lobs.map((l) => <option key={l.lob_id} value={l.lob_id}>{l.name}</option>)}
-            </select>
+            </FilterSelect>
           </div>
         )}
 
         {scope === 'product' && (
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Product</label>
-            <select value={form.product_id ?? ''} onChange={(e) => set('product_id', e.target.value || null)} disabled={flow.is_system}
+            <FilterSelect value={form.product_id ?? ''} onChange={(e) => set('product_id', e.target.value || null)} disabled={flow.is_system}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none">
               <option value="">Select product…</option>
               {products.map((p) => <option key={p.product_id} value={p.product_id}>{p.name}</option>)}
-            </select>
+            </FilterSelect>
           </div>
         )}
 
         {form.entity_definition_id && (
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Form</label>
-            <select value={form.form_id ?? ''} onChange={(e) => set('form_id', e.target.value || null)}
+            <FilterSelect value={form.form_id ?? ''} onChange={(e) => set('form_id', e.target.value || null)}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none">
               <option value="">Use entity default form</option>
               {formOptions.map((f) => <option key={f.form_id} value={f.form_id}>{f.name}{f.is_default ? ' (default)' : ''}</option>)}
-            </select>
+            </FilterSelect>
           </div>
         )}
       </div>
@@ -3429,11 +3430,11 @@ function SettingsPanel({
             <Lock size={12} className="text-gray-400 ml-auto" />
           </div>
         ) : (
-          <select value={form.entity_definition_id} onChange={(e) => set('entity_definition_id', e.target.value)}
+          <FilterSelect value={form.entity_definition_id} onChange={(e) => set('entity_definition_id', e.target.value)}
             className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none ${entityChanged ? 'border-amber-400 bg-amber-50' : 'border-gray-200'}`}>
             <option value="">Select entity…</option>
             {entities.map((ent) => <option key={ent.entity_definition_id} value={ent.entity_definition_id}>{ent.display_name}</option>)}
-          </select>
+          </FilterSelect>
         )}
 
         {entityChanged && stageCount > 0 && (
@@ -3701,7 +3702,7 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Form</label>
-                        <select
+                        <FilterSelect
                           value={editRow?.form_id ?? ''}
                           onChange={(e) => setEditRow((p) => ({ ...p, form_id: e.target.value || null }))}
                           className="w-full px-2 py-1.5 text-xs bg-white border border-blue-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 text-gray-700"
@@ -3710,14 +3711,14 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
                           {editForms.map((f) => (
                             <option key={f.form_id} value={f.form_id}>{f.name}{f.is_default ? ' ✓' : ''}</option>
                           ))}
-                        </select>
+                        </FilterSelect>
                       </div>
                       <div>
                         <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Link Behavior</label>
                         {cfg.is_primary ? (
                           <p className="text-xs text-gray-400 italic py-1.5">Open Existing</p>
                         ) : (
-                          <select
+                          <FilterSelect
                             value={editRow?.link_behavior ?? 'open_existing'}
                             onChange={(e) => setEditRow((p) => ({ ...p, link_behavior: e.target.value as LinkBehavior }))}
                             className="w-full px-2 py-1.5 text-xs bg-white border border-blue-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 text-gray-700"
@@ -3725,7 +3726,7 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
                             {LINK_BEHAVIOR_OPTIONS.map((o) => (
                               <option key={o.value} value={o.value}>{o.label}</option>
                             ))}
-                          </select>
+                          </FilterSelect>
                         )}
                       </div>
                     </div>
@@ -3735,7 +3736,7 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Relationship</label>
-                          <select
+                          <FilterSelect
                             value={editRow?.relationship_definition_id ?? ''}
                             onChange={(e) => {
                               const rel = editRels.find((r) => r.relationship_definition_id === e.target.value);
@@ -3751,7 +3752,7 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
                             {editRels.map((r) => (
                               <option key={r.relationship_definition_id} value={r.relationship_definition_id}>{r.display_name}</option>
                             ))}
-                          </select>
+                          </FilterSelect>
                         </div>
                         <div>
                           <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Lookup Field</label>
@@ -3879,7 +3880,7 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
                   <label className="block text-[10px] font-semibold text-gray-600 uppercase tracking-wide mb-1">
                     Entity <span className="text-red-500">*</span>
                   </label>
-                  <select
+                  <FilterSelect
                     value={newEntityId}
                     onChange={(e) => { setNewEntityId(e.target.value); setNewRelDefId(null); setNewRelColumn(''); setNewFormId(null); }}
                     className="w-full px-2 py-1.5 text-xs bg-white border border-teal-300 rounded-md focus:outline-none focus:ring-1 focus:ring-teal-400 text-gray-700"
@@ -3888,11 +3889,11 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
                     {availableEntities.map((e) => (
                       <option key={e.entity_definition_id} value={e.entity_definition_id}>{e.display_name}</option>
                     ))}
-                  </select>
+                  </FilterSelect>
                 </div>
                 <div>
                   <label className="block text-[10px] font-semibold text-gray-600 uppercase tracking-wide mb-1">Form</label>
-                  <select
+                  <FilterSelect
                     value={newFormId ?? ''}
                     onChange={(e) => setNewFormId(e.target.value || null)}
                     disabled={newForms.length === 0}
@@ -3902,7 +3903,7 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
                     {newForms.map((f) => (
                       <option key={f.form_id} value={f.form_id}>{f.name}{f.is_default ? ' (default)' : ''}</option>
                     ))}
-                  </select>
+                  </FilterSelect>
                 </div>
               </div>
 
@@ -3911,7 +3912,7 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-600 uppercase tracking-wide mb-1">Relationship</label>
-                    <select
+                    <FilterSelect
                       value={newRelDefId ?? ''}
                       onChange={(e) => {
                         const rel = newRels.find((r) => r.relationship_definition_id === e.target.value);
@@ -3924,7 +3925,7 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
                       {newRels.map((r) => (
                         <option key={r.relationship_definition_id} value={r.relationship_definition_id}>{r.display_name}</option>
                       ))}
-                    </select>
+                    </FilterSelect>
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-600 uppercase tracking-wide mb-1">Lookup Field</label>

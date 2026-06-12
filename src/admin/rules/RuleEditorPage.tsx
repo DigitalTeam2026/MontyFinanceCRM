@@ -1,22 +1,8 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState } from 'react';
 import { useToast } from '../../app/context/ToastContext';
 import {
-  ArrowLeft,
-  Save,
-  RefreshCw,
-  Zap,
-  Settings,
-  Activity,
-  CheckCircle2,
-  Globe,
-  FileText,
-  ChevronDown,
-  FlaskConical,
-  Database,
-  GitBranch,
-  Milestone,
-  LayoutGrid,
-} from 'lucide-react';
+  ArrowLeft, Save, RefreshCw, Zap, Settings, Activity, CheckCircle2, Globe, FileText, FlaskConical, Database, GitBranch, Milestone, LayoutGrid } from 'lucide-react';
 import type { BusinessRule, RuleTrigger, RuleActionSet, RuleScope, RuleConditionGroup, RuleCondition, RuleConditionBlock, RuleAction } from '../../types/businessRule';
 import { validateProcessFlowCondition, getRuleConditionBlocks } from '../../types/businessRule';
 import type { FieldDefinition } from '../../types/field';
@@ -574,7 +560,7 @@ function TriggerPanel({
                 <p className="text-[11px] text-slate-400 italic">No forms found for this entity.</p>
               ) : (
                 <div className="relative">
-                  <select
+                  <FilterSelect
                     value={rule.target_form_id ?? ''}
                     onChange={(e) => onRuleChange({ ...rule, target_form_id: e.target.value || null })}
                     className="w-full appearance-none pl-3 pr-8 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700"
@@ -585,9 +571,8 @@ function TriggerPanel({
                         {f.name}{f.form_type ? ` (${f.form_type})` : ''}
                       </option>
                     ))}
-                  </select>
-                  <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
+                  </FilterSelect>
+                  </div>
               )}
               {!rule.target_form_id && (
                 <p className="mt-1.5 text-[10px] text-amber-600 font-medium">
@@ -612,7 +597,7 @@ function TriggerPanel({
                   <p className="text-[11px] text-slate-400 italic">No process flows found for this entity.</p>
                 ) : (
                   <div className="relative">
-                    <select
+                    <FilterSelect
                       value={rule.target_process_flow_id ?? ''}
                       onChange={(e) => onRuleChange({
                         ...rule,
@@ -627,9 +612,8 @@ function TriggerPanel({
                           {f.name}
                         </option>
                       ))}
-                    </select>
-                    <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
+                    </FilterSelect>
+                    </div>
                 )}
                 {!rule.target_process_flow_id && (
                   <p className="mt-1.5 text-[10px] text-amber-600 font-medium">
@@ -647,7 +631,7 @@ function TriggerPanel({
                     <p className="text-[11px] text-slate-400 italic">Loading stages...</p>
                   ) : (
                     <div className="relative">
-                      <select
+                      <FilterSelect
                         value={rule.target_process_stage_id ?? ''}
                         onChange={(e) => onRuleChange({ ...rule, target_process_stage_id: e.target.value || null })}
                         className="w-full appearance-none pl-3 pr-8 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700"
@@ -660,9 +644,8 @@ function TriggerPanel({
                               {s.name}
                             </option>
                           ))}
-                      </select>
-                      <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                    </div>
+                      </FilterSelect>
+                      </div>
                   )}
                   {!rule.target_process_stage_id && (
                     <p className="mt-1.5 text-[10px] text-amber-600 font-medium">

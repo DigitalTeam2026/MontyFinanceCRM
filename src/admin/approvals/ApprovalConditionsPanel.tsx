@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { Plus, Trash2, AlertCircle } from 'lucide-react';
 import type { ApprovalConditionDraft, ConditionType, ConditionOperator } from '../../types/approvalProcess';
 import { CONDITION_TYPE_META } from '../../types/approvalProcess';
@@ -75,7 +76,7 @@ export default function ApprovalConditionsPanel({ conditions, onChange, disabled
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[10px] font-semibold text-gray-500 mb-1">Condition Type</label>
-                      <select
+                      <FilterSelect
                         value={cond.condition_type}
                         onChange={(e) => {
                           const type = e.target.value as ConditionType;
@@ -93,20 +94,20 @@ export default function ApprovalConditionsPanel({ conditions, onChange, disabled
                         {Object.entries(CONDITION_TYPE_META).map(([key, m]) => (
                           <option key={key} value={key}>{m.label}</option>
                         ))}
-                      </select>
+                      </FilterSelect>
                     </div>
 
                     {meta.hasField && (
                       <div>
                         <label className="block text-[10px] font-semibold text-gray-500 mb-1">Operator</label>
-                        <select
+                        <FilterSelect
                           value={cond.operator}
                           onChange={(e) => update(cond._tempId, { operator: e.target.value as ConditionOperator })}
                           disabled={disabled}
                           className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-100"
                         >
                           {OPERATORS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
+                        </FilterSelect>
                       </div>
                     )}
                   </div>

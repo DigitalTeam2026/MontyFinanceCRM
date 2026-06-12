@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState } from 'react';
 import {
   Save, Info, ArrowRight, Lock, Plus, X, ChevronDown, ChevronUp,
@@ -421,7 +422,7 @@ function AddTransitionRow({
   return showSelect ? (
     <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
       <ArrowRight size={12} className="text-blue-500 flex-shrink-0" />
-      <select
+      <FilterSelect
         autoFocus
         defaultValue=""
         onChange={(e) => { if (e.target.value) { onAdd(fromId, e.target.value); setShowSelect(false); } }}
@@ -432,7 +433,7 @@ function AddTransitionRow({
         {available.map((s) => (
           <option key={s.process_stage_id} value={s.process_stage_id}>{s.name}</option>
         ))}
-      </select>
+      </FilterSelect>
       <button onClick={() => setShowSelect(false)} className="text-gray-400 hover:text-gray-600">
         <X size={12} />
       </button>
@@ -562,7 +563,7 @@ function TransitionEditor({
                   placeholder="field name"
                   className="w-28 px-2 py-1.5 text-xs font-mono border border-orange-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
                 />
-                <select
+                <FilterSelect
                   value={cond.operator}
                   onChange={(e) => updateCondition(i, { operator: e.target.value as TransitionCondition['operator'] })}
                   className="px-2 py-1.5 text-xs border border-orange-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
@@ -570,7 +571,7 @@ function TransitionEditor({
                   {TRANSITION_OPERATORS.map((op) => (
                     <option key={op.value} value={op.value}>{op.label}</option>
                   ))}
-                </select>
+                </FilterSelect>
                 {needsValue(cond.operator) && (
                   <input
                     value={cond.value as string ?? ''}

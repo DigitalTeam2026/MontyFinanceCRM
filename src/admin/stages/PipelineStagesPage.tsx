@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState, useCallback } from 'react';
 import {
   Search, RefreshCw, Filter, GitMerge, X,
@@ -142,15 +143,15 @@ export default function PipelineStagesPage() {
           {/* Filter row */}
           <div className="flex items-center gap-2 flex-wrap">
             <Filter size={12} className="text-gray-400 flex-shrink-0" />
-            <select
+            <FilterSelect
               value={filterFlow}
               onChange={(e) => setFilterFlow(e.target.value)}
               className="py-1 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             >
               <option value="">All Flows</option>
               {flows.map((f) => <option key={f.process_flow_id} value={f.process_flow_id}>{f.name}</option>)}
-            </select>
-            <select
+            </FilterSelect>
+            <FilterSelect
               value={filterType}
               onChange={(e) => setFilterType(e.target.value as StageType | '')}
               className="py-1 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -159,16 +160,16 @@ export default function PipelineStagesPage() {
               {(Object.keys(STAGE_TYPE_META) as StageType[]).map((t) => (
                 <option key={t} value={t}>{STAGE_TYPE_META[t].label}</option>
               ))}
-            </select>
-            <select
+            </FilterSelect>
+            <FilterSelect
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value as StageCategory | '')}
               className="py-1 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             >
               <option value="">All Categories</option>
               {STAGE_CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
-            <select
+            </FilterSelect>
+            <FilterSelect
               value={filterActive}
               onChange={(e) => setFilterActive(e.target.value as typeof filterActive)}
               className="py-1 px-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -176,7 +177,7 @@ export default function PipelineStagesPage() {
               <option value="">Active + Terminal</option>
               <option value="active">Active only</option>
               <option value="terminal">Terminal only</option>
-            </select>
+            </FilterSelect>
             {(filterFlow || filterType || filterCategory || filterActive || search) && (
               <button
                 onClick={() => { setFilterFlow(''); setFilterType(''); setFilterCategory(''); setFilterActive(''); setSearch(''); }}

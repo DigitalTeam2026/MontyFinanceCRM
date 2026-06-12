@@ -68,6 +68,42 @@
   --warn-bg:#2A2610; --warn-text:#D9C36A; --row-hover:#1B2A23;
   --shadow:0 10px 26px -14px rgba(0,0,0,.5);
 }
+[data-theme="rose-gold"]{
+  --app-bg:#FAF5F2; --sidebar-bg:#FFFFFF; --sidebar-text:#8A7370;
+  --sidebar-active:#F6E9E4; --topbar-bg:#43282E; --surface:#FFFFFF;
+  --surface-2:#FAF1ED; --border:#EDDDD6; --text:#3D2B2E; --muted:#9B8482;
+  --primary:#B76E79; --primary-text:#FFF7F4; --link:#B05F6D;
+  --input-bg:#FAF4F1; --danger:#C2410C; --success:#2E9E6B;
+  --warn-bg:#FBF0DC; --warn-text:#A4762B; --row-hover:#FAF0EC;
+  --shadow:0 6px 20px -12px rgba(67,40,46,.18);
+}
+[data-theme="blossom"]{
+  --app-bg:#FDF4F8; --sidebar-bg:#FFFFFF; --sidebar-text:#8E6B7E;
+  --sidebar-active:#FBE5F0; --topbar-bg:#8F1D52; --surface:#FFFFFF;
+  --surface-2:#FCEFF5; --border:#F3DCE7; --text:#46243A; --muted:#9D7A8C;
+  --primary:#D6336C; --primary-text:#FFFFFF; --link:#C2255C;
+  --input-bg:#FDF2F7; --danger:#C2410C; --success:#2F9E6B;
+  --warn-bg:#FCF1DD; --warn-text:#A4762B; --row-hover:#FBEAF2;
+  --shadow:0 6px 20px -12px rgba(143,29,82,.16);
+}
+[data-theme="lavender"]{
+  --app-bg:#F7F5FC; --sidebar-bg:#FFFFFF; --sidebar-text:#776E96;
+  --sidebar-active:#EEE9FA; --topbar-bg:#3E2F6E; --surface:#FFFFFF;
+  --surface-2:#F4F0FB; --border:#E5DFF4; --text:#2E2452; --muted:#857CA3;
+  --primary:#7C5CDB; --primary-text:#FFFFFF; --link:#6D4FD0;
+  --input-bg:#F7F4FC; --danger:#C2410C; --success:#2E9E6B;
+  --warn-bg:#F8F0DC; --warn-text:#A4762B; --row-hover:#F1ECFA;
+  --shadow:0 6px 20px -12px rgba(62,47,110,.16);
+}
+[data-theme="pearl"]{
+  --app-bg:#FFFFFF; --sidebar-bg:#FAFAFA; --sidebar-text:#6B7280;
+  --sidebar-active:#EFEFEF; --topbar-bg:#111827; --surface:#FFFFFF;
+  --surface-2:#F7F7F8; --border:#E8E8EA; --text:#1F2430; --muted:#737B8C;
+  --primary:#3B82F6; --primary-text:#FFFFFF; --link:#2563EB;
+  --input-bg:#FAFAFB; --danger:#DC2626; --success:#16A34A;
+  --warn-bg:#FEF3C7; --warn-text:#92400E; --row-hover:#F6F7F9;
+  --shadow:0 6px 18px -12px rgba(17,24,39,.12);
+}
 
 /* ── Legacy-variable aliases + global tokens (theme-independent) ────────────────
    The codebase still references the older variable names below. Aliasing them

@@ -1,3 +1,4 @@
+import FilterSelect from './FilterSelect';
 import { useState, useEffect } from 'react';
 import { X, Share2, Loader2, Trash2, Globe, Lock, Users, User } from 'lucide-react';
 import type { ViewDefinition } from '../../types/view';
@@ -171,7 +172,7 @@ export default function ShareViewModal({ view, onClose }: ShareViewModalProps) {
                 )}
               </div>
 
-              <select
+              <FilterSelect
                 value={permission}
                 onChange={(e) => setPermission(e.target.value as 'read' | 'write')}
                 className="h-10 px-2.5 text-[12px] border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shrink-0"
@@ -179,7 +180,7 @@ export default function ShareViewModal({ view, onClose }: ShareViewModalProps) {
               >
                 <option value="read">Can view</option>
                 <option value="write">Can edit</option>
-              </select>
+              </FilterSelect>
 
               <button
                 onClick={handleAdd}

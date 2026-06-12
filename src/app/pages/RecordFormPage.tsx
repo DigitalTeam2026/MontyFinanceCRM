@@ -1,3 +1,4 @@
+import FilterSelect from '../components/FilterSelect';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ChevronLeft,
@@ -19,7 +20,6 @@ import {
   Trophy,
   XCircle,
   SaveAll,
-  History,
   ShieldAlert,
   RefreshCw,
   Zap,
@@ -86,6 +86,9 @@ import { useToast, toFriendlyError } from '../context/ToastContext';
 import QualifyLeadModal from '../components/form/QualifyLeadModal';
 import ReQualifyLeadModal from '../components/form/ReQualifyLeadModal';
 import ReopenLeadModal from '../components/form/ReopenLeadModal';
+import ConvertProspectModal, { ConversionSuccessPrompt } from '../components/form/ConvertProspectModal';
+import { isProspectConverted as checkProspectConverted, isProspectActive as checkProspectActive, getConvertedLeadId, convertProspectToLead } from '../services/prospectConversionService';
+import type { ConversionResult } from '../services/prospectConversionService';
 import { DisqualifyReasonModal } from '../components/ProcessStageBar';
 import DuplicateWarningModal from '../components/form/DuplicateWarningModal';
 import TransformRecordModal from '../components/form/TransformRecordModal';
@@ -227,6 +230,7 @@ const ENTITY_LOGICAL_TO_SLUG: Record<string, string> = {
   opportunity:  'opportunities',
   ticket:       'tickets',
   crm_user:     'users',
+  prospect:     'prospect',
 };
 
 /** Static fallback map for well-known lookup fields (logical_name → entity slug).
@@ -1107,6 +1111,8 @@ export default function RecordFormPage({
   const [formAccessRules, setFormAccessRules] = useState<DigitalRule[]>([]);
   const [showCloseOppModal, setShowCloseOppModal] = useState<'won' | 'lost' | null>(null);
   const [showReopenOppModal, setShowReopenOppModal] = useState(false);
+  const [showConvertProspectModal, setShowConvertProspectModal] = useState(false);
+  const [conversionResult, setConversionResult] = useState<ConversionResult | null>(null);
   const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([]);
   const [duplicateMustBlock, setDuplicateMustBlock] = useState(false);
   const [stageGateErrors, setStageGateErrors] = useState<{
@@ -1672,7 +1678,7 @@ export default function RecordFormPage({
   }, [entity, values['qualified_opportunity_id'], values['originating_lead_id']]);
 
   useEffect(() => {
-    const sourceEntity = entity === 'leads' ? 'lead' : entity === 'opportunities' ? 'opportunity' : entity === 'contacts' ? 'contact' : entity === 'accounts' ? 'account' : null;
+    const sourceEntity = entity === 'leads' ? 'lead' : entity === 'opportunities' ? 'opportunity' : entity === 'contacts' ? 'contact' : entity === 'accounts' ? 'account' : (entity === 'prospect' || entity === 'prospects') ? 'prospect' : null;
     if (!sourceEntity || !recordId) return;
     fetchRulesForEntity(sourceEntity).then(allRules => {
       setTransformationRules(getRulesForManualTrigger(allRules));
@@ -2322,6 +2328,27 @@ export default function RecordFormPage({
     await doSave({ ...values });
   };
 
+  const handleConvertProspect = () => {
+    if (!resolvedRecordId) return;
+    setShowConvertProspectModal(true);
+  };
+
+  const handleConvertProspectSuccess = async (result: ConversionResult) => {
+    setShowConvertProspectModal(false);
+    if (!resolvedRecordId) return;
+    setSaveStatus('saving');
+    try {
+      await refreshFullRecord();
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2500);
+    } catch (e) {
+      setSaveStatus('error');
+      showError(toFriendlyError(e, 'Prospect converted, but failed to refresh the record.'));
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+    setConversionResult(result);
+  };
+
   const handleQualify = async () => {
     if (!resolvedRecordId) return;
 
@@ -2657,6 +2684,7 @@ export default function RecordFormPage({
       onCloseWon={handleCloseWon}
       onCloseLost={handleCloseLost}
       onReopenOpportunity={handleReopenOpp}
+      onConvertProspect={handleConvertProspect}
       lifecycleRules={lifecycleRules}
       onTogglePin={handleTogglePin}
       onAssign={handleAssign}
@@ -2721,6 +2749,25 @@ export default function RecordFormPage({
           await refreshFullRecord();
         }}
         onCancel={() => setActiveTransformationRule(null)}
+      />
+    )}
+    {showConvertProspectModal && resolvedRecordId && (
+      <ConvertProspectModal
+        prospectId={resolvedRecordId}
+        prospectValues={values}
+        userId={userId}
+        onSuccess={handleConvertProspectSuccess}
+        onCancel={() => setShowConvertProspectModal(false)}
+      />
+    )}
+    {conversionResult && (
+      <ConversionSuccessPrompt
+        result={conversionResult}
+        onOpenLead={(leadId) => {
+          setConversionResult(null);
+          handleOpenRecord('leads', leadId);
+        }}
+        onDismiss={() => setConversionResult(null)}
       />
     )}
     {showQualifyModal && resolvedRecordId && (
@@ -2894,6 +2941,7 @@ interface RecordFormInnerProps {
   onCloseWon: () => void;
   onCloseLost: () => void;
   onReopenOpportunity: () => void;
+  onConvertProspect: () => void;
   lifecycleRules: DigitalRule[];
   onTogglePin: () => void;
   onAssign: (userId: string) => void;
@@ -3034,7 +3082,7 @@ function RecordFormInner({
   isPinned, crmUsers, showAssignPopover, assignBtnRef, formTabs,
   activeTabId, currentFormTab, isFormTab, isHistoryTab, showDocumentsTab, activeRelatedKey,
   relatedSubgrids, ruleState, validationErrors, timeline, userId, entityName,
-  onBack, onSave, onSaveAndClose, onSaveAndNew, onQualify, onQualifyFromStageBar, onDisqualifyLead, onDisqualifyLeadClick, onReopenLead, onCloseWon, onCloseLost, onReopenOpportunity, lifecycleRules,
+  onBack, onSave, onSaveAndClose, onSaveAndNew, onQualify, onQualifyFromStageBar, onDisqualifyLead, onDisqualifyLeadClick, onReopenLead, onCloseWon, onCloseLost, onReopenOpportunity, onConvertProspect, lifecycleRules,
   onTogglePin, onAssign, onSetShowAssignPopover, onChangeTab,
   onChange, onStageChangeAsync, onOpenRecord, getRecordTitle, getTabErrorCount, lookupLabels, onViewAll,
   layout, currencies, activeCurrency, isCurrencyLocked, currencyLockReason, isSystemAdmin,
@@ -3055,6 +3103,10 @@ function RecordFormInner({
   // isOppWon/isOppLost retained only for banner display; readonly behavior driven by formAccessResult
   const isOppWon = entity === 'opportunities' && innerStateCode === '2';
   const isOppLost = entity === 'opportunities' && innerStateCode === '3';
+  // Prospect conversion state
+  const isProspectEntity = entity === 'prospect' || entity === 'prospects';
+  const isProspectConvertedRecord = isProspectEntity && checkProspectConverted(values);
+  const convertedLeadId = isProspectEntity ? getConvertedLeadId(values) : null;
 
   // Contact form uses a softer professional-blue accent (icon/buttons/active tab)
   // while leaving the Account redesign's stronger blue untouched.
@@ -3128,7 +3180,7 @@ function RecordFormInner({
         </span>
       ) : (
         <div className="flex items-center gap-1">
-          <select
+          <FilterSelect
             value={String(values.currency_id ?? '')}
             onChange={(e) => onChange('currency_id', e.target.value)}
             className="text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
@@ -3139,7 +3191,7 @@ function RecordFormInner({
                 {c.code} ({c.symbol})
               </option>
             ))}
-          </select>
+          </FilterSelect>
           <span title="Currency will lock once a monetary value is saved" className="text-slate-300 cursor-help">
             <RefreshCw size={10} className="text-slate-400" />
           </span>
@@ -3149,9 +3201,37 @@ function RecordFormInner({
   ) : null;
 
   const lifecycleCommands = useMemo(
-    () => getVisibleCommands(lifecycleRules, values),
+    () => getVisibleCommands(lifecycleRules, values).filter((cmd) => {
+      // Convert-to-Lead is only valid while the Prospect is Active.
+      // Hide it once the Prospect is converted or inactive, regardless of how
+      // the Digital Rule's visibility conditions happen to be configured.
+      if (cmd.rule.trigger_event === 'convert_prospect') {
+        return checkProspectActive(values) && !checkProspectConverted(values);
+      }
+      return true;
+    }),
     [lifecycleRules, values]
   );
+
+  // TEMP DIAGNOSTICS — explains why the Convert-to-Lead button is shown/hidden.
+  // Remove once the Prospect conversion command-bar behaviour is confirmed in prod.
+  useEffect(() => {
+    if (entity !== 'prospect' && entity !== 'prospects') return;
+    const convertRule = lifecycleRules.find((r) => r.trigger_event === 'convert_prospect');
+    // eslint-disable-next-line no-console
+    console.debug('Prospect conversion visibility', {
+      entity,
+      recordId,
+      prospectStatus: values.state_code ?? values.statecode,
+      prospectStatusReason: values.status_reason,
+      convertedLeadId: values.converted_lead_id ?? null,
+      isActive: checkProspectActive(values),
+      isConverted: checkProspectConverted(values),
+      rulesLoaded: lifecycleRules.length,
+      matchingRule: convertRule?.digital_rule_id ?? null,
+      isVisible: lifecycleCommands.some((c) => c.rule.trigger_event === 'convert_prospect'),
+    });
+  }, [entity, recordId, values, lifecycleRules, lifecycleCommands]);
 
   const isAtCloseStage = useMemo(() => {
     if (!processFlow || entity !== 'opportunities') return false;
@@ -3517,6 +3597,7 @@ function RecordFormInner({
               if (t === 'close_opportunity_won') { onCloseWon(); return; }
               if (t === 'close_opportunity_lost') { onCloseLost(); return; }
               if (t === 'reopen_opportunity') { onReopenOpportunity(); return; }
+              if (t === 'convert_prospect') { onConvertProspect(); return; }
             };
             const isQualifyDisabled = cmd.rule.trigger_event === 'qualify_lead' && !values['account_id'];
             const iconMap: Record<string, React.ReactNode> = {
@@ -3685,14 +3766,50 @@ function RecordFormInner({
         </div>
       )}
 
+      {/* Prospect Converted banner */}
+      {isProspectConvertedRecord && recordId && formAccessResult && formAccessResult.level !== 'allow_edit' && (
+        <div className="shrink-0 flex items-center gap-3 px-5 py-2.5 bg-emerald-50 border-b border-emerald-100">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="w-5 h-5 rounded-full bg-emerald-200 border border-emerald-300 flex items-center justify-center">
+              <LogIn size={10} className="text-emerald-700" />
+            </div>
+            <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wide whitespace-nowrap">Converted</span>
+          </div>
+          <p className="text-[12px] text-emerald-700 flex-1 min-w-0 truncate">
+            {formAccessResult.message ?? 'This Prospect has been converted to a Lead and is now read-only.'}
+          </p>
+          {convertedLeadId && (
+            <button
+              onClick={() => onOpenRecord('leads', convertedLeadId)}
+              className="shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-[12px] font-semibold border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-100 shadow-sm transition"
+            >
+              <Link2 size={12} />
+              Open Lead
+            </button>
+          )}
+        </div>
+      )}
+
       {/* not_allow blocked banner — shown regardless of entity when a Digital Rule sets not_allow */}
-      {formAccessResult?.level === 'not_allow' && recordId && !(entity === 'leads' && (isLeadQualified || isLeadDisqualified)) && !(entity === 'opportunities' && (isOppWon || isOppLost)) && (
+      {formAccessResult?.level === 'not_allow' && recordId && !(entity === 'leads' && (isLeadQualified || isLeadDisqualified)) && !(entity === 'opportunities' && (isOppWon || isOppLost)) && !(isProspectConvertedRecord) && (
         <div className="shrink-0 flex items-center gap-3 px-5 py-2.5 bg-amber-50 border-b border-amber-200">
           <ShieldAlert size={15} className="text-amber-600 shrink-0" />
           <p className="text-[12px] text-amber-800 flex-1 min-w-0">
             {formAccessResult.message ?? 'Editing is not allowed for this record.'}
           </p>
         </div>
+      )}
+
+      {/* Prospect → converted Lead navigation */}
+      {isProspectEntity && convertedLeadId && (
+        <button
+          onClick={() => onOpenRecord('leads', convertedLeadId)}
+          className="flex items-center gap-2 px-5 py-2 bg-emerald-50 border-b border-emerald-100 text-emerald-700 hover:bg-emerald-100 transition w-full text-left group"
+        >
+          <Link2 size={12} className="shrink-0 text-emerald-500" />
+          <span className="text-[11px] font-medium">Converted Lead</span>
+          <ArrowRight size={12} className="ml-auto shrink-0 text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
+        </button>
       )}
 
       {/* Related record navigation: lead → qualified opportunity, opportunity → originating lead */}
@@ -3863,10 +3980,6 @@ function RecordFormInner({
 
             {isHistoryTab && recordId && (
               <div className="p-4 max-w-3xl mx-auto w-full">
-                <div className="flex items-center gap-2 mb-4">
-                  <History size={16} className="text-slate-400" />
-                  <h3 className="text-[14px] font-semibold text-slate-700">Field Change History</h3>
-                </div>
                 <FieldHistoryPanel entity={entity} recordId={recordId} />
               </div>
             )}

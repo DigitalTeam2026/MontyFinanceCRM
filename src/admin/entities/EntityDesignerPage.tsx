@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect } from 'react';
 import { Save, AlertCircle, Lock, Info, GitBranch, CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import type { EntityDefinition, EntityFormData, OwnershipType } from '../../types/entity';
@@ -312,7 +313,7 @@ export default function EntityDesignerPage({ entity, onSaved, onCancel }: Entity
               </div>
               <div className="px-4 py-4 space-y-4">
                 <Field label="Default Process Flow" hint="New records automatically get this flow assigned">
-                  <select
+                  <FilterSelect
                     value={defaultFlowId ?? ''}
                     onChange={(e) => setDefaultFlowId(e.target.value || null)}
                     className={inp(false)}
@@ -323,7 +324,7 @@ export default function EntityDesignerPage({ entity, onSaved, onCancel }: Entity
                         {f.name}{f.is_system ? ' (System)' : ''}
                       </option>
                     ))}
-                  </select>
+                  </FilterSelect>
                 </Field>
                 <Toggle
                   label="Allow Manual Flow Switch"

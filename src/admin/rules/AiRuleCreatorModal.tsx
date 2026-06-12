@@ -1,10 +1,7 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect } from 'react';
 import {
-  X, Sparkles, Loader2, AlertCircle, ChevronDown,
-  Eye, EyeOff, Lock, Unlock, ShieldCheck,
-  Zap, ArrowRight, Pencil, CheckCircle2, Lightbulb,
-  Play, XCircle, MessageSquare, Eraser, Settings2,
-} from 'lucide-react';
+  X, Sparkles, Loader2, AlertCircle, Eye, EyeOff, Lock, Unlock, ShieldCheck, Zap, ArrowRight, Pencil, CheckCircle2, Lightbulb, Play, XCircle, MessageSquare, Eraser, Settings2 } from 'lucide-react';
 import type { EntityDefinition } from '../../types/entity';
 import type { FieldDefinition } from '../../types/field';
 import type { BusinessRule } from '../../types/businessRule';
@@ -223,7 +220,7 @@ export default function AiRuleCreatorModal({
                   </div>
                 ) : (
                   <div className="relative">
-                    <select
+                    <FilterSelect
                       value={entityId}
                       onChange={(e) => setEntityId(e.target.value)}
                       className="w-full appearance-none pl-3 pr-8 py-2 text-[13px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 text-slate-700"
@@ -231,9 +228,8 @@ export default function AiRuleCreatorModal({
                       {entities.map((e) => (
                         <option key={e.entity_definition_id} value={e.entity_definition_id}>{e.display_name}</option>
                       ))}
-                    </select>
-                    <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
+                    </FilterSelect>
+                    </div>
                 )}
               </div>
 

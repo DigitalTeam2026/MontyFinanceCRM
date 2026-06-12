@@ -1,3 +1,4 @@
+import FilterSelect from '../FilterSelect';
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircle, AlertTriangle, CheckCircle2, ExternalLink, Info, Lock, HelpCircle, EyeOff, Search, Loader2, ScanSearch, X, Calculator } from 'lucide-react';
@@ -738,7 +739,7 @@ export default function FormField({
 
       case 'boolean':
         return (
-          <select
+          <FilterSelect
             value={value === null || value === undefined ? '' : String(Boolean(value))}
             onChange={(e) => {
               if (e.target.value === '') handleChange(null);
@@ -750,7 +751,7 @@ export default function FormField({
             <option value="">-- Select --</option>
             <option value="true">Yes</option>
             <option value="false">No</option>
-          </select>
+          </FilterSelect>
         );
 
       case 'date':
@@ -920,7 +921,7 @@ export default function FormField({
           );
         }
         return (
-          <select
+          <FilterSelect
             value={strVal}
             onChange={(e) => { handleChange(e.target.value || null); handleBlur(); }}
             disabled={readonly}
@@ -934,7 +935,7 @@ export default function FormField({
                   {opt.label}
                 </option>
               ))}
-          </select>
+          </FilterSelect>
         );
       }
 

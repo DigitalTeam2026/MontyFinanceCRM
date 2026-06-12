@@ -43,6 +43,21 @@ export function invalidateLifecycleCache(): void {
   cacheTimestamp = 0;
 }
 
+// Canonical state_code is the numeric state_value (1=Active, 2=Inactive, 3=Converted/terminal).
+// Some rules/records were seeded with the textual label instead. Normalise both sides of a
+// state_code comparison to the numeric value so "active" and "1" (etc.) are treated as equal,
+// regardless of which representation the rule or the record happens to use.
+const STATE_LABEL_TO_VALUE: Record<string, string> = {
+  active: '1',
+  inactive: '2',
+  converted: '3',
+};
+
+function normalizeStateValue(field: string, raw: string): string {
+  if (field !== 'state_code' && field !== 'statecode') return raw;
+  return STATE_LABEL_TO_VALUE[raw.trim().toLowerCase()] ?? raw;
+}
+
 export function evaluateVisibility(
   rule: DigitalRule,
   recordValues: Record<string, unknown>
@@ -51,19 +66,23 @@ export function evaluateVisibility(
   if (conditions.length === 0) return true;
 
   return conditions.every((cond: VisibilityCondition) => {
-    const fieldVal = String(recordValues[cond.field] ?? recordValues[`${cond.field}`] ?? '');
+    const fieldVal = normalizeStateValue(
+      cond.field,
+      String(recordValues[cond.field] ?? '')
+    );
+    const norm = (v: unknown) => normalizeStateValue(cond.field, String(v));
 
     switch (cond.operator) {
       case 'equals':
-        return fieldVal === String(cond.value);
+        return fieldVal === norm(cond.value);
       case 'not_equals':
-        return fieldVal !== String(cond.value);
+        return fieldVal !== norm(cond.value);
       case 'in': {
-        const list = Array.isArray(cond.value) ? cond.value.map(String) : String(cond.value).split(',');
+        const list = (Array.isArray(cond.value) ? cond.value.map(String) : String(cond.value).split(',')).map(norm);
         return list.includes(fieldVal);
       }
       case 'not_in': {
-        const list = Array.isArray(cond.value) ? cond.value.map(String) : String(cond.value).split(',');
+        const list = (Array.isArray(cond.value) ? cond.value.map(String) : String(cond.value).split(',')).map(norm);
         return !list.includes(fieldVal);
       }
       default:

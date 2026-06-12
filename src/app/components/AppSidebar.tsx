@@ -1,14 +1,13 @@
 import {
-  TrendingUp, Megaphone, Headphones as HeadphonesIcon,
-  LayoutGrid, FileText, Users, Package, BarChart2, Settings as SettingsIcon,
-  Star, Globe, Layers, FolderOpen, BookOpen, ShoppingCart, Briefcase,
+  LayoutGrid,
   ChevronDown, ChevronRight, Settings, LogOut, PanelLeftClose, PanelLeftOpen,
-  UserPlus, Target, Ticket, Building2, RotateCcw, Check,
+  RotateCcw, Check,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { AppModule, AppEntity } from '../types';
 import { LOGICAL_NAME_TO_ENTITY } from '../types';
 import { getInitials } from '../utils/initials';
+import { renderNavIcon, renderAreaIcon } from '../utils/navIcons';
 import RecentPinsPanel from './RecentPinsPanel';
 import { fetchFullNavTree } from '../../services/navigationService';
 import type { NavArea, NavGroup, NavItem } from '../../services/navigationService';
@@ -16,47 +15,6 @@ import { fetchCompanyProfile, getCachedCompanyProfile, type CompanyProfile } fro
 import { THEMES, DEFAULT_THEME, applyTheme, getCachedTheme, fetchUserTheme, saveUserTheme } from '../../services/themeService';
 import type { ThemeKey } from '../../services/themeService';
 
-const ICON_MAP: Record<string, React.ReactNode> = {
-  TrendingUp:   <TrendingUp size={16} />,
-  Megaphone:    <Megaphone size={16} />,
-  Headphones:   <HeadphonesIcon size={16} />,
-  Layout:       <LayoutGrid size={16} />,
-  FileText:     <FileText size={16} />,
-  Users:        <Users size={16} />,
-  Package:      <Package size={16} />,
-  BarChart2:    <BarChart2 size={16} />,
-  Settings:     <SettingsIcon size={16} />,
-  Star:         <Star size={16} />,
-  Globe:        <Globe size={16} />,
-  Layers:       <Layers size={16} />,
-  FolderOpen:   <FolderOpen size={16} />,
-  BookOpen:     <BookOpen size={16} />,
-  ShoppingCart: <ShoppingCart size={16} />,
-  Briefcase:    <Briefcase size={16} />,
-  UserPlus:     <UserPlus size={16} />,
-  Target:       <Target size={16} />,
-  Ticket:       <Ticket size={16} />,
-  Building2:    <Building2 size={16} />,
-};
-
-const AREA_ICON_MAP: Record<string, React.ReactNode> = {
-  TrendingUp:   <TrendingUp size={16} />,
-  Megaphone:    <Megaphone size={16} />,
-  Headphones:   <HeadphonesIcon size={16} />,
-  Layout:       <LayoutGrid size={16} />,
-  FileText:     <FileText size={16} />,
-  Users:        <Users size={16} />,
-  Package:      <Package size={16} />,
-  BarChart2:    <BarChart2 size={16} />,
-  Settings:     <SettingsIcon size={16} />,
-  Star:         <Star size={16} />,
-  Globe:        <Globe size={16} />,
-  Layers:       <Layers size={16} />,
-  FolderOpen:   <FolderOpen size={16} />,
-  BookOpen:     <BookOpen size={16} />,
-  ShoppingCart: <ShoppingCart size={16} />,
-  Briefcase:    <Briefcase size={16} />,
-};
 
 function resolveEntity(entityName: string | null): AppEntity {
   if (!entityName) return '';
@@ -93,6 +51,9 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
+const LIGHT_THEME_KEYS: ThemeKey[] = ['monty-light', 'pearl', 'rose-gold', 'blossom', 'lavender', 'graphite', 'ocean'];
+const DARK_THEME_KEYS: ThemeKey[] = ['monty-dark', 'slate-dark', 'forest'];
+
 function SidebarThemePicker({ currentTheme, onChange }: { currentTheme: ThemeKey; onChange: (k: ThemeKey) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -107,6 +68,29 @@ function SidebarThemePicker({ currentTheme, onChange }: { currentTheme: ThemeKey
   }, [open]);
 
   const active = THEMES.find((t) => t.key === currentTheme);
+  const lightThemes = LIGHT_THEME_KEYS.map((k) => THEMES.find((t) => t.key === k)!).filter(Boolean);
+  const darkThemes = DARK_THEME_KEYS.map((k) => THEMES.find((t) => t.key === k)!).filter(Boolean);
+
+  const renderThemeRow = (t: (typeof THEMES)[0]) => {
+    const selected = currentTheme === t.key;
+    return (
+      <button
+        key={t.key}
+        onClick={() => { onChange(t.key); setOpen(false); }}
+        className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors"
+        style={{ background: selected ? 'var(--row-hover)' : 'transparent' }}
+        onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = 'var(--row-hover)'; }}
+        onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = 'transparent'; }}
+      >
+        <span
+          className="w-5 h-5 rounded-md border shrink-0"
+          style={{ background: t.swatch, borderColor: 'rgba(0,0,0,0.12)' }}
+        />
+        <span className="flex-1 text-left text-[12px] font-medium" style={{ color: 'var(--text)' }}>{t.name}</span>
+        {selected && <Check size={13} className="shrink-0" style={{ color: 'var(--primary)' }} />}
+      </button>
+    );
+  };
 
   return (
     <div ref={ref} className="relative">
@@ -133,27 +117,11 @@ function SidebarThemePicker({ currentTheme, onChange }: { currentTheme: ThemeKey
             <p className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>Themes</p>
             <p className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>Pick a theme — it's saved to your account</p>
           </div>
-          <div className="px-2 pb-2 max-h-[280px] overflow-y-auto">
-            {THEMES.map((t) => {
-              const selected = currentTheme === t.key;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => { onChange(t.key); setOpen(false); }}
-                  className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors"
-                  style={{ background: selected ? 'var(--row-hover)' : 'transparent' }}
-                  onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = 'var(--row-hover)'; }}
-                  onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = 'transparent'; }}
-                >
-                  <span
-                    className="w-5 h-5 rounded-md border shrink-0"
-                    style={{ background: t.swatch, borderColor: 'rgba(0,0,0,0.12)' }}
-                  />
-                  <span className="flex-1 text-left text-[12px] font-medium" style={{ color: 'var(--text)' }}>{t.name}</span>
-                  {selected && <Check size={13} className="shrink-0" style={{ color: 'var(--primary)' }} />}
-                </button>
-              );
-            })}
+          <div className="px-2 pb-2 max-h-[360px] overflow-y-auto">
+            <p className="text-[10px] uppercase font-semibold px-2 py-1" style={{ color: 'var(--muted)', letterSpacing: '0.6px' }}>Light</p>
+            {lightThemes.map(renderThemeRow)}
+            <p className="text-[10px] uppercase font-semibold px-2 py-1 mt-1" style={{ color: 'var(--muted)', letterSpacing: '0.6px' }}>Dark</p>
+            {darkThemes.map(renderThemeRow)}
           </div>
           <div className="border-t px-3 py-2" style={{ borderColor: 'var(--border)' }}>
             <button
@@ -351,7 +319,7 @@ export default function AppSidebar({
                     if (!isActiveModule) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--sidebar-text)'; }
                   }}
                 >
-                  {AREA_ICON_MAP[area.icon_name] ?? <LayoutGrid size={16} />}
+                  {renderAreaIcon(area.icon_name)}
                 </button>
               </Tooltip>
             );
@@ -362,7 +330,7 @@ export default function AppSidebar({
           {uniqueNavItems.map((item) => {
             const entity = resolveEntity(item.entity_name);
             const area = getAreaForItem(item);
-            const isActive = activeEntity === entity;
+            const isActive = viewType !== 'dashboard' && activeEntity === entity;
             return (
               <Tooltip key={item.nav_item_id} label={item.display_label}>
                 <button
@@ -379,7 +347,7 @@ export default function AppSidebar({
                     if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--sidebar-text)'; }
                   }}
                 >
-                  {ICON_MAP[item.icon_name] ?? <FileText size={16} />}
+                  {renderNavIcon(item.icon_name)}
                 </button>
               </Tooltip>
             );
@@ -436,7 +404,7 @@ export default function AppSidebar({
                   }}
                 >
                   <span className={isActiveModule ? 'text-[#2563eb]' : 'text-[#6b7280]'}>
-                    {AREA_ICON_MAP[area.icon_name] ?? <LayoutGrid size={16} />}
+                    {renderAreaIcon(area.icon_name)}
                   </span>
                   <span className="flex-1 text-left truncate">{area.display_label}</span>
                   {isOpen
@@ -460,7 +428,7 @@ export default function AppSidebar({
                           </p>
                           {groupItems.map((item) => {
                             const entity = resolveEntity(item.entity_name);
-                            const isActive = isActiveModule && activeEntity === entity;
+                            const isActive = viewType !== 'dashboard' && isActiveModule && activeEntity === entity;
                             return (
                               <button
                                 key={item.nav_item_id}
@@ -487,7 +455,7 @@ export default function AppSidebar({
                                 }}
                               >
                                 <span className={isActive ? 'text-[#2563eb]' : 'text-[#6b7280]'}>
-                                  {ICON_MAP[item.icon_name] ?? <FileText size={16} />}
+                                  {renderNavIcon(item.icon_name)}
                                 </span>
                                 <span className="truncate">{item.display_label}</span>
                               </button>

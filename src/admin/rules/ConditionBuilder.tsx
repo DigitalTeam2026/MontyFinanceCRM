@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, ChevronDown, GitBranch, Loader2 } from 'lucide-react';
 import type { FieldDefinition } from '../../types/field';
@@ -316,7 +317,7 @@ function EntityCondRow({
   return (
     <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2">
       <div className="relative w-36 shrink-0">
-        <select
+        <FilterSelect
           value={cond.field_logical_name}
           onChange={(e) => handleField(e.target.value)}
           className="w-full appearance-none text-xs font-medium text-slate-700 bg-transparent border-0 focus:outline-none pr-5"
@@ -326,14 +327,13 @@ function EntityCondRow({
               {f.display_name}
             </option>
           ))}
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
 
       <div className="w-px h-4 bg-slate-200 shrink-0" />
 
       <div className="relative w-36 shrink-0">
-        <select
+        <FilterSelect
           value={cond.operator}
           onChange={(e) => handleOp(e.target.value as ConditionOperator)}
           className="w-full appearance-none text-xs text-slate-500 bg-transparent border-0 focus:outline-none pr-5"
@@ -341,9 +341,8 @@ function EntityCondRow({
           {ops.map((op) => (
             <option key={op} value={op}>{COND_OPERATOR_LABELS[op]}</option>
           ))}
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
 
       {needsVal(cond.operator) && (
         <>
@@ -454,48 +453,44 @@ function CondValueInput({ field, fieldTypeName, value, onChange }: CondValueInpu
   if (isBool) {
     return (
       <div className="relative flex-1 min-w-0">
-        <select value={value || 'true'} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+        <FilterSelect value={value || 'true'} onChange={(e) => onChange(e.target.value)} className={selectCls}>
           <option value="true">Yes</option>
           <option value="false">No</option>
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
   if (isStatecodeField && statecodeOptions.length > 0) {
     return (
       <div className="relative flex-1 min-w-0">
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
           <option value="">— Select —</option>
           {statecodeOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
   if (isStatusreasonField && statusreasonOptions.length > 0) {
     return (
       <div className="relative flex-1 min-w-0">
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
           <option value="">— Select —</option>
           {statusreasonOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
   if (isChoice && choices.length > 0) {
     return (
       <div className="relative flex-1 min-w-0">
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
           <option value="">— Select —</option>
           {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
@@ -510,12 +505,11 @@ function CondValueInput({ field, fieldTypeName, value, onChange }: CondValueInpu
     if (lookupOptions.length > 0) {
       return (
         <div className="relative flex-1 min-w-0">
-          <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+          <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
             <option value="">— Select —</option>
             {lookupOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
       );
     }
     // Fallback: no options loaded — still allow editing but show a select with current value if it looks like a UUID
@@ -523,12 +517,11 @@ function CondValueInput({ field, fieldTypeName, value, onChange }: CondValueInpu
     const isUuid = UUID_RE.test(value);
     return (
       <div className="relative flex-1 min-w-0">
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
           <option value="">— Select —</option>
           {isUuid && value && <option value={value}>{value.slice(0, 8)}…</option>}
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
@@ -613,7 +606,7 @@ function ProcessFlowCondRow({
         <div className="w-px h-4 bg-teal-200 shrink-0" />
 
         <div className="relative shrink-0">
-          <select
+          <FilterSelect
             value={pfField}
             onChange={(e) => handleFieldChange(e.target.value as ProcessFlowField)}
             className="appearance-none text-xs font-medium text-slate-700 bg-transparent border-0 focus:outline-none pr-5"
@@ -621,14 +614,13 @@ function ProcessFlowCondRow({
             {PROCESS_FLOW_FIELD_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
-          <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
 
         <div className="w-px h-4 bg-teal-200 shrink-0" />
 
         <div className="relative shrink-0">
-          <select
+          <FilterSelect
             value={cond.operator}
             onChange={(e) => handleOperatorChange(e.target.value as ConditionOperator)}
             className="appearance-none text-xs text-slate-500 bg-transparent border-0 focus:outline-none pr-5"
@@ -636,16 +628,15 @@ function ProcessFlowCondRow({
             {PROCESS_FLOW_OPERATORS.map((op) => (
               <option key={op} value={op}>{COND_OPERATOR_LABELS[op]}</option>
             ))}
-          </select>
-          <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
 
         <div className="w-px h-4 bg-teal-200 shrink-0" />
 
         {pfField === 'current_stage' && (
           <>
             <div className="relative shrink-0">
-              <select
+              <FilterSelect
                 value={cond.process_flow_id ?? ''}
                 onChange={(e) => handleFlowChange(e.target.value)}
                 className="appearance-none text-xs text-slate-600 bg-transparent border-0 focus:outline-none pr-5 max-w-[110px]"
@@ -654,15 +645,14 @@ function ProcessFlowCondRow({
                 {processFlows.map((f) => (
                   <option key={f.process_flow_id} value={f.process_flow_id}>{f.name}</option>
                 ))}
-              </select>
-              <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </div>
+              </FilterSelect>
+              </div>
             <div className="w-px h-4 bg-teal-200 shrink-0" />
             <div className="relative flex-1">
               {loadingStages ? (
                 <span className="text-[10px] text-slate-400 italic">Loading stages...</span>
               ) : (
-                <select
+                <FilterSelect
                   value={(cond.value as string) ?? ''}
                   onChange={(e) => handleValueChange(e.target.value)}
                   disabled={!cond.process_flow_id || stages.length === 0}
@@ -672,7 +662,7 @@ function ProcessFlowCondRow({
                   {stages.map((s) => (
                     <option key={s.process_stage_id} value={s.process_stage_id}>{s.name}</option>
                   ))}
-                </select>
+                </FilterSelect>
               )}
               <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
@@ -681,7 +671,7 @@ function ProcessFlowCondRow({
 
         {pfField === 'process_flow' && (
           <div className="relative flex-1">
-            <select
+            <FilterSelect
               value={(cond.value as string) ?? ''}
               onChange={(e) => handleValueChange(e.target.value)}
               className="w-full appearance-none text-xs text-slate-700 bg-transparent border-0 focus:outline-none pr-5"
@@ -690,14 +680,13 @@ function ProcessFlowCondRow({
               {processFlows.map((f) => (
                 <option key={f.process_flow_id} value={f.process_flow_id}>{f.name}</option>
               ))}
-            </select>
-            <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
+            </FilterSelect>
+            </div>
         )}
 
         {pfField === 'stage_category' && (
           <div className="relative flex-1">
-            <select
+            <FilterSelect
               value={(cond.value as string) ?? ''}
               onChange={(e) => handleValueChange(e.target.value)}
               className="w-full appearance-none text-xs text-slate-700 bg-transparent border-0 focus:outline-none pr-5"
@@ -706,9 +695,8 @@ function ProcessFlowCondRow({
               {STAGE_CATEGORY_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
-            </select>
-            <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
+            </FilterSelect>
+            </div>
         )}
 
         <button onClick={onRemove} className="shrink-0 p-1 text-slate-300 hover:text-red-500 transition-colors">

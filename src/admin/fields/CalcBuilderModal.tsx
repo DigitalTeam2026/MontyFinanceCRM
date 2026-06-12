@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Plus, Trash2, Calculator, CheckCircle2, AlertCircle, CornerDownRight } from 'lucide-react';
@@ -333,14 +334,14 @@ function BranchCard({
             {branch.condition.rows.length > 1 && (
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] text-[#9ca3af] uppercase tracking-wide">Match</span>
-                <select
+                <FilterSelect
                   value={branch.condition.logic}
                   onChange={(e) => onChange({ condition: { ...branch.condition, logic: e.target.value as 'and' | 'or' } })}
                   className="text-[11px] border border-[#e7eaf1] rounded px-1.5 py-1 bg-white"
                 >
                   <option value="and">ALL conditions (AND)</option>
                   <option value="or">ANY condition (OR)</option>
-                </select>
+                </FilterSelect>
               </div>
             )}
             {branch.condition.rows.map((row, ri) => (
@@ -404,13 +405,13 @@ function ConditionRowEditor({
     <div className="flex items-start gap-1.5">
       {showJoin && <span className="text-[10px] font-semibold text-[#9ca3af] w-8 pt-2 shrink-0 uppercase">{join}</span>}
       <div className="flex-1 grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr] gap-1.5">
-        <select value={row.field} onChange={(e) => pickField(e.target.value)} className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white">
+        <FilterSelect value={row.field} onChange={(e) => pickField(e.target.value)} className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white">
           <option value="">Select field…</option>
           {fields.map((f) => <option key={f.logical_name} value={f.logical_name}>{f.display_name}</option>)}
-        </select>
-        <select value={row.operator} onChange={(e) => onChange({ operator: e.target.value as CalcOperator })} className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white">
+        </FilterSelect>
+        <FilterSelect value={row.operator} onChange={(e) => onChange({ operator: e.target.value as CalcOperator })} className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white">
           {ops.map((op) => <option key={op} value={op}>{OPERATOR_LABELS[op]}</option>)}
-        </select>
+        </FilterSelect>
         {operatorNeedsValue(row.operator)
           ? <ValueInput fieldType={row.fieldType} choices={selected?.choices ?? []} value={row.value} onChange={(v) => onChange({ value: v })} />
           : <div />}
@@ -451,9 +452,9 @@ function ResultExpression({
       {expr.operands.map((op, i) => (
         <div key={i} className="flex items-center gap-1.5">
           {i > 0 && (
-            <select value={expr.operators[i - 1] ?? '+'} onChange={(e) => setOperator(i - 1, e.target.value as CalcArithOp)} className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white w-24">
+            <FilterSelect value={expr.operators[i - 1] ?? '+'} onChange={(e) => setOperator(i - 1, e.target.value as CalcArithOp)} className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white w-24">
               {(['+', '-', '*', '/'] as CalcArithOp[]).map((o) => <option key={o} value={o}>{ARITH_LABELS[o]}</option>)}
-            </select>
+            </FilterSelect>
           )}
           <OperandEditor
             operand={op}
@@ -503,15 +504,15 @@ function OperandEditor({
 
   return (
     <div className="flex items-center gap-1.5 flex-1">
-      <select value={operand.kind} onChange={(e) => switchKind(e.target.value as 'field' | 'value')} className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white w-20">
+      <FilterSelect value={operand.kind} onChange={(e) => switchKind(e.target.value as 'field' | 'value')} className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white w-20">
         <option value="field">Field</option>
         <option value="value">Value</option>
-      </select>
+      </FilterSelect>
       {isField ? (
-        <select value={operand.field} onChange={(e) => pickField(e.target.value)} className="flex-1 text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white">
+        <FilterSelect value={operand.field} onChange={(e) => pickField(e.target.value)} className="flex-1 text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white">
           <option value="">Select field…</option>
           {fields.map((f) => <option key={f.logical_name} value={f.logical_name}>{f.display_name}</option>)}
-        </select>
+        </FilterSelect>
       ) : (
         <ValueInput
           fieldType={resultType}
@@ -534,19 +535,19 @@ function ValueInput({
 
   if (fieldType === 'boolean') {
     return (
-      <select value={value} onChange={(e) => onChange(e.target.value)} className={cls}>
+      <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={cls}>
         <option value="">—</option>
         <option value="true">Yes</option>
         <option value="false">No</option>
-      </select>
+      </FilterSelect>
     );
   }
   if ((fieldType === 'choice' || fieldType === 'option_set') && choices.length > 0) {
     return (
-      <select value={value} onChange={(e) => onChange(e.target.value)} className={cls}>
+      <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={cls}>
         <option value="">Select value…</option>
         {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-      </select>
+      </FilterSelect>
     );
   }
   if (fieldType === 'date' || fieldType === 'datetime') {

@@ -1,8 +1,7 @@
+import FilterSelect from '../FilterSelect';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Plus, Loader2, Trash2, Star, StarOff, Search,
-  Users, ChevronDown, AlertCircle, RefreshCw,
-} from 'lucide-react';
+  Plus, Loader2, Trash2, Star, StarOff, Search, Users, AlertCircle, RefreshCw } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { useToast, toFriendlyError } from '../../context/ToastContext';
 
@@ -57,7 +56,7 @@ function RoleSelect({
 }) {
   return (
     <div className="relative inline-flex items-center">
-      <select
+      <FilterSelect
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
@@ -66,9 +65,8 @@ function RoleSelect({
         {CONTACT_ROLES.map((r) => (
           <option key={r.value} value={r.value}>{r.label}</option>
         ))}
-      </select>
-      <ChevronDown size={9} className="absolute right-1.5 text-slate-400 pointer-events-none" />
-    </div>
+      </FilterSelect>
+      </div>
   );
 }
 

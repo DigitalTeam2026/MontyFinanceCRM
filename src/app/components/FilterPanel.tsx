@@ -1,7 +1,7 @@
+import FilterSelect from './FilterSelect';
 import { useState, useEffect } from 'react';
 import {
-  X, Plus, SlidersHorizontal, Save, Trash2, BookmarkCheck, ChevronDown, Loader2, Search, Filter,
-} from 'lucide-react';
+  X, Plus, SlidersHorizontal, Save, Trash2, BookmarkCheck, Loader2, Search, Filter } from 'lucide-react';
 import type { AppEntity } from '../types';
 import { ENTITY_DEFINITION_ID } from '../types';
 import type { ActiveFilter, FilterOperator, SavedFilter } from '../services/listService';
@@ -488,7 +488,7 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
     if ((fieldMeta.type === 'select' || fieldMeta.type === 'boolean') && fieldMeta.options) {
       return (
         <div className="relative">
-          <select
+          <FilterSelect
             value={draft.value}
             onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
             className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[var(--text)] bg-white focus:outline-none appearance-none pr-6 transition"
@@ -500,9 +500,8 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
             {fieldMeta.options.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
-          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--muted)' }} />
-        </div>
+          </FilterSelect>
+          </div>
       );
     }
     if (fieldMeta.type === 'date') {
@@ -693,7 +692,7 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
                         style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
                         {/* Field selector */}
                         <div className="relative">
-                          <select
+                          <FilterSelect
                             value={draft.field}
                             onChange={(e) => {
                               const newField = fields.find((fd) => fd.key === e.target.value);
@@ -711,12 +710,11 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
                             {fields.map((fd) => (
                               <option key={fd.key} value={fd.key}>{fd.label}</option>
                             ))}
-                          </select>
-                          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--muted)' }} />
-                        </div>
+                          </FilterSelect>
+                          </div>
                         {/* Operator selector */}
                         <div className="relative">
-                          <select
+                          <FilterSelect
                             value={draft.operator}
                             onChange={(e) => updateDraft(draft.id, { operator: e.target.value as FilterOperator, value: '' })}
                             className="w-full text-[11px] border rounded-lg px-2.5 py-2 bg-white focus:outline-none appearance-none pr-6 transition"
@@ -727,9 +725,8 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
                             {ops.map((o) => (
                               <option key={o.value} value={o.value}>{o.label}</option>
                             ))}
-                          </select>
-                          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--muted)' }} />
-                        </div>
+                          </FilterSelect>
+                          </div>
                         {/* Value input */}
                         {renderValueInput(draft)}
                       </div>

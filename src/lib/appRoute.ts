@@ -21,6 +21,8 @@ export const ENTITY_MODULE_MAP: Record<string, AppModule> = {
   leads: 'sales',
   opportunities: 'sales',
   tickets: 'support',
+  prospect: 'sales',
+  prospects: 'sales',
 };
 
 export function moduleForEntity(entity: AppEntity, fallback: AppModule = 'sales'): AppModule {
@@ -80,7 +82,7 @@ const DEFAULT_CRM: CrmRoute = {
   surface: 'crm',
   module: 'sales',
   entity: 'accounts',
-  view: { type: 'list' },
+  view: { type: 'dashboard' },
 };
 
 // `raw` has already been percent-decoded once by URLSearchParams, so we parse

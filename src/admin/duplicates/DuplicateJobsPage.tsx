@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   RefreshCw, Play, CheckCircle2, Clock, AlertTriangle, X,
@@ -484,7 +485,7 @@ function RunScanModal({ rules, onClose, onCreated }: {
 
         <div className="mb-5">
           <label className="block text-xs font-semibold text-gray-700 mb-1.5">Select Rule <span className="text-red-500">*</span></label>
-          <select
+          <FilterSelect
             value={selectedRule}
             onChange={(e) => setSelectedRule(e.target.value)}
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -495,7 +496,7 @@ function RunScanModal({ rules, onClose, onCreated }: {
                 {r.name} ({r.entity_logical_name})
               </option>
             ))}
-          </select>
+          </FilterSelect>
         </div>
 
         <div className="flex justify-end gap-2">

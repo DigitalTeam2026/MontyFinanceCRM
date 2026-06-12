@@ -1,3 +1,4 @@
+import FilterSelect from '../../../app/components/FilterSelect';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, ArrowRight, Code2, Info, FlaskConical, Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import type {
@@ -112,7 +113,7 @@ export default function InboundMapping({
           <Info size={13} className="shrink-0 mt-0.5" />
           <div className="flex-1">
             <span className="font-medium">Match field for {operation}: </span>
-            <select
+            <FilterSelect
               className="ml-1 border border-amber-200 rounded px-2 py-1 text-xs bg-white"
               value={config.match_field ?? ''}
               onChange={(e) => onChange({ ...config, match_field: e.target.value || null })}
@@ -125,7 +126,7 @@ export default function InboundMapping({
                     {f.target_display_name} ({f.target_physical_column})
                   </option>
                 ))}
-            </select>
+            </FilterSelect>
             <span className="block mt-1 text-amber-600">
               Used to locate the existing record. Map this property in the rows below.
             </span>
@@ -235,7 +236,7 @@ function Row({
             {/* Incoming value represents */}
             <label className="block">
               <span className="block text-[10px] font-medium text-slate-500 mb-0.5">Incoming value represents</span>
-              <select
+              <FilterSelect
                 className="field-input text-xs py-1.5"
                 value={matchBy}
                 onChange={(e) => {
@@ -247,7 +248,7 @@ function Row({
                 {MATCH_BY_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
-              </select>
+              </FilterSelect>
             </label>
 
             {/* Match field (searchable native select — type to filter) */}
@@ -257,7 +258,7 @@ function Row({
                 {relLoading ? (
                   <p className="text-[11px] text-slate-400">Loading related fields…</p>
                 ) : (
-                  <select
+                  <FilterSelect
                     className="field-input text-xs py-1.5"
                     value={m.lookup_match_field_physical_column ?? ''}
                     onChange={(e) => {
@@ -274,7 +275,7 @@ function Row({
                         {f.display_name} ({f.physical_column_name})
                       </option>
                     ))}
-                  </select>
+                  </FilterSelect>
                 )}
               </label>
             )}
@@ -283,7 +284,7 @@ function Row({
             {showMatchType && (
               <label className="block">
                 <span className="block text-[10px] font-medium text-slate-500 mb-0.5">Match behaviour</span>
-                <select
+                <FilterSelect
                   className="field-input text-xs py-1.5"
                   value={m.lookup_match_type ?? 'case_insensitive_exact'}
                   onChange={(e) => onChange({ lookup_match_type: e.target.value as LookupMatchType })}
@@ -291,14 +292,14 @@ function Row({
                   {MATCH_TYPE_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
-                </select>
+                </FilterSelect>
               </label>
             )}
 
             {/* Not-found behaviour */}
             <label className="block">
               <span className="block text-[10px] font-medium text-slate-500 mb-0.5">If no record is found</span>
-              <select
+              <FilterSelect
                 className="field-input text-xs py-1.5"
                 value={m.lookup_not_found_behavior ?? 'reject'}
                 onChange={(e) => onChange({ lookup_not_found_behavior: e.target.value as LookupNotFoundBehavior })}
@@ -306,7 +307,7 @@ function Row({
                 {NOT_FOUND_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
-              </select>
+              </FilterSelect>
             </label>
 
             {/* Multiple-match behaviour (fixed: reject as ambiguous) */}

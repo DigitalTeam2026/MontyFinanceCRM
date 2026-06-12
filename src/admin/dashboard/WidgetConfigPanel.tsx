@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { X, Settings } from 'lucide-react';
 import type { DashboardWidget, WidgetType, ChartType } from '../../types/dashboard';
 
@@ -52,13 +53,13 @@ function Select({
   options: { value: string; label: string }[];
 }) {
   return (
-    <select
+    <FilterSelect
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-blue-500 bg-white"
     >
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    </FilterSelect>
   );
 }
 

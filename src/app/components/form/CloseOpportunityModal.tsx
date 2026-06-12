@@ -1,3 +1,4 @@
+import FilterSelect from '../FilterSelect';
 import { useState, useEffect } from 'react';
 import { X, Trophy, XCircle, Loader2 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
@@ -100,7 +101,7 @@ export default function CloseOpportunityModal({
               <label className="block text-[11px] font-medium text-slate-500 uppercase tracking-wide mb-1">
                 Status Reason
               </label>
-              <select
+              <FilterSelect
                 value={selectedReason ?? ''}
                 onChange={e => setSelectedReason(Number(e.target.value))}
                 className="w-full px-3 py-2 text-[13px] border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none bg-white"
@@ -108,7 +109,7 @@ export default function CloseOpportunityModal({
                 {statusReasons.map(r => (
                   <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
-              </select>
+              </FilterSelect>
             </div>
           )}
 

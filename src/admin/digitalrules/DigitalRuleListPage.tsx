@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect } from 'react';
 import {
   Plus, Search, Trash2, Copy, ToggleLeft, ToggleRight, Loader2,
@@ -143,7 +144,7 @@ export default function DigitalRuleListPage({ onNew, onEdit }: Props) {
               className="w-full pl-9 pr-3 py-2 text-[12px] border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition"
             />
           </div>
-          <select
+          <FilterSelect
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
             className="text-[12px] border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -152,8 +153,8 @@ export default function DigitalRuleListPage({ onNew, onEdit }: Props) {
             {(Object.keys(CATEGORY_META) as RuleCategory[]).map((c) => (
               <option key={c} value={c}>{CATEGORY_META[c].label}</option>
             ))}
-          </select>
-          <select
+          </FilterSelect>
+          <FilterSelect
             value={filterEntity}
             onChange={(e) => setFilterEntity(e.target.value)}
             className="text-[12px] border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -162,7 +163,7 @@ export default function DigitalRuleListPage({ onNew, onEdit }: Props) {
             {KNOWN_ENTITIES.map((e) => (
               <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>
             ))}
-          </select>
+          </FilterSelect>
         </div>
         <div className="flex items-center gap-2">
           <button

@@ -22,6 +22,7 @@ const MODULE_LABELS: Record<AppModule, string> = {
 interface AppHeaderProps {
   module: AppModule;
   entity: AppEntity;
+  viewType?: string;
   search: string;
   onSearchChange: (v: string) => void;
   onGlobalSearch?: () => void;
@@ -32,7 +33,7 @@ interface AppHeaderProps {
 }
 
 export default function AppHeader({
-  module, entity, search, onSearchChange, onGlobalSearch, onNotificationNavigate,
+  module, entity, viewType, search, onSearchChange, onGlobalSearch, onNotificationNavigate,
   userName, userEmail,
 }: AppHeaderProps) {
   const fallbackLabel = entity.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -70,10 +71,12 @@ export default function AppHeader({
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 min-w-0 shrink-0">
         <span className="text-[12px] font-medium" style={{ color: 'var(--header-fg-muted)' }}>
-          {MODULE_LABELS[module]}
+          {MODULE_LABELS[module] ?? 'Sales'}
         </span>
         <span className="text-[12px]" style={{ color: 'var(--header-sep)' }}>/</span>
-        <h1 className="text-[14px] font-semibold truncate" style={{ color: 'var(--header-fg)' }}>{meta.plural}</h1>
+        <h1 className="text-[14px] font-semibold truncate" style={{ color: 'var(--header-fg)' }}>
+          {viewType === 'dashboard' ? 'Dashboard' : meta.plural}
+        </h1>
       </div>
 
       {/* Search */}
@@ -85,7 +88,7 @@ export default function AppHeader({
             value={draft}
             onChange={(e) => handleChange(e.target.value)}
             onKeyDown={handleSearchKeyDown}
-            placeholder={`Search ${meta.plural.toLowerCase()}...`}
+            placeholder={viewType === 'dashboard' ? 'Search records...' : `Search ${meta.plural.toLowerCase()}...`}
             className="w-full h-[32px] pl-9 pr-3 text-[13px] rounded-md placeholder-[#9ca3af] focus:outline-none focus:ring-1 focus:ring-[#3b82f6] focus:border-[#3b82f6] transition"
             style={{ background: 'var(--header-input-bg)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--header-input-border)', color: 'var(--header-fg)' }}
           />

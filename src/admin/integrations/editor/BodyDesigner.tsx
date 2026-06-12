@@ -1,3 +1,4 @@
+import FilterSelect from '../../../app/components/FilterSelect';
 import { useMemo, useState } from 'react';
 import {
   Plus, Trash2, GripVertical, Braces, Brackets, Type, AlertTriangle, Code2,
@@ -295,7 +296,7 @@ function Row({
                 <span className="truncate">{m.field_display_name ?? m.field_physical_column}</span>
               </div>
               {m.is_lookup && (
-                <select
+                <FilterSelect
                   className="field-input text-xs py-1.5"
                   value={m.lookup_value_type ?? 'id'}
                   onChange={(e) => {
@@ -307,13 +308,13 @@ function Row({
                   {LOOKUP_VALUE_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
-                </select>
+                </FilterSelect>
               )}
               {m.is_lookup && m.lookup_value_type === 'field' && (
                 relLoading ? (
                   <p className="text-[11px] text-slate-400">Loading related fields…</p>
                 ) : (
-                  <select
+                  <FilterSelect
                     className="field-input text-xs py-1.5"
                     value={m.lookup_field_physical_column ?? ''}
                     onChange={(e) => {
@@ -330,7 +331,7 @@ function Row({
                         {f.display_name} ({f.physical_column_name})
                       </option>
                     ))}
-                  </select>
+                  </FilterSelect>
                 )
               )}
             </>

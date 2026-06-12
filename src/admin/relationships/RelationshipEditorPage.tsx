@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState } from 'react';
 import { Save, X, Info, Lock } from 'lucide-react';
 import type {
@@ -319,7 +320,7 @@ export default function RelationshipEditorPage({
               {loadingEntities ? (
                 <div className="text-[11px] text-slate-400">Loading entities…</div>
               ) : (
-                <select
+                <FilterSelect
                   value={form.source_entity_id}
                   onChange={(e) => setField('source_entity_id', e.target.value)}
                   disabled={isSystem}
@@ -331,7 +332,7 @@ export default function RelationshipEditorPage({
                       {e.display_name}
                     </option>
                   ))}
-                </select>
+                </FilterSelect>
               )}
             </FormRow>
 
@@ -339,7 +340,7 @@ export default function RelationshipEditorPage({
               {loadingEntities ? (
                 <div className="text-[11px] text-slate-400">Loading entities…</div>
               ) : (
-                <select
+                <FilterSelect
                   value={form.target_entity_id}
                   onChange={(e) => setField('target_entity_id', e.target.value)}
                   disabled={isSystem}
@@ -351,7 +352,7 @@ export default function RelationshipEditorPage({
                       {e.display_name}
                     </option>
                   ))}
-                </select>
+                </FilterSelect>
               )}
             </FormRow>
           </Section>
@@ -373,7 +374,7 @@ export default function RelationshipEditorPage({
                 {loadingFields ? (
                   <div className="text-[11px] text-slate-400">Loading fields…</div>
                 ) : (
-                  <select
+                  <FilterSelect
                     value={form.source_lookup_field_id ?? ''}
                     onChange={(e) => setField('source_lookup_field_id', e.target.value || null)}
                     disabled={isSystem || !form.source_entity_id || !form.target_entity_id}
@@ -385,7 +386,7 @@ export default function RelationshipEditorPage({
                         {f.display_name} ({f.physical_column_name})
                       </option>
                     ))}
-                  </select>
+                  </FilterSelect>
                 )}
                 {!loadingFields && lookupFields.length === 0 && form.source_entity_id && form.target_entity_id && (
                   <p className="mt-1 text-[11px] text-amber-600">

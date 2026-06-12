@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState, useCallback } from 'react';
 import {
   Search, RefreshCw, Plus, X, Copy, Trash2,
@@ -159,7 +160,7 @@ export default function DataPolicyListPage({ onOpen }: DataPolicyListPageProps) 
               className="pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg w-44 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             />
           </div>
-          <select
+          <FilterSelect
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value as PolicyCategory | '')}
             className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -168,8 +169,8 @@ export default function DataPolicyListPage({ onOpen }: DataPolicyListPageProps) 
             {categories.map((c) => (
               <option key={c} value={c}>{POLICY_CATEGORY_META[c].label}</option>
             ))}
-          </select>
-          <select
+          </FilterSelect>
+          <FilterSelect
             value={entityFilter}
             onChange={(e) => setEntityFilter(e.target.value)}
             className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -178,7 +179,7 @@ export default function DataPolicyListPage({ onOpen }: DataPolicyListPageProps) 
             {KNOWN_ENTITIES.map((e) => (
               <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>
             ))}
-          </select>
+          </FilterSelect>
           <button onClick={load} className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors">
             <RefreshCw size={14} />
           </button>
@@ -410,19 +411,19 @@ function NewPolicyModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">Entity</label>
-              <select value={entity} onChange={(e) => setEntity(e.target.value)}
+              <FilterSelect value={entity} onChange={(e) => setEntity(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400">
                 {KNOWN_ENTITIES.map((e) => <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>)}
-              </select>
+              </FilterSelect>
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">Category</label>
-              <select value={category} onChange={(e) => setCategory(e.target.value as PolicyCategory)}
+              <FilterSelect value={category} onChange={(e) => setCategory(e.target.value as PolicyCategory)}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400">
                 {(Object.entries(POLICY_CATEGORY_META) as [PolicyCategory, typeof POLICY_CATEGORY_META[PolicyCategory]][]).map(([k, m]) => (
                   <option key={k} value={k}>{m.label}</option>
                 ))}
-              </select>
+              </FilterSelect>
             </div>
           </div>
           <div>

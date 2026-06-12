@@ -1,3 +1,4 @@
+import FilterSelect from '../components/FilterSelect';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ChevronUp,
@@ -26,7 +27,6 @@ import type { ActiveFilter, ListRow, RelatedColumnSpec } from '../services/listS
 import { fetchEntityList, ENTITY_COLUMNS, updateRowFields, fetchCrmUsers } from '../services/listService';
 import { evaluateRowHighlight, getEntityRules } from '../services/rowHighlightService';
 import FilterPanel from '../components/FilterPanel';
-import StatusBadge from '../components/StatusBadge';
 import InlineRowActions from '../components/InlineRowActions';
 import ColumnCustomizer, { type ColumnState } from '../components/ColumnCustomizer';
 import ViewSelector from '../components/ViewSelector';
@@ -40,6 +40,8 @@ import type { ViewDefinition } from '../../types/view';
 import { fetchViewColumns, updateViewColumns } from '../../services/viewService';
 import ColumnFilterDropdown from '../components/ColumnFilterDropdown';
 import { resolveGridValues } from '../services/gridResolver';
+import { renderListCell } from '../components/list/renderListCell';
+import { buildColumnState, buildColumnStatesFromViewColumns } from '../services/viewColumnState';
 import ImportFromExcelModal from '../components/ImportFromExcelModal';
 import { fetchSharedRecordIds } from '../services/recordShareService';
 import * as XLSX from 'xlsx';
@@ -47,18 +49,6 @@ import { downloadWorkbook } from '../services/importEngine';
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
-
-function formatDate(val: unknown): string {
-  if (!val || typeof val !== 'string') return '—';
-  return new Date(val).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-function formatCurrency(val: unknown, currencyCode?: string | null): string {
-  if (val == null || val === '') return '—';
-  const num = Number(val);
-  if (isNaN(num)) return '—';
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency: currencyCode ?? 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
-}
 
 const INLINE_EDITABLE_COLS: Partial<Record<AppEntity, string[]>> = {
   accounts:      ['account_name', 'industry', 'phone', 'website'],
@@ -132,36 +122,6 @@ function columnSnapshot(cols: ColumnState[]): string {
       .filter((c) => c.visible)
       .map((c) => ({ key: c.key, labelOverride: c.labelOverride ?? null, width: c.width ?? null }))
   );
-}
-
-/** Map DB field_type.name values to the filter-compatible type strings used by ColumnFilterDropdown */
-function normalizeFieldType(dbTypeName: string | undefined | null): string | undefined {
-  if (!dbTypeName) return undefined;
-  const t = dbTypeName.toLowerCase();
-  if (t === 'lookup' || t === 'owner') return 'lookup';
-  if (t === 'twooptions' || t === 'boolean' || t === 'two_options') return 'boolean';
-  if (t === 'optionset' || t === 'option_set' || t === 'choice' || t === 'status' || t === 'picklist') return 'badge';
-  if (t === 'multi_choice') return 'multi_badge';
-  if (t === 'datetime' || t === 'date') return 'date';
-  if (t === 'currency' || t === 'decimal' || t === 'integer' || t === 'number' || t === 'whole_number') return 'currency';
-  if (t === 'phone') return 'phone';
-  if (t === 'email' || t === 'url' || t === 'text' || t === 'textarea' || t === 'string') return 'text';
-  return 'text';
-}
-
-function buildColumnState(entity: AppEntity): ColumnState[] {
-  return (ENTITY_COLUMNS[entity] ?? []).map((c) => ({
-    key: c.key,
-    label: c.label,
-    visible: true,
-    sortable: c.sortable,
-    type: c.type,
-    field_definition_id: c.field_definition_id ?? null,
-    field_physical_column: c.field_physical_column,
-    lookup_table: c.lookup_table,
-    lookup_label_field: c.lookup_label_field,
-    option_set_name: c.option_set_name,
-  }));
 }
 
 export default function EntityListPage({ entity, search, onSearchChange, onNewRecord, onOpenRecord, userId, initialFilters, filterContextLabel, parentFilter, onClearParentFilter, initialViewId, onActiveViewChange, creationBlocked, creationBlockedMessage }: EntityListPageProps) {
@@ -420,78 +380,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
     // Apply columns
     try {
       const cols = await fetchViewColumns(view.view_id);
-      const defaultCols = ENTITY_COLUMNS[entity] ?? [];
-      // Look up defaults by field_definition_id so we can resolve the correct row data key
-      const defaultColByFieldId = new Map(defaultCols.map((c) => [c.field_definition_id, c]));
-
-      let states: ColumnState[];
-      if (cols.length === 0) {
-        states = buildColumnState(entity);
-      } else {
-        states = cols
-          .filter((c) => !c.is_hidden && c.field_logical_name)
-          .map((c) => {
-            const isRelated = !!c.relationship_definition_id;
-            const def = defaultColByFieldId.get(c.field_definition_id as string | undefined);
-            let key = isRelated
-              ? `rel:${c.relationship_definition_id}:${c.field_logical_name}`
-              : (def?.key ?? c.field_physical_column ?? c.field_logical_name!);
-            const relLabel = isRelated && c.related_entity_display_name
-              ? `${c.related_entity_display_name}: ${c.field_display_name ?? c.field_logical_name}`
-              : null;
-            // Normalize DB field_type_name to the filter-compatible type string
-            const resolvedLookupTable = c.lookup_table ?? def?.lookup_table;
-            const resolvedLookupLabel = c.lookup_label_field ?? def?.lookup_label_field;
-            let resolvedType = normalizeFieldType(c.field_type_name) ?? def?.type;
-            // Preserve 'owner' render type for crm_user lookup columns so the avatar renders correctly
-            if (resolvedType === 'lookup' && resolvedLookupTable === 'crm_user') resolvedType = 'owner';
-            // Owner columns: fetchUniversal stores the resolved email at 'owner_email', not the raw FK
-            if (resolvedType === 'owner' && (key === 'owner_id' || key === 'ownerid')) key = 'owner_email';
-            return {
-              key,
-              label: relLabel ?? def?.label ?? c.field_display_name ?? c.field_logical_name!,
-              visible: true,
-              sortable: isRelated ? false : (c.is_sortable ?? def?.sortable ?? false),
-              type: resolvedType,
-              field_definition_id: c.field_definition_id,
-              relationship_definition_id: c.relationship_definition_id ?? null,
-              related_entity_display_name: c.related_entity_display_name,
-              related_table_name: c.related_table_name,
-              fk_physical_column: c.fk_physical_column,
-              field_physical_column: c.field_physical_column,
-              // Carry lookup & option-set metadata so column filter works
-              lookup_table: resolvedLookupTable,
-              lookup_label_field: resolvedLookupLabel,
-              option_set_name: c.option_set_name,
-              inline_choices: c.inline_choices,
-              labelOverride: c.label_override ?? undefined,
-              width: c.width,
-            } as ColumnState;
-          });
-
-        // Append hidden defaults not present in view columns
-        for (const def of defaultCols) {
-          if (!states.find((s) => s.key === def.key)) {
-            states.push({
-              key: def.key,
-              label: def.label,
-              visible: false,
-              sortable: def.sortable,
-              type: def.type,
-              field_definition_id: def.field_definition_id ?? null,
-              field_physical_column: def.field_physical_column,
-            });
-          }
-        }
-
-        // Deduplicate by key — keep first occurrence (view-defined order takes precedence)
-        const seen = new Set<string>();
-        states = states.filter((s) => {
-          if (seen.has(s.key)) return false;
-          seen.add(s.key);
-          return true;
-        });
-      }
+      const states = buildColumnStatesFromViewColumns(entity, cols);
 
       setColumnStates(states);
       setSavedColumnSnapshot(columnSnapshot(states));
@@ -713,154 +602,8 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
       );
     }
 
-    const val = row[colKey];
-
-    // Null / empty
-    if (val === null || val === undefined || val === '') {
-      return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
-    }
-
-    // Skip rendering Supabase nested objects
-    if (typeof val === 'object' && !Array.isArray(val)) {
-      return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
-    }
-
-    // UUID detection: hide raw UUIDs for FK columns that weren't resolved
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const strVal = String(val);
-    if (UUID_RE.test(strVal) && colType !== 'link') {
-      return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
-    }
-
-    // --- Type-specific rendering ---
-
-    if (colType === 'date') {
-      return <span className="text-[var(--ink-500)] text-[12px]">{formatDate(val)}</span>;
-    }
-
-    if (colType === 'phone') {
-      return (
-        <a
-          href={`tel:${strVal.replace(/\s/g, '')}`}
-          onClick={(e) => e.stopPropagation()}
-          className="text-[var(--link)] hover:underline text-[12px]"
-        >
-          {strVal}
-        </a>
-      );
-    }
-
-    if (colType === 'currency') {
-      return <span className="text-[var(--ink-700)] text-[14px] font-medium">{formatCurrency(val, row.currency_code as string | null)}</span>;
-    }
-
-    if (colType === 'badge') {
-      if (isRedesign) {
-        const lc = strVal.toLowerCase();
-        let pillCls = 'rd-pill-blue';
-        if (lc === 'active' || lc === 'open') pillCls = 'rd-pill-green';
-        else if (lc === 'inactive' || lc === 'closed') pillCls = 'rd-pill-gray';
-        else if (lc.includes('progress') || lc.includes('pending')) pillCls = 'rd-pill-amber';
-        else if (lc.includes('lost') || lc.includes('won') || lc === 'dead') pillCls = 'rd-pill-red';
-        return (
-          <span className={`rd-pill ${pillCls}`}>
-            <span className="rd-pill-dot" />
-            {strVal}
-          </span>
-        );
-      }
-      return <StatusBadge value={strVal} />;
-    }
-
-    if (colType === 'multi_badge') {
-      if (!strVal || strVal === '—') return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
-      const parts = strVal.split(',').map((s) => s.trim()).filter(Boolean);
-      if (parts.length === 0) return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
-      return (
-        <span className="inline-flex flex-wrap gap-1">
-          {parts.map((p, i) => (
-            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
-              {p}
-            </span>
-          ))}
-        </span>
-      );
-    }
-
-    if (colType === 'link') {
-      return (
-        <span
-          className="text-[var(--link)] cursor-pointer font-semibold text-[14px] hover:underline"
-          onClick={(e) => { e.stopPropagation(); onOpenRecord?.(row.id, strVal); }}
-        >
-          {strVal || '—'}
-        </span>
-      );
-    }
-
-    if (colType === 'owner') {
-      const emailStr = String(row[colKey] ?? '');
-      if (!emailStr || emailStr === '—' || /^[0-9a-f]{8}-/i.test(emailStr)) return <span className="text-[var(--ink-300)] text-[11px]">—</span>;
-      const shortName = emailStr.split('@')[0];
-      const nameParts = shortName.split(/[.\-_+\s]+/).filter(Boolean);
-      const initials = (nameParts.length >= 2
-        ? nameParts[0][0] + nameParts[1][0]
-        : shortName.slice(0, 2)).toUpperCase();
-      if (isRedesign) {
-        return (
-          <span className="flex items-center gap-2">
-            <span className="rd-avatar">{initials}</span>
-            <span className="text-[13px] text-[var(--text)] font-medium truncate max-w-[120px]">{shortName}</span>
-          </span>
-        );
-      }
-      const AVATAR_COLORS = ['#2b6cb0', '#0d9488', '#b45309', '#7c3aed', '#dc2626', '#059669'];
-      const colorIndex = emailStr.charCodeAt(0) % AVATAR_COLORS.length;
-      return (
-        <span className="flex items-center gap-1.5">
-          <span
-            className="w-5 h-5 rounded-full text-[9.5px] font-bold text-white flex items-center justify-center shrink-0 uppercase"
-            style={{ background: AVATAR_COLORS[colorIndex] }}
-          >
-            {initials}
-          </span>
-          <span className="text-[12px] text-[var(--ink-600)] truncate max-w-[100px]">{shortName}</span>
-        </span>
-      );
-    }
-
-    if (colType === 'lookup') {
-      return <span className="text-[var(--ink-600)] text-[12px]">{strVal}</span>;
-    }
-
-    if (colType === 'boolean') {
-      const isTrue = val === true || val === 'true' || val === '1' || val === 1;
-      const isFalse = val === false || val === 'false' || val === '0' || val === 0;
-      if (!isTrue && !isFalse) return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
-      return (
-        <span className={`text-[12px] font-medium ${isTrue ? 'text-emerald-600' : 'text-[var(--ink-400)]'}`}>
-          {isTrue ? 'Yes' : 'No'}
-        </span>
-      );
-    }
-
-    // Auto-detect: if column key ends with _id and value is a UUID, show dash
-    if (colKey.endsWith('_id') && UUID_RE.test(strVal)) {
-      return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
-    }
-
-    // Auto-detect: date-like strings (ISO 8601)
-    if (!colType && typeof val === 'string' && /^\d{4}-\d{2}-\d{2}(T|\s)/.test(val)) {
-      return <span className="text-[var(--ink-500)] text-[12px]">{formatDate(val)}</span>;
-    }
-
-    // Auto-detect: numeric with decimal for untyped columns
-    if (!colType && typeof val === 'number') {
-      return <span className="text-[var(--ink-700)] text-[12px] font-medium tabular-nums">{val.toLocaleString()}</span>;
-    }
-
-    // Default text rendering
-    return <span className="text-[var(--ink-600)] text-[12px]">{strVal}</span>;
+    // Display path is shared with the dashboard drill-down so cells look identical.
+    return renderListCell(row, col, { onOpenRecord, isRedesign });
   };
 
   if (!permissionsReady) {
@@ -1404,7 +1147,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
               <span className="text-[11px] text-[var(--ink-400)]">Rows per page</span>
-              <select
+              <FilterSelect
                 value={pageSize}
                 onChange={(e) => handlePageSizeChange(Number(e.target.value) as PageSizeOption)}
                 className="h-[24px] px-1 text-[11px] border rounded bg-white text-[var(--ink-700)] focus:outline-none"
@@ -1413,7 +1156,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                 {PAGE_SIZE_OPTIONS.map((sz) => (
                   <option key={sz} value={sz}>{sz}</option>
                 ))}
-              </select>
+              </FilterSelect>
             </div>
             <div className="flex items-center gap-0.5">
               <PgBtn disabled={page <= 1 || loading} onClick={() => setPage(1)} title="First page">

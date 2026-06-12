@@ -1,5 +1,6 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Loader2 } from 'lucide-react';
 import type { FieldDefinition } from '../../types/field';
 import type {
   FilterGroup,
@@ -305,7 +306,7 @@ function ConditionRow({
   return (
     <div className="flex items-center gap-2 bg-white rounded-lg border border-slate-200 px-3 py-2">
       <div className="relative shrink-0 w-36">
-        <select
+        <FilterSelect
           value={condition.field_logical_name}
           onChange={(e) => handleFieldChange(e.target.value)}
           className="w-full appearance-none text-xs text-slate-700 border-0 bg-transparent focus:outline-none pr-5 font-medium"
@@ -315,14 +316,13 @@ function ConditionRow({
               {f.display_name}
             </option>
           ))}
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
 
       <div className="h-4 w-px bg-slate-200 shrink-0" />
 
       <div className="relative shrink-0 w-36">
-        <select
+        <FilterSelect
           value={condition.operator}
           onChange={(e) => handleOperatorChange(e.target.value as FilterOperator)}
           className="w-full appearance-none text-xs text-slate-500 border-0 bg-transparent focus:outline-none pr-5"
@@ -332,9 +332,8 @@ function ConditionRow({
               {OPERATOR_LABELS[op]}
             </option>
           ))}
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
 
       {showValue && (
         <>
@@ -458,36 +457,33 @@ function FilterValueInput({
   if (isBool) {
     return (
       <div className="relative flex-1 min-w-0">
-        <select value={value || 'true'} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+        <FilterSelect value={value || 'true'} onChange={(e) => onChange(e.target.value)} className={selectCls}>
           <option value="true">Yes</option>
           <option value="false">No</option>
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
   if (isStatecode && statecodeOptions.length > 0) {
     return (
       <div className="relative flex-1 min-w-0">
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
           <option value="">— Select —</option>
           {statecodeOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
   if (isStatusreason && statusreasonOptions.length > 0) {
     return (
       <div className="relative flex-1 min-w-0">
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
           <option value="">— Select —</option>
           {statusreasonOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
@@ -496,12 +492,11 @@ function FilterValueInput({
     if (choices.length > 0) {
       return (
         <div className="relative flex-1 min-w-0">
-          <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+          <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
             <option value="">— Select —</option>
             {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
-          <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
       );
     }
   }
@@ -517,12 +512,11 @@ function FilterValueInput({
     if (lookupOptions.length > 0) {
       return (
         <div className="relative flex-1 min-w-0">
-          <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+          <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
             <option value="">— Select —</option>
             {lookupOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
       );
     }
     return (

@@ -1,3 +1,4 @@
+import FilterSelect from './FilterSelect';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -366,7 +367,7 @@ function BulkFieldInput({
   /* ---- Statecode ---- */
   if (physCol === 'state_code') {
     return (
-      <select
+      <FilterSelect
         value={value == null ? '' : String(value)}
         onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
         className={INPUT_BASE}
@@ -375,7 +376,7 @@ function BulkFieldInput({
         {statecodes.map((s) => (
           <option key={s.value} value={s.value}>{s.label}</option>
         ))}
-      </select>
+      </FilterSelect>
     );
   }
 
@@ -390,7 +391,7 @@ function BulkFieldInput({
         {parentStatecode == null && reasons.length > 0 && (
           <p className="text-[10px] text-amber-600">Tip: Also set Status to filter reasons by status.</p>
         )}
-        <select
+        <FilterSelect
           value={value == null ? '' : String(value)}
           onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
           className={INPUT_BASE}
@@ -399,7 +400,7 @@ function BulkFieldInput({
           {filtered.map((r) => (
             <option key={r.value} value={r.value}>{r.label}</option>
           ))}
-        </select>
+        </FilterSelect>
       </div>
     );
   }
@@ -407,7 +408,7 @@ function BulkFieldInput({
   /* ---- Boolean ---- */
   if (typeName === 'boolean') {
     return (
-      <select
+      <FilterSelect
         value={value == null ? '' : String(value)}
         onChange={(e) => {
           if (e.target.value === '') onChange(null);
@@ -418,14 +419,14 @@ function BulkFieldInput({
         <option value="">-- Select --</option>
         <option value="true">Yes</option>
         <option value="false">No</option>
-      </select>
+      </FilterSelect>
     );
   }
 
   /* ---- Choice / Option Set ---- */
   if (typeName === 'choice' || typeName === 'optionset' || typeName === 'option_set' || typeName === 'picklist') {
     return (
-      <select
+      <FilterSelect
         value={value == null ? '' : String(value)}
         onChange={(e) => onChange(e.target.value || null)}
         className={INPUT_BASE}
@@ -434,7 +435,7 @@ function BulkFieldInput({
         {osOptions.map((c) => (
           <option key={c.value} value={c.value}>{c.label}</option>
         ))}
-      </select>
+      </FilterSelect>
     );
   }
 

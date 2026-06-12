@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState, useCallback } from 'react';
 import {
   Search, RefreshCw, Plus, X, Copy, Trash2,
@@ -109,7 +110,7 @@ export default function ApprovalProcessListPage({ onOpen }: ApprovalProcessListP
               className="pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg w-48 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             />
           </div>
-          <select
+          <FilterSelect
             value={entityFilter}
             onChange={(e) => setEntityFilter(e.target.value)}
             className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -118,7 +119,7 @@ export default function ApprovalProcessListPage({ onOpen }: ApprovalProcessListP
             {entityCounts.map((e) => (
               <option key={e.logical_name} value={e.logical_name}>{e.display_name} ({e.count})</option>
             ))}
-          </select>
+          </FilterSelect>
           <button onClick={load} className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors">
             <RefreshCw size={14} />
           </button>
@@ -331,13 +332,13 @@ function NewProcessModal({ onClose, onCreated }: { onClose: () => void; onCreate
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Entity</label>
-            <select
+            <FilterSelect
               value={entity}
               onChange={(e) => setEntity(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
             >
               {KNOWN_ENTITIES.map((e) => <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>)}
-            </select>
+            </FilterSelect>
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-2">Execution Mode</label>

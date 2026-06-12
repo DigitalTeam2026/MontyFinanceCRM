@@ -1,8 +1,7 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState } from 'react';
 import {
-  Plus, Pencil, Trash2, ToggleLeft, ToggleRight,
-  Search, X, Filter, Zap, Copy, ChevronDown,
-} from 'lucide-react';
+  Plus, Pencil, Trash2, ToggleLeft, ToggleRight, Search, X, Filter, Zap, Copy } from 'lucide-react';
 import type { GenericRule, GenericFieldSchema } from '../../app/services/genericRulesEngine';
 import { genId } from '../../app/services/genericRulesEngine';
 import GenericRuleEditorPage from './GenericRuleEditorPage';
@@ -122,15 +121,14 @@ export default function GenericRulesListPage({
       <div className="bg-white border-b border-slate-100 px-5 py-2 flex items-center gap-3 shrink-0">
         {/* Entity selector */}
         <div className="relative">
-          <select
+          <FilterSelect
             value={selectedEntity}
             onChange={(e) => { setSelectedEntity(e.target.value); setSearch(''); setFilterActive('all'); }}
             className="appearance-none pl-2.5 pr-7 py-1.5 text-[12px] font-medium border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 text-slate-700"
           >
             {entities.map((e) => <option key={e} value={e}>{e}</option>)}
-          </select>
-          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
 
         <div className="w-px h-5 bg-slate-200" />
 

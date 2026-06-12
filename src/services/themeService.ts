@@ -7,7 +7,11 @@ export type ThemeKey =
   | 'monty-dark'
   | 'graphite'
   | 'ocean'
-  | 'forest';
+  | 'forest'
+  | 'rose-gold'
+  | 'blossom'
+  | 'lavender'
+  | 'pearl';
 
 /** Default theme, applied before any preference loads and on reset. */
 export const DEFAULT_THEME: ThemeKey = 'monty-light';
@@ -25,13 +29,17 @@ export interface ThemeOption {
   dark: boolean;
 }
 
-/** The six selectable themes, in menu order (default first). */
+/** The ten selectable themes, in menu order (light section first, then dark). */
 export const THEMES: ThemeOption[] = [
   { key: 'monty-light', name: 'Monty Light', swatch: '#FFFFFF', dark: false },
-  { key: 'slate-dark',  name: 'Slate Dark',  swatch: '#13161F', dark: true },
-  { key: 'monty-dark',  name: 'Monty Dark',  swatch: '#111A30', dark: true },
+  { key: 'pearl',       name: 'Pearl',       swatch: '#3B82F6', dark: false },
+  { key: 'rose-gold',   name: 'Rose Gold',   swatch: '#B76E79', dark: false },
+  { key: 'blossom',     name: 'Blossom',     swatch: '#D6336C', dark: false },
+  { key: 'lavender',    name: 'Lavender',    swatch: '#7C5CDB', dark: false },
   { key: 'graphite',    name: 'Graphite',    swatch: '#1B1B1F', dark: true },
   { key: 'ocean',       name: 'Ocean',       swatch: '#0C3B5E', dark: true },
+  { key: 'monty-dark',  name: 'Monty Dark',  swatch: '#111A30', dark: true },
+  { key: 'slate-dark',  name: 'Slate Dark',  swatch: '#13161F', dark: true },
   { key: 'forest',      name: 'Forest',      swatch: '#14201A', dark: true },
 ];
 

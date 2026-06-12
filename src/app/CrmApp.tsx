@@ -174,6 +174,8 @@ export default function CrmApp({
         type: 'filtered-list',
         data: { filters: view.filters, contextLabel: view.contextLabel, parentFilter: view.parentFilter },
       };
+    } else if (view.type === 'dashboard') {
+      routeView = { type: 'dashboard' };
     } else {
       routeView = { type: 'list' };
     }
@@ -276,6 +278,19 @@ export default function CrmApp({
     setView({ type: 'record', id: recordId });
   };
 
+  // Dashboard drill-down → open a record of an arbitrary entity (switches entity).
+  const handleDashboardOpenRecord = (entity: AppEntity, id: string, label?: string) => {
+    setActiveEntity(entity);
+    setActiveModule('sales');
+    setSearch('');
+    setView({ type: 'record', id });
+    if (label) {
+      trackRecentItem(session.user.id, entity, 'sales', id, label).then(() => {
+        setRecentRefreshKey((k) => k + 1);
+      });
+    }
+  };
+
   const handleNavigateToDashboard = (module: AppModule, entity: AppEntity) => {
     setActiveModule(module);
     setActiveEntity(entity);
@@ -283,14 +298,19 @@ export default function CrmApp({
     setView({ type: 'dashboard' });
   };
 
-  const handleDashboardNavigateFiltered = (entity: AppEntity, module: AppModule, filters: ActiveFilter[]) => {
+  const handleDashboardNavigateFiltered = (
+    entity: AppEntity,
+    module: AppModule,
+    filters: ActiveFilter[],
+    contextLabel = 'Personal Dashboard',
+  ) => {
     setActiveModule(module);
     setActiveEntity(entity);
     setSearch('');
     setView({
       type: 'filtered-list',
       filters,
-      contextLabel: 'Personal Dashboard',
+      contextLabel,
     });
   };
 
@@ -374,6 +394,7 @@ export default function CrmApp({
       <AppHeader
         module={activeModule}
         entity={activeEntity}
+        viewType={view.type}
         search={search}
         onSearchChange={setSearch}
         onGlobalSearch={() => setGlobalSearchOpen(true)}
@@ -400,6 +421,10 @@ export default function CrmApp({
           {view.type === 'dashboard' && (
             <PersonalDashboard
               userId={session.user.id}
+              onNavigateFiltered={(entity, module, filters, contextLabel) =>
+                handleDashboardNavigateFiltered(entity, module, filters as ActiveFilter[], contextLabel)
+              }
+              onOpenRecord={handleDashboardOpenRecord}
             />
           )}
 

@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Trash2, Star, StarOff, Save, ChevronDown,
@@ -958,7 +959,7 @@ function RuleEditor({ rules, onChange }: RuleEditorProps) {
               placeholder="field name"
               className="flex-1 px-2 py-1 text-xs font-mono border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
-            <select
+            <FilterSelect
               value={rule.operator}
               onChange={(e) => updateRule(i, 'operator', e.target.value)}
               className="px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
@@ -966,7 +967,7 @@ function RuleEditor({ rules, onChange }: RuleEditorProps) {
               {OPERATORS.map((op) => (
                 <option key={op} value={op}>{op.replace(/_/g, ' ')}</option>
               ))}
-            </select>
+            </FilterSelect>
             {rule.operator !== 'is_set' && rule.operator !== 'is_not_set' && (
               <input
                 value={rule.value as string ?? ''}

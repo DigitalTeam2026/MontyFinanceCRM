@@ -1,9 +1,7 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect } from 'react';
 import {
-  Plus, Trash2, Eye, Lock, AlertCircle, Sliders, Database,
-  Star, XCircle, Braces, ChevronDown, GripVertical, Settings,
-  X, Check, Loader2,
-} from 'lucide-react';
+  Plus, Trash2, Eye, Lock, AlertCircle, Sliders, Database, Star, XCircle, Braces, GripVertical, Settings, X, Check, Loader2 } from 'lucide-react';
 import type { FieldDefinition, ChoiceOption } from '../../types/field';
 import type { RuleAction, ActionType, RuleActionSet, FormulaToken } from '../../types/businessRule';
 import { ACTION_META } from '../../types/businessRule';
@@ -781,7 +779,7 @@ function MultiFieldSelector({
             <div key={idx} className="flex items-center gap-1.5">
               <span className="text-[10px] text-slate-400 shrink-0 w-4 text-right">{idx + 1}.</span>
               <div className="relative flex-1">
-                <select
+                <FilterSelect
                   value={ln}
                   onChange={(e) => updateField(idx, e.target.value)}
                   className="w-full appearance-none text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 pr-7"
@@ -790,9 +788,8 @@ function MultiFieldSelector({
                   {activeFields.map((f) => (
                     <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>
                   ))}
-                </select>
-                <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              </div>
+                </FilterSelect>
+                </div>
               <button
                 onClick={() => removeField(idx)}
                 className="shrink-0 text-slate-300 hover:text-red-500 transition-colors p-0.5"
@@ -854,7 +851,7 @@ function FieldSelect({
 }) {
   return (
     <div className="relative w-full">
-      <select
+      <FilterSelect
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full appearance-none text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 pr-8"
@@ -863,9 +860,8 @@ function FieldSelect({
         {fields.filter((f) => f.is_active).map((f) => (
           <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>
         ))}
-      </select>
-      <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-    </div>
+      </FilterSelect>
+      </div>
   );
 }
 
@@ -945,40 +941,37 @@ function FieldValueInput({
   if (fieldType === 'boolean') {
     return (
       <div className="relative w-full">
-        <select
+        <FilterSelect
           value={value === 'false' ? 'false' : 'true'}
           onChange={(e) => onChange(e.target.value)}
           className={selectCls}
         >
           <option value="true">Yes</option>
           <option value="false">No</option>
-        </select>
-        <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
   if (isStatecodeField && statecodeOptions.length > 0) {
     return (
       <div className="relative w-full">
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
           <option value="">— Select status —</option>
           {statecodeOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
   if (isStatusreasonField && statusreasonOptions.length > 0) {
     return (
       <div className="relative w-full">
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
           <option value="">— Select reason —</option>
           {statusreasonOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
@@ -987,14 +980,13 @@ function FieldValueInput({
     if (options.length > 0) {
       return (
         <div className="relative w-full">
-          <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+          <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
             <option value="">— select value —</option>
             {options.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
-          <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
       );
     }
   }
@@ -1010,14 +1002,13 @@ function FieldValueInput({
     if (lookupOptions.length > 0) {
       return (
         <div className="relative w-full">
-          <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
+          <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
             <option value="">— select record —</option>
             {lookupOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
-          <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
       );
     }
     // Fallback: show a select with current UUID value as a readable option
@@ -1026,12 +1017,11 @@ function FieldValueInput({
     const selectCls2 = 'w-full appearance-none text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 pr-8';
     return (
       <div className="relative w-full">
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls2}>
+        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls2}>
           <option value="">— Select —</option>
           {isUuid && value && <option value={value}>{value.slice(0, 8)}…</option>}
-        </select>
-        <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
+        </FilterSelect>
+        </div>
     );
   }
 
@@ -1158,7 +1148,7 @@ function FormulaBuilder({
               </span>
               {t.type === 'field' && (
                 <div className="relative flex-1">
-                  <select
+                  <FilterSelect
                     value={t.field ?? ''}
                     onChange={(e) => update(t.id, { field: e.target.value })}
                     className="w-full appearance-none text-[11px] text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 pr-6"
@@ -1166,9 +1156,8 @@ function FormulaBuilder({
                     {fields.filter((f) => f.is_active).map((f) => (
                       <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>
                     ))}
-                  </select>
-                  <ChevronDown size={9} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
+                  </FilterSelect>
+                  </div>
               )}
               {t.type === 'text' && (
                 <input
@@ -1181,7 +1170,7 @@ function FormulaBuilder({
               )}
               {t.type === 'operator' && (
                 <div className="relative flex-1">
-                  <select
+                  <FilterSelect
                     value={t.operator ?? '+'}
                     onChange={(e) => update(t.id, { operator: e.target.value })}
                     className="w-full appearance-none text-[11px] text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 pr-6"
@@ -1189,9 +1178,8 @@ function FormulaBuilder({
                     {['+','-','*','/','&'].map((op) => (
                       <option key={op} value={op}>{op}</option>
                     ))}
-                  </select>
-                  <ChevronDown size={9} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
+                  </FilterSelect>
+                  </div>
               )}
               {t.type === 'date_offset' && (
                 <input

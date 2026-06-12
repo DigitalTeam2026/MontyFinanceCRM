@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect } from 'react';
 import {
   ArrowLeft, Save, AlertTriangle, Plus, Trash2,
@@ -147,14 +148,14 @@ export default function DuplicateRuleEditorPage({ rule, onBack, onUpdated }: Dup
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Target Entity</label>
-                <select
+                <FilterSelect
                   value={form.entity_logical_name}
                   onChange={(e) => set('entity_logical_name', e.target.value)}
                   disabled={rule.is_system}
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-400"
                 >
                   {KNOWN_ENTITIES.map((e) => <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>)}
-                </select>
+                </FilterSelect>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>

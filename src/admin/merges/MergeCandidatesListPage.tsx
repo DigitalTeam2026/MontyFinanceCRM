@@ -1,3 +1,4 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState, useCallback } from 'react';
 import {
   Search, RefreshCw, Plus, X, ChevronRight,
@@ -115,11 +116,11 @@ export default function MergeCandidatesListPage({ onOpen }: Props) {
             className="pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg w-52 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
           />
         </div>
-        <select value={entityFilter} onChange={(e) => setEntityFilter(e.target.value)}
+        <FilterSelect value={entityFilter} onChange={(e) => setEntityFilter(e.target.value)}
           className="px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400">
           <option value="">All entities</option>
           {KNOWN_ENTITIES_MERGE.map((e) => <option key={e.logical_name} value={e.logical_name}>{e.display_name}</option>)}
-        </select>
+        </FilterSelect>
         <button onClick={load} className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors"><RefreshCw size={14} /></button>
         <span className="text-xs text-gray-400">{filtered.length} pair{filtered.length !== 1 ? 's' : ''}</span>
 

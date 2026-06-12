@@ -12,6 +12,9 @@ export const ENTITY_LOGICAL_NAME: Record<string, string> = {
   tickets:        'ticket',
   product_family: 'product_family',
   product:        'product',
+  // Prospect entity – logical_name matches the route slug directly
+  prospect:       'prospect',
+  prospects:      'prospect',
 };
 
 // Maps logical name (e.g. "account") -> AppEntity key (e.g. "accounts")
@@ -24,6 +27,7 @@ export const LOGICAL_NAME_TO_ENTITY: Record<string, string> = {
   ticket:         'tickets',
   product_family: 'product_family',
   product:        'product',
+  prospect:       'prospect',
 };
 
 export const ENTITY_DEFINITION_ID: Record<string, string> = {

@@ -1,10 +1,7 @@
+import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState } from 'react';
 import {
-  Plus, RefreshCw, ChevronDown, Zap, Pencil, Trash2,
-  ToggleLeft, ToggleRight, AlertCircle, PlayCircle,
-  CheckCircle2, PlusCircle, Clock, Play, GitBranch,
-  Shield, Wrench, Copy, Lock, Search, LayoutGrid, User,
-} from 'lucide-react';
+  Plus, RefreshCw, Zap, Pencil, Trash2, ToggleLeft, ToggleRight, AlertCircle, PlayCircle, CheckCircle2, PlusCircle, Clock, Play, GitBranch, Shield, Wrench, Copy, Lock, Search, LayoutGrid, User } from 'lucide-react';
 import type { EntityDefinition } from '../../types/entity';
 import type { WorkflowDefinition, WorkflowTriggerType } from '../../types/workflow';
 import { TRIGGER_META } from '../../types/workflow';
@@ -168,7 +165,7 @@ export default function WorkflowListPage({ onOpen }: WorkflowListPageProps) {
       {/* Toolbar */}
       <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-2 shrink-0">
         <div className="relative">
-          <select
+          <FilterSelect
             value={selectedEntityId}
             onChange={(e) => { setSelectedEntityId(e.target.value); setCategoryTab('all'); setSearch(''); }}
             className="appearance-none pl-2.5 pr-7 py-1.5 text-[12px] font-medium border border-slate-300 rounded bg-white focus:outline-none focus:border-blue-400 text-slate-700"
@@ -176,9 +173,8 @@ export default function WorkflowListPage({ onOpen }: WorkflowListPageProps) {
             {entities.map((e) => (
               <option key={e.entity_definition_id} value={e.entity_definition_id}>{e.display_name}</option>
             ))}
-          </select>
-          <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+          </FilterSelect>
+          </div>
 
         <div className="w-px h-5 bg-slate-200" />
 
