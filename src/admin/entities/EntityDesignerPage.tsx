@@ -29,13 +29,15 @@ function buildInitialForm(entity?: EntityDefinition): EntityFormData {
       primary_field_name: entity.primary_field_name, description: entity.description,
       icon_name: entity.icon_name, ownership_type: entity.ownership_type,
       enable_activities: entity.enable_activities, enable_notes: entity.enable_notes,
-      enable_audit: entity.enable_audit, allow_timeline: entity.allow_timeline ?? false, is_active: entity.is_active,
+      enable_audit: entity.enable_audit, allow_timeline: entity.allow_timeline ?? false,
+      documents_enabled: entity.documents_enabled ?? false, is_active: entity.is_active,
     };
   }
   return {
     logical_name: '', display_name: '', display_name_plural: '', physical_table_name: '',
     primary_field_name: 'name', description: null, icon_name: null, ownership_type: 'user',
-    enable_activities: false, enable_notes: false, enable_audit: false, allow_timeline: false, is_active: true,
+    enable_activities: false, enable_notes: false, enable_audit: false, allow_timeline: false,
+    documents_enabled: false, is_active: true,
   };
 }
 
@@ -286,6 +288,7 @@ export default function EntityDesignerPage({ entity, onSaved, onCancel }: Entity
                 { key: 'enable_notes' as const, label: 'Notes & Timeline', desc: 'Notes section on record forms' },
                 { key: 'enable_audit' as const, label: 'Audit Log', desc: 'Track all field-level changes with user and timestamp' },
                 { key: 'allow_timeline' as const, label: 'Timeline', desc: 'Enable timeline component for notes, appointments, emails, and attachments' },
+                { key: 'documents_enabled' as const, label: 'Documents', desc: 'Show a Documents tab on record forms (storage root is set in Admin Studio → Document Location)' },
               ].map((f) => (
                 <Toggle key={f.key} label={f.label} desc={f.desc} checked={form[f.key] as boolean} onChange={(v) => set(f.key, v)} />
               ))}

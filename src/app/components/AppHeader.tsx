@@ -66,7 +66,7 @@ export default function AppHeader({
   }, [onNotificationNavigate]);
 
   return (
-    <header className="h-[48px] flex items-center px-5 gap-4 shrink-0 relative" style={{ background: 'var(--sidebar-bg)', borderBottom: '1px solid var(--header-border)' }}>
+    <header className="h-[48px] flex items-center px-5 gap-4 shrink-0 relative" style={{ background: 'var(--topbar-bg)', borderBottom: '1px solid var(--header-border)' }}>
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 min-w-0 shrink-0">
         <span className="text-[12px] font-medium" style={{ color: 'var(--header-fg-muted)' }}>

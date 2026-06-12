@@ -5,6 +5,7 @@ import type { FormDefinition } from '../../types/form';
 import type { BusinessRule } from '../../types/businessRule';
 import { createNotification } from './notificationService';
 import { runWorkflowsForEvent } from './workflowEngine';
+import { provisionRecordStorage } from '../../services/documentService';
 import {
   hasNonNullMonetaryValue,
   hasCurrencyLock,
@@ -502,6 +503,20 @@ export async function saveRecord(
     }
 
     runWorkflowsForEvent(entitySlug, 'on_create', created[pk] as string, created, userId).catch(() => {});
+
+    // Eagerly provision the record's storage folder (best-effort; no-op when the
+    // entity has no Document Location configured or the file server is offline).
+    // Seeds document_path with the record folder when the column exists and is empty.
+    provisionRecordStorage(entitySlug, created[pk] as string)
+      .then(async (prov) => {
+        if (prov?.relativePath && tableCols.has('document_path')) {
+          await supabase.from(table)
+            .update({ document_path: prov.relativePath })
+            .eq(pk, created[pk] as string)
+            .is('document_path', null);
+        }
+      })
+      .catch(() => {});
 
     return created;
   }

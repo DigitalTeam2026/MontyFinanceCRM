@@ -276,17 +276,6 @@ export default function CrmApp({
     setView({ type: 'record', id: recordId });
   };
 
-  const handleNavigateAssignedToMe = (module: AppModule, entity: AppEntity) => {
-    setActiveModule(module);
-    setActiveEntity(entity);
-    setSearch('');
-    setView({
-      type: 'filtered-list',
-      filters: [{ id: 'assigned_to_me', field: 'owner_id', label: 'Owner', operator: 'eq', value: session.user.id }],
-      contextLabel: 'Assigned to Me',
-    });
-  };
-
   const handleNavigateToDashboard = (module: AppModule, entity: AppEntity) => {
     setActiveModule(module);
     setActiveEntity(entity);
@@ -398,7 +387,6 @@ export default function CrmApp({
           activeEntity={activeEntity}
           onNavigate={handleNavigate}
           onNavigateToRecord={handleSidebarNavigateToRecord}
-          onNavigateAssignedToMe={handleNavigateAssignedToMe}
           onNavigateToDashboard={handleNavigateToDashboard}
           userEmail={session.user.email}
           userName={userName}

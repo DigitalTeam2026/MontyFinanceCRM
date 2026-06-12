@@ -166,7 +166,7 @@ export default function EntityDetailPage({
     : 'Unknown';
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-[#fafbfc]">
+    <div className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--app-bg)' }}>
       {/* Breadcrumb */}
       <div className="bg-white border-b border-slate-200 px-5 py-2 flex items-center gap-1.5 shrink-0 text-[12px]">
         <button
@@ -262,6 +262,7 @@ export default function EntityDetailPage({
                 <CapBadge label="Activities" on={currentEntity.enable_activities} />
                 <CapBadge label="Notes" on={currentEntity.enable_notes} />
                 <CapBadge label="Audit" on={currentEntity.enable_audit} />
+                <CapBadge label="Documents" on={currentEntity.documents_enabled} />
               </div>
             </div>
           )}

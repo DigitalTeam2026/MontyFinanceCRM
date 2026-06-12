@@ -14,6 +14,7 @@ export interface EntityDefinition {
   enable_notes: boolean;
   enable_audit: boolean;
   allow_timeline: boolean;
+  documents_enabled: boolean;
   is_activity: boolean;
   show_in_navigation: boolean;
   is_custom: boolean;

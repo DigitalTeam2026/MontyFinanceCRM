@@ -180,8 +180,8 @@ export default function ViewSelector({
         key={view.view_id}
         onClick={() => handleSelect(view)}
         className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors group"
-        style={{ background: isActive ? '#eef3ff' : undefined }}
-        onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
+        style={{ background: isActive ? 'var(--row-hover)' : undefined }}
+        onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
         onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = ''; }}
       >
         {/* Star / default toggle */}
@@ -193,7 +193,7 @@ export default function ViewSelector({
           >
             <Star
               size={13}
-              className={view.is_default ? 'text-amber-400 fill-amber-400' : 'text-[#d1d5db] group-hover:text-[#9ca3af]'}
+              className={view.is_default ? 'text-amber-400 fill-amber-400' : 'text-[var(--border)] group-hover:text-[var(--muted)]'}
             />
           </button>
         )}
@@ -212,20 +212,20 @@ export default function ViewSelector({
               }}
               onBlur={() => commitRename(view.view_id)}
               onClick={(e) => e.stopPropagation()}
-              className="w-full px-1.5 py-0.5 text-[12px] border border-[#3b6fff] rounded focus:outline-none"
+              className="w-full px-1.5 py-0.5 text-[12px] border border-[var(--link)] rounded focus:outline-none"
             />
           ) : (
             <div className="flex items-center gap-1.5 min-w-0">
               <span
                 className="truncate text-[13px] font-medium"
-                style={{ color: isActive ? '#3b6fff' : '#111827' }}
+                style={{ color: isActive ? 'var(--link)' : 'var(--text)' }}
               >
                 {view.name}
               </span>
               {view.is_default && (
                 <span
                   className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
-                  style={{ background: '#eef3ff', color: '#3b6fff', border: '1px solid #c7d9ff' }}
+                  style={{ background: 'var(--row-hover)', color: 'var(--link)', border: '1px solid var(--surface-2)' }}
                 >
                   Default
                 </span>
@@ -233,7 +233,7 @@ export default function ViewSelector({
             </div>
           )}
           {view.view_type === 'system' && (
-            <p className="text-[10px] text-[#9ca3af] mt-0.5 leading-none">Everyone can see this</p>
+            <p className="text-[10px] text-[var(--muted)] mt-0.5 leading-none">Everyone can see this</p>
           )}
         </div>
 
@@ -242,34 +242,34 @@ export default function ViewSelector({
         )}
 
         {/* Active check */}
-        {isActive && <Check size={13} className="shrink-0" style={{ color: '#3b6fff' }} />}
+        {isActive && <Check size={13} className="shrink-0" style={{ color: 'var(--link)' }} />}
 
         {/* Action menu (owner, non-system) */}
         {canManage && !renamingId && (
           <div className="relative shrink-0" ref={actionRef}>
             <button
               onClick={(e) => { e.stopPropagation(); setActionMenuId(actionMenuId === view.view_id ? null : view.view_id); }}
-              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#e5e7eb] transition"
+              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--border)] transition"
             >
-              <MoreHorizontal size={12} className="text-[#6b7280]" />
+              <MoreHorizontal size={12} className="text-[var(--muted)]" />
             </button>
             {actionMenuId === view.view_id && (
               <div className="absolute right-0 top-6 z-50 w-40 bg-white rounded-xl shadow-xl py-1 overflow-hidden"
-                style={{ border: '1px solid #e7eaf1' }}>
+                style={{ border: '1px solid var(--border)' }}>
                 <button onClick={(e) => startRename(view, e)}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] hover:bg-[#f9fafb] transition">
-                  <Pencil size={11} className="text-[#6b7280]" /> Rename
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[var(--text)] hover:bg-[var(--surface-2)] transition">
+                  <Pencil size={11} className="text-[var(--muted)]" /> Rename
                 </button>
                 {!view.is_system && (
                   <button onClick={(e) => handleSetDefault(view, e)}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] hover:bg-[#f9fafb] transition">
-                    <Star size={11} className="text-[#6b7280]" /> Set as Default
+                    className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[var(--text)] hover:bg-[var(--surface-2)] transition">
+                    <Star size={11} className="text-[var(--muted)]" /> Set as Default
                   </button>
                 )}
                 <button
                   onClick={(e) => { e.stopPropagation(); onShareView(view); setActionMenuId(null); setOpen(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[#374151] hover:bg-[#f9fafb] transition">
-                  <Share2 size={11} className="text-[#6b7280]" /> Share
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-[var(--text)] hover:bg-[var(--surface-2)] transition">
+                  <Share2 size={11} className="text-[var(--muted)]" /> Share
                 </button>
                 {view.is_deletable && (
                   <button onClick={(e) => handleDelete(view, e)}
@@ -286,10 +286,10 @@ export default function ViewSelector({
         {!canManage && isOwner && view.view_type !== 'system' && !renamingId && (
           <button
             onClick={(e) => { e.stopPropagation(); onShareView(view); setOpen(false); }}
-            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[#e5e7eb] transition"
+            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--border)] transition"
             title="Share view"
           >
-            <Share2 size={11} className="text-[#9ca3af]" />
+            <Share2 size={11} className="text-[var(--muted)]" />
           </button>
         )}
       </div>
@@ -316,38 +316,38 @@ export default function ViewSelector({
       {open && (
         <div
           className="absolute left-0 top-full mt-1.5 z-50 bg-white overflow-hidden"
-          style={{ width: 280, borderRadius: 14, border: '1px solid #e7eaf1', boxShadow: '0 8px 32px rgba(17,24,39,.12), 0 2px 8px rgba(17,24,39,.06)' }}
+          style={{ width: 280, borderRadius: 14, border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(17,24,39,.12), 0 2px 8px rgba(17,24,39,.06)' }}
         >
           {/* Header */}
-          <div className="flex items-center gap-2.5 px-4 py-3" style={{ borderBottom: '1px solid #f3f4f6' }}>
+          <div className="flex items-center gap-2.5 px-4 py-3" style={{ borderBottom: '1px solid var(--surface-2)' }}>
             <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-              style={{ background: '#eef3ff' }}>
-              <LayoutList size={13} style={{ color: '#3b6fff' }} />
+              style={{ background: 'var(--row-hover)' }}>
+              <LayoutList size={13} style={{ color: 'var(--link)' }} />
             </div>
-            <span className="flex-1 text-[13px] font-semibold text-[#111827]">Switch view</span>
+            <span className="flex-1 text-[13px] font-semibold text-[var(--text)]">Switch view</span>
             <button
               onClick={() => setOpen(false)}
-              className="w-6 h-6 flex items-center justify-center rounded-md text-[#9ca3af] hover:text-[#374151] hover:bg-[#f3f4f6] transition"
+              className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--surface-2)] transition"
             >
               <X size={13} />
             </button>
           </div>
 
           {/* Search */}
-          <div className="px-3 py-2.5" style={{ borderBottom: '1px solid #f3f4f6' }}>
+          <div className="px-3 py-2.5" style={{ borderBottom: '1px solid var(--surface-2)' }}>
             <div className="relative">
-              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#9ca3af' }} />
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--muted)' }} />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search views..."
                 className="w-full text-[12px] pl-7 pr-3 py-1.5 focus:outline-none transition"
                 style={{
-                  background: '#f9fafb', border: '1px solid #e7eaf1',
-                  borderRadius: 8, color: '#374151',
+                  background: 'var(--surface-2)', border: '1px solid var(--border)',
+                  borderRadius: 8, color: 'var(--text)',
                 }}
-                onFocus={(e) => { e.currentTarget.style.border = '1px solid #3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.12)'; }}
-                onBlur={(e) => { e.currentTarget.style.border = '1px solid #e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+                onFocus={(e) => { e.currentTarget.style.border = '1px solid var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.12)'; }}
+                onBlur={(e) => { e.currentTarget.style.border = '1px solid var(--border)'; e.currentTarget.style.boxShadow = ''; }}
               />
             </div>
           </div>
@@ -357,7 +357,7 @@ export default function ViewSelector({
             {/* MY VIEWS */}
             {myViews.length > 0 && (
               <div>
-                <p className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: '#9ca3af' }}>
+                <p className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
                   My Views
                 </p>
                 {myViews.map((v) => renderRow(v, true))}
@@ -366,7 +366,7 @@ export default function ViewSelector({
             {/* SYSTEM VIEWS */}
             {systemViews.length > 0 && (
               <div>
-                <p className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: '#9ca3af' }}>
+                <p className="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
                   System Views
                 </p>
                 {systemViews.map((v) => renderRow(v, false))}
@@ -381,11 +381,11 @@ export default function ViewSelector({
           </div>
 
           {/* Footer */}
-          <div className="p-3" style={{ borderTop: '1px solid #e7eaf1' }}>
+          <div className="p-3" style={{ borderTop: '1px solid var(--border)' }}>
             <button
               onClick={() => { setOpen(false); onSaveAsNew(); }}
               className="w-full flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold text-white transition"
-              style={{ background: 'linear-gradient(135deg,#3b6fff,#5b87ff)', borderRadius: 10, boxShadow: '0 4px 12px rgba(59,111,255,.3)' }}
+              style={{ background: 'linear-gradient(135deg,var(--link),var(--link))', borderRadius: 10, boxShadow: '0 4px 12px rgba(59,111,255,.3)' }}
               onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.08)'; }}
               onMouseLeave={(e) => { e.currentTarget.style.filter = ''; }}
             >

@@ -1,29 +1,63 @@
 import { supabase } from '../lib/supabase';
 
-/** Fallback theme used before any preference is loaded/saved. */
-export const DEFAULT_THEME_COLOR = '#f7f8fa';
+/** Theme keys — each maps to a `[data-theme="…"]` block in index.css. */
+export type ThemeKey =
+  | 'monty-light'
+  | 'slate-dark'
+  | 'monty-dark'
+  | 'graphite'
+  | 'ocean'
+  | 'forest';
 
-/** Sentinel theme value that turns on full system-wide dark mode (not just the top bar). */
-export const DARK_THEME = 'dark';
+/** Default theme, applied before any preference loads and on reset. */
+export const DEFAULT_THEME: ThemeKey = 'monty-light';
+
+/** Themes that flip the whole app to dark surfaces (drive the `dark` class). */
+const DARK_THEMES = new Set<ThemeKey>(['slate-dark', 'monty-dark', 'forest']);
 
 /** A selectable, named theme shown in the picker. */
 export interface ThemeOption {
+  key: ThemeKey;
   name: string;
-  color: string;
+  /** Preview dot color — surface for light themes, sidebar for dark ones. */
+  swatch: string;
+  /** Whether this theme has a dark sidebar (so the picker dot needs no border). */
+  dark: boolean;
 }
 
-/** Curated "top popular" themes offered in the sidebar theme picker. */
-export const POPULAR_THEMES: ThemeOption[] = [
-  { name: 'Dark Mode',     color: DARK_THEME },
-  { name: 'Default',       color: '#f7f8fa' },
-  { name: 'Pure White',    color: '#ffffff' },
-  { name: 'Midnight Navy', color: '#0a1d36' },
-  { name: 'Monty Blue',    color: '#163b6e' },
-  { name: 'Royal Blue',    color: '#0f2a5e' },
-  { name: 'Charcoal',      color: '#1e2328' },
-  { name: 'Emerald',       color: '#0a3622' },
-  { name: 'Plum',          color: '#2d1b3d' },
+/** The six selectable themes, in menu order (default first). */
+export const THEMES: ThemeOption[] = [
+  { key: 'monty-light', name: 'Monty Light', swatch: '#FFFFFF', dark: false },
+  { key: 'slate-dark',  name: 'Slate Dark',  swatch: '#13161F', dark: true },
+  { key: 'monty-dark',  name: 'Monty Dark',  swatch: '#111A30', dark: true },
+  { key: 'graphite',    name: 'Graphite',    swatch: '#1B1B1F', dark: true },
+  { key: 'ocean',       name: 'Ocean',       swatch: '#0C3B5E', dark: true },
+  { key: 'forest',      name: 'Forest',      swatch: '#14201A', dark: true },
 ];
+
+const THEME_KEYS = new Set<string>(THEMES.map((t) => t.key));
+
+/**
+ * Coerce any stored value to a valid theme key. Migrates the pre-token presets:
+ * the old `dark` sentinel maps to Slate Dark; every old light color preset maps
+ * to the default Monty Light.
+ */
+export function normalizeTheme(stored: string | null | undefined): ThemeKey {
+  if (!stored) return DEFAULT_THEME;
+  if (THEME_KEYS.has(stored)) return stored as ThemeKey;
+  if (stored === 'dark') return 'slate-dark';
+  return DEFAULT_THEME;
+}
+
+/**
+ * Apply a theme to the document: set `data-theme` (drives the token blocks) and
+ * toggle the `dark` class (drives the neutral-utility override layer).
+ */
+export function applyTheme(key: ThemeKey): void {
+  const root = document.documentElement;
+  root.setAttribute('data-theme', key);
+  root.classList.toggle('dark', DARK_THEMES.has(key));
+}
 
 const cacheKey = (userId: string) => `monty.theme.${userId}`;
 
@@ -31,22 +65,22 @@ const cacheKey = (userId: string) => `monty.theme.${userId}`;
  * Last-known theme read synchronously from localStorage for an instant first
  * paint, before the per-user value arrives from the database.
  */
-export function getCachedTheme(userId: string): string {
+export function getCachedTheme(userId: string): ThemeKey {
   try {
-    return localStorage.getItem(cacheKey(userId)) || DEFAULT_THEME_COLOR;
+    return normalizeTheme(localStorage.getItem(cacheKey(userId)));
   } catch {
-    return DEFAULT_THEME_COLOR;
+    return DEFAULT_THEME;
   }
 }
 
-function cacheTheme(userId: string, color: string): void {
+function cacheTheme(userId: string, key: ThemeKey): void {
   try {
-    localStorage.setItem(cacheKey(userId), color);
+    localStorage.setItem(cacheKey(userId), key);
   } catch { /* ignore quota/availability errors */ }
 }
 
 /** Fetch the signed-in user's saved theme, refreshing the local cache. */
-export async function fetchUserTheme(userId: string): Promise<string> {
+export async function fetchUserTheme(userId: string): Promise<ThemeKey> {
   const { data, error } = await supabase
     .from('user_theme_pref')
     .select('theme_color')
@@ -54,17 +88,18 @@ export async function fetchUserTheme(userId: string): Promise<string> {
     .maybeSingle();
 
   if (error || !data?.theme_color) return getCachedTheme(userId);
-  cacheTheme(userId, data.theme_color);
-  return data.theme_color;
+  const key = normalizeTheme(data.theme_color);
+  cacheTheme(userId, key);
+  return key;
 }
 
 /** Persist the user's chosen theme (per-user) and refresh the local cache. */
-export async function saveUserTheme(userId: string, color: string): Promise<void> {
-  cacheTheme(userId, color);
+export async function saveUserTheme(userId: string, key: ThemeKey): Promise<void> {
+  cacheTheme(userId, key);
   await supabase
     .from('user_theme_pref')
     .upsert(
-      { user_id: userId, theme_color: color, modified_at: new Date().toISOString() },
+      { user_id: userId, theme_color: key, modified_at: new Date().toISOString() },
       { onConflict: 'user_id' }
     );
 }

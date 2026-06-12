@@ -64,7 +64,10 @@ export default function StudioSidebar({ activeModule, onNavigate, userEmail, use
   const initials = getInitials(userName, userEmail);
 
   return (
-    <aside className="w-52 bg-[#f7f8fa] text-[#374151] flex flex-col h-full shrink-0 border-r border-[#e5e7eb]">
+    <aside
+      className="app-sidebar w-52 flex flex-col h-full shrink-0"
+      style={{ background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)', borderRight: '1px solid var(--border)' }}
+    >
       <div className="px-4 py-3.5 border-b border-[#e5e7eb] flex items-center gap-2.5">
         <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center shrink-0">
           <Settings size={12} className="text-white" />

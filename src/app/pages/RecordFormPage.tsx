@@ -93,7 +93,8 @@ import CloseOpportunityModal from '../components/form/CloseOpportunityModal';
 import ReopenOpportunityModal from '../components/form/ReopenOpportunityModal';
 import ShareRecordModal from '../components/ShareRecordModal';
 import TimelinePanel from '../components/form/TimelinePanel';
-import DocumentUploader from '../components/DocumentUploader';
+import DocumentsTab from '../components/DocumentsTab';
+import { entityDocumentsTabEnabled } from '../../services/documentLocationService';
 import { fetchRulesForEntity, getRulesForManualTrigger } from '../services/recordTransformationEngine';
 import type { RecordTransformationRule } from '../../types/recordTransformation';
 import { fetchLifecycleRules, fetchFormAccessRules, evaluateFormAccess, getVisibleCommands, isCreationBlocked } from '../services/lifecycleRuleEngine';
@@ -687,7 +688,7 @@ function CollapsibleSection({
               if (!recordId) return null;
               return (
                 <div key={control.id} className="col-span-2">
-                  <DocumentUploader entityLogicalName={entityName} recordId={recordId} />
+                  <DocumentsTab entityType={entityName} recordId={recordId} />
                 </div>
               );
             }
@@ -792,6 +793,9 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const FORM_TAB_PREFIX = 'form_tab__';
 const RELATED_TAB_PREFIX = 'related_tab__';
+// Synthetic tab (not stored in layout_json) shown for any entity that has an
+// active Document Location configured in Admin Studio.
+const DOCUMENTS_TAB_ID = 'documents_tab__record_documents';
 
 const ENTITY_LABEL_FIELD: Record<AppEntity, string> = {
   accounts: 'name',
@@ -1057,6 +1061,8 @@ export default function RecordFormPage({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [activeTabId, setActiveTabId] = useState<string>('');
+  // Whether this entity has the Documents tab enabled (Admin Studio toggle).
+  const [documentsEnabled, setDocumentsEnabled] = useState(false);
   // Guards the one-time restore of `initialTab` (from the URL) on first layout load.
   const initialTabRestoredRef = useRef(false);
   const [isPinned, setIsPinned] = useState(false);
@@ -1522,6 +1528,15 @@ export default function RecordFormPage({
     if (activeTabId) onTabChange?.(activeTabId);
   }, [activeTabId, onTabChange]);
 
+  // Detect whether the Documents tab is enabled for this entity (Admin Studio toggle).
+  useEffect(() => {
+    let cancelled = false;
+    entityDocumentsTabEnabled(entityName)
+      .then((on) => { if (!cancelled) setDocumentsEnabled(on); })
+      .catch(() => { if (!cancelled) setDocumentsEnabled(false); });
+    return () => { cancelled = true; };
+  }, [entityName]);
+
   // Auto-select the first form tab when layout loads but activeTabId doesn't match any tab
   useEffect(() => {
     if (!layout) return;
@@ -1552,6 +1567,7 @@ export default function RecordFormPage({
       if (matchesTab) return;
     }
     if (activeTabId === HISTORY_TAB_ID) return;
+    if (activeTabId === DOCUMENTS_TAB_ID) return;
     if (activeTabId.startsWith(RELATED_TAB_PREFIX)) return;
     setActiveTabId(FORM_TAB_PREFIX + tabs[0].id);
   }, [layout, activeTabId, initialTab]);
@@ -2574,17 +2590,24 @@ export default function RecordFormPage({
   const formTabs = layout?.tabs?.filter((t) => t.is_visible !== false) ?? [];
   let isFormTab = activeTabId.startsWith(FORM_TAB_PREFIX);
   const activeFormTabId = isFormTab ? activeTabId.slice(FORM_TAB_PREFIX.length) : null;
-  const activeRelatedKey = !isFormTab && activeTabId !== HISTORY_TAB_ID ? activeTabId.slice(RELATED_TAB_PREFIX.length) : null;
+  const isDocumentsTab = activeTabId === DOCUMENTS_TAB_ID;
+  const activeRelatedKey = !isFormTab && activeTabId !== HISTORY_TAB_ID && !isDocumentsTab ? activeTabId.slice(RELATED_TAB_PREFIX.length) : null;
   let currentFormTab = formTabs.find((t) => t.id === activeFormTabId);
 
   // Defensive: if no tab matches (layout changed, stale activeTabId) auto-select the first form tab
-  if (!currentFormTab && !activeRelatedKey && activeTabId !== HISTORY_TAB_ID && formTabs.length > 0) {
+  if (!currentFormTab && !activeRelatedKey && activeTabId !== HISTORY_TAB_ID && !isDocumentsTab && formTabs.length > 0) {
     isFormTab = true;
     currentFormTab = formTabs[0];
   }
 
 
   const isHistoryTab = activeTabId === HISTORY_TAB_ID;
+  // Show the auto Documents tab when configured, unless the form designer already
+  // placed a 'documents' control somewhere in the layout (avoid duplication).
+  const layoutHasDocumentsControl = !!layout?.tabs?.some((t) =>
+    t.sections?.some((s) => s.controls?.some((c) => c.control_type === 'documents'))
+  );
+  const showDocumentsTab = documentsEnabled && !layoutHasDocumentsControl;
 
   return (
     <FormDensityProvider>
@@ -2614,6 +2637,7 @@ export default function RecordFormPage({
       currentFormTab={currentFormTab}
       isFormTab={isFormTab}
       isHistoryTab={isHistoryTab}
+      showDocumentsTab={showDocumentsTab}
       activeRelatedKey={activeRelatedKey}
       relatedSubgrids={relatedSubgrids}
       ruleState={ruleState}
@@ -2850,6 +2874,7 @@ interface RecordFormInnerProps {
   currentFormTab: DesignerTab | undefined;
   isFormTab: boolean;
   isHistoryTab: boolean;
+  showDocumentsTab: boolean;
   activeRelatedKey: string | null;
   relatedSubgrids: SubgridTabPanel[];
   ruleState: FormRuleState;
@@ -3007,7 +3032,7 @@ function RecordFormInner({
   entity, recordId, formReadonly, canCreate, canWrite, canDelete, canAssign, canShare, canCloseWon, canCloseLost, canQualify, canResolve,
   values, saveStatus, isDirty,
   isPinned, crmUsers, showAssignPopover, assignBtnRef, formTabs,
-  activeTabId, currentFormTab, isFormTab, isHistoryTab, activeRelatedKey,
+  activeTabId, currentFormTab, isFormTab, isHistoryTab, showDocumentsTab, activeRelatedKey,
   relatedSubgrids, ruleState, validationErrors, timeline, userId, entityName,
   onBack, onSave, onSaveAndClose, onSaveAndNew, onQualify, onQualifyFromStageBar, onDisqualifyLead, onDisqualifyLeadClick, onReopenLead, onCloseWon, onCloseLost, onReopenOpportunity, lifecycleRules,
   onTogglePin, onAssign, onSetShowAssignPopover, onChangeTab,
@@ -3154,7 +3179,7 @@ function RecordFormInner({
   }, [closeLostOpen]);
 
   return (
-    <div className={`flex-1 flex flex-col overflow-hidden${isRedesign ? '' : ' bg-slate-50'}${isRedesign && isContact ? ' mc-rd-contact' : ''}`} style={isRedesign ? { background: '#eef1f7', fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif" } : undefined}>
+    <div className={`flex-1 flex flex-col overflow-hidden${isRedesign ? '' : ' bg-slate-50'}${isRedesign && isContact ? ' mc-rd-contact' : ''}`} style={isRedesign ? { background: 'var(--app-bg)', fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif" } : undefined}>
       {isRedesign && (
         <style>{`
           /* Primary Save — restrained professional blue, consistent states */
@@ -3340,16 +3365,13 @@ function RecordFormInner({
           <button
             onClick={onSave}
             disabled={saveStatus === 'saving'}
-            className={`rd-save-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition border ${
+            className="rd-save-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition border disabled:opacity-60"
+            style={
               saveStatus === 'saved'
-                ? 'bg-emerald-600 text-white border-emerald-600'
+                ? { background: 'color-mix(in srgb, var(--success) 15%, transparent)', color: 'var(--success)', borderColor: 'color-mix(in srgb, var(--success) 40%, transparent)' }
                 : saveStatus === 'error'
-                ? 'bg-red-600 text-white border-red-600'
-                : 'text-white border-transparent disabled:opacity-60'
-            }`}
-            style={saveStatus === 'idle' || saveStatus === 'saving'
-              ? { background: isContact ? '#3f5e9e' : '#2563eb' }
-              : undefined}
+                ? { background: 'color-mix(in srgb, var(--danger) 15%, transparent)', color: 'var(--danger)', borderColor: 'color-mix(in srgb, var(--danger) 40%, transparent)' }
+                : { background: 'var(--primary)', color: 'var(--primary-text)', borderColor: 'transparent' }}
           >
             {saveStatus === 'saving' ? (
               <Loader2 size={12} className="animate-spin" />
@@ -3406,13 +3428,13 @@ function RecordFormInner({
                   Auto-saving…
                 </span>
               ) : saveStatus === 'saved' ? (
-                <span className="flex items-center gap-1 text-[11px] text-emerald-600">
+                <span className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--success)' }}>
                   <CheckCircle2 size={10} />
                   All changes saved
                 </span>
               ) : isDirty ? (
-                <span className="flex items-center gap-1 text-[11px] text-amber-600">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--warn-text)' }}>
+                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--warn-text)' }} />
                   Unsaved changes
                 </span>
               ) : (
@@ -3502,11 +3524,11 @@ function RecordFormInner({
               XCircle: <XCircle size={12} />, RefreshCw: <RefreshCw size={12} />,
               Zap: <Zap size={12} />, UserCheck: <UserCheck size={12} />,
             };
-            const styleMap: Record<string, string> = {
-              emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
-              red: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100',
-              blue: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100',
-              amber: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100',
+            const toneStyle: Record<string, React.CSSProperties> = {
+              emerald: { background: 'color-mix(in srgb, var(--success) 12%, transparent)', color: 'var(--success)', borderColor: 'color-mix(in srgb, var(--success) 45%, transparent)' },
+              red:     { background: 'color-mix(in srgb, var(--danger) 12%, transparent)',  color: 'var(--danger)',  borderColor: 'color-mix(in srgb, var(--danger) 45%, transparent)' },
+              blue:    { background: 'color-mix(in srgb, var(--link) 12%, transparent)',    color: 'var(--link)',    borderColor: 'color-mix(in srgb, var(--link) 45%, transparent)' },
+              amber:   { background: 'var(--warn-bg)', color: 'var(--warn-text)', borderColor: 'color-mix(in srgb, var(--warn-text) 45%, transparent)' },
             };
             return (
               <span key={cmd.rule.digital_rule_id} className="contents">
@@ -3515,7 +3537,8 @@ function RecordFormInner({
                   <button
                     onClick={handleClick}
                     disabled={saveStatus === 'saving' || isQualifyDisabled}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border transition disabled:opacity-50 disabled:cursor-not-allowed ${styleMap[cmd.style] ?? styleMap.blue}`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={toneStyle[cmd.style] ?? toneStyle.blue}
                   >
                     {iconMap[cmd.icon] ?? <Zap size={12} />}
                     {cmd.label}
@@ -3538,7 +3561,8 @@ function RecordFormInner({
               <button
                 onClick={onDisqualifyLeadClick}
                 disabled={saveStatus === 'saving'}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border transition disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: 'color-mix(in srgb, var(--danger) 12%, transparent)', color: 'var(--danger)', borderColor: 'color-mix(in srgb, var(--danger) 45%, transparent)' }}
               >
                 <XCircle size={12} />
                 Disqualify
@@ -3553,7 +3577,8 @@ function RecordFormInner({
               <button
                 onClick={() => onTransform(rule)}
                 disabled={saveStatus === 'saving'}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium border transition disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: 'color-mix(in srgb, var(--link) 12%, transparent)', color: 'var(--link)', borderColor: 'color-mix(in srgb, var(--link) 45%, transparent)' }}
               >
                 <Zap size={12} />
                 {rule.button_label || rule.name}
@@ -3635,16 +3660,16 @@ function RecordFormInner({
 
       {/* Opportunity Won/Lost banner — driven by Digital Rule */}
       {entity === 'opportunities' && (isOppWon || isOppLost) && recordId && formAccessResult && formAccessResult.level !== 'allow_edit' && (
-        <div className={`shrink-0 flex items-center gap-3 px-5 py-2.5 border-b ${isOppWon ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+        <div className="shrink-0 flex items-center gap-3 px-5 py-2.5 border-b" style={{ background: `color-mix(in srgb, var(${isOppWon ? '--success' : '--danger'}) 12%, transparent)`, borderColor: `color-mix(in srgb, var(${isOppWon ? '--success' : '--danger'}) 30%, transparent)` }}>
           <div className="flex items-center gap-1.5 shrink-0">
-            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${isOppWon ? 'bg-emerald-200 border border-emerald-300' : 'bg-red-200 border border-red-300'}`}>
-              {isOppWon ? <Trophy size={11} className="text-emerald-700" /> : <XCircle size={11} className="text-red-700" />}
+            <div className="w-5 h-5 rounded-full flex items-center justify-center border" style={{ background: `color-mix(in srgb, var(${isOppWon ? '--success' : '--danger'}) 22%, transparent)`, borderColor: `color-mix(in srgb, var(${isOppWon ? '--success' : '--danger'}) 40%, transparent)` }}>
+              {isOppWon ? <Trophy size={11} style={{ color: 'var(--success)' }} /> : <XCircle size={11} style={{ color: 'var(--danger)' }} />}
             </div>
-            <span className={`text-[11px] font-semibold uppercase tracking-wide whitespace-nowrap ${isOppWon ? 'text-emerald-700' : 'text-red-700'}`}>
+            <span className="text-[11px] font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: `var(${isOppWon ? '--success' : '--danger'})` }}>
               {isOppWon ? 'Won' : 'Lost'}
             </span>
           </div>
-          <p className={`text-[12px] flex-1 min-w-0 truncate ${isOppWon ? 'text-emerald-700' : 'text-red-700'}`}>
+          <p className="text-[12px] flex-1 min-w-0 truncate" style={{ color: `var(${isOppWon ? '--success' : '--danger'})` }}>
             {formAccessResult.message ?? `This opportunity is closed (${isOppWon ? 'Won' : 'Lost'}) and is read-only. Reopen to edit.`}
           </p>
           {canWrite && formAccessResult.level !== 'not_allow' && (
@@ -3751,6 +3776,20 @@ function RecordFormInner({
                 >
                   Field History
                 </button>
+                {showDocumentsTab && (
+                  <button
+                    onClick={() => onChangeTab(DOCUMENTS_TAB_ID)}
+                    className={`relative flex items-center gap-1.5 ${isRedesign ? 'px-3 py-2 text-[12px]' : 'px-4 py-2.5 text-[13px]'} font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
+                      activeTabId === DOCUMENTS_TAB_ID
+                        ? isRedesign
+                          ? 'border-[#2563eb] text-[#2563eb]'
+                          : 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    Documents
+                  </button>
+                )}
                 {relatedSubgrids.map((sg) => {
                   const tabId = RELATED_TAB_PREFIX + sg.configKey;
                   const isActive = activeTabId === tabId;
@@ -3829,6 +3868,12 @@ function RecordFormInner({
                   <h3 className="text-[14px] font-semibold text-slate-700">Field Change History</h3>
                 </div>
                 <FieldHistoryPanel entity={entity} recordId={recordId} />
+              </div>
+            )}
+
+            {activeTabId === DOCUMENTS_TAB_ID && recordId && (
+              <div className="w-full">
+                <DocumentsTab entityType={entityName} recordId={recordId} />
               </div>
             )}
 

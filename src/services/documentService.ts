@@ -20,8 +20,10 @@ async function readError(res: Response): Promise<string> {
 }
 
 /**
- * Upload a file for a record: the file server writes it to <root>/<recordId>/<fileName>,
- * then we register the returned path in crm_document.
+ * Upload a file for a record: the file server writes it under a per-day folder
+ * (<root>/YYYY/MM/DD/<recordId>/<fileName>) and returns the stored relative_path,
+ * which we register in crm_document. Reads/renames/deletes use that stored path,
+ * so files filed on any day resolve correctly.
  */
 export async function uploadDocument(
   entityLogicalName: string,
@@ -41,7 +43,7 @@ export async function uploadDocument(
     body: file,
   });
   if (!res.ok) throw new Error(await readError(res));
-  const { relativePath, absolutePath, byteSize } = await res.json();
+  const { relativePath, absolutePath, byteSize, storageType } = await res.json();
 
   const { data, error } = await supabase
     .from('crm_document')
@@ -51,6 +53,7 @@ export async function uploadDocument(
       file_name: file.name,
       relative_path: relativePath,
       absolute_path: absolutePath ?? null,
+      storage_type: storageType ?? 'local',
       content_type: file.type || null,
       byte_size: byteSize ?? file.size,
     })
@@ -58,6 +61,46 @@ export async function uploadDocument(
     .single();
   if (error) throw error;
   return data as CrmDocument;
+}
+
+export interface ProvisionResult {
+  relativePath: string;
+  absolutePath: string | null;
+  created: boolean;
+  storageType: string;
+}
+
+/**
+ * Ensure today's storage folder for a record exists (<root>/YYYY/MM/DD/<recordId>/)
+ * right after the record is created. Best-effort: returns the relative path so
+ * callers can seed document_path (a hint — later uploads land in their own day
+ * folder). Throws if no Document Location is configured for the entity.
+ */
+export async function provisionRecordStorage(
+  entityLogicalName: string,
+  recordId: string
+): Promise<ProvisionResult> {
+  const token = await authToken();
+  const res = await fetch(`${FILE_SERVER_URL}/provision`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entity: entityLogicalName, recordId }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return (await res.json()) as ProvisionResult;
+}
+
+/** Resolve a set of user ids to display names (for "Uploaded by"). */
+export async function fetchUserDisplayMap(ids: (string | null)[]): Promise<Record<string, string>> {
+  const unique = [...new Set(ids.filter(Boolean))] as string[];
+  if (unique.length === 0) return {};
+  const { data, error } = await supabase.rpc('fn_get_user_display_map', { p_user_ids: unique });
+  if (error) return {};
+  const map: Record<string, string> = {};
+  for (const u of (data ?? []) as { user_id: string; display_name: string }[]) {
+    map[u.user_id] = u.display_name;
+  }
+  return map;
 }
 
 /** List documents registered for a record. */
@@ -79,6 +122,7 @@ export async function downloadDocument(doc: CrmDocument): Promise<void> {
     entity: doc.entity_logical_name,
     recordId: doc.record_id,
     file: doc.file_name,
+    relativePath: doc.relative_path,
   });
   const res = await fetch(`${FILE_SERVER_URL}/download?${params.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -95,6 +139,60 @@ export async function downloadDocument(doc: CrmDocument): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+/** Rename the stored file in place and update its registry row. */
+export async function renameDocument(doc: CrmDocument, newName: string): Promise<CrmDocument> {
+  const trimmed = newName.trim();
+  if (!trimmed) throw new Error('File name cannot be empty.');
+  if (trimmed === doc.file_name) return doc;
+
+  const token = await authToken();
+  const params = new URLSearchParams({
+    entity: doc.entity_logical_name,
+    recordId: doc.record_id,
+    file: doc.file_name,
+    relativePath: doc.relative_path,
+  });
+  const res = await fetch(`${FILE_SERVER_URL}/file?${params.toString()}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'x-new-file-name': encodeURIComponent(trimmed),
+    },
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  const { relativePath, absolutePath } = await res.json();
+
+  const { data, error } = await supabase
+    .from('crm_document')
+    .update({
+      file_name: trimmed,
+      relative_path: relativePath,
+      absolute_path: absolutePath ?? null,
+    })
+    .eq('document_id', doc.document_id)
+    .select()
+    .single();
+
+  if (error) {
+    // The file was renamed on disk but the registry update failed (e.g. RLS) —
+    // undo the disk rename so storage and the database never drift apart.
+    try {
+      const undo = new URLSearchParams({
+        entity: doc.entity_logical_name,
+        recordId: doc.record_id,
+        file: trimmed,
+        relativePath,
+      });
+      await fetch(`${FILE_SERVER_URL}/file?${undo.toString()}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'x-new-file-name': encodeURIComponent(doc.file_name) },
+      });
+    } catch { /* best effort — leave disk as-is if the undo also fails */ }
+    throw new Error(`Couldn't update the document record (${error.message}). The file name was reverted.`);
+  }
+  return data as CrmDocument;
+}
+
 /** Delete the stored file and its registry row. */
 export async function deleteDocument(doc: CrmDocument): Promise<void> {
   const token = await authToken();
@@ -102,6 +200,7 @@ export async function deleteDocument(doc: CrmDocument): Promise<void> {
     entity: doc.entity_logical_name,
     recordId: doc.record_id,
     file: doc.file_name,
+    relativePath: doc.relative_path,
   });
   const res = await fetch(`${FILE_SERVER_URL}/file?${params.toString()}`, {
     method: 'DELETE',

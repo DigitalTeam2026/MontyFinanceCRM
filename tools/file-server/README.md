@@ -5,19 +5,23 @@ machine that owns the storage folders (your PC for local testing, or a file serv
 is the only component that can read/write `C:\...` paths — browsers and Supabase cannot.
 
 It writes uploaded files to the per-entity root folder configured in **Admin Studio →
-Platform → Document Location**, under:
+Platform → Document Location**, under a **per-day** folder (nested year/month/day):
 
 ```
-<root>/<recordId>/<fileName>
+<root>/YYYY/MM/DD/<recordId>/<fileName>
 ```
+
+The day is the upload date. Reads, renames and deletes use the `relative_path` stored
+in `crm_document`, so files filed on any day resolve correctly — and legacy files at the
+old `<root>/<recordId>/<fileName>` location keep working without migration.
 
 ## How it fits together
 
 ```
-Browser (CRM)  ──upload──>  File Server (this)  ──writes──>  C:\...\MontyFinanceStorage\Lead\<recordId>\<file>
+Browser (CRM)  ──upload──>  File Server (this)  ──writes──>  C:\...\MontyFinanceStorage\Lead\2026\06\12\<recordId>\<file>
       │                          │
       │                          └─ reads the per-entity root from Supabase
-      └────── registers the relative path in the `crm_document` table (via Supabase)
+      └────── registers the stored relative_path (e.g. 2026/06/12/<recordId>/<file>) in `crm_document`
 ```
 
 - The browser sends the file plus the caller's Supabase JWT.
@@ -72,10 +76,11 @@ All requests require `Authorization: Bearer <supabase-jwt>` (download also accep
 4. In **Admin Studio → Document Location**, click **Add Location**, pick **Lead**, and set
    the root to e.g. `C:\Users\habib.serhan\Desktop\MontyFinanceStorage\Lead`. Save.
    (You don't need to pre-create the folder — the server makes it on first upload.)
-5. Render `<DocumentUploader entityLogicalName="lead" recordId="<a real lead id>" />` on a
-   Lead record (see `src/app/components/DocumentUploader.tsx`), upload a file, and confirm:
-   - the file appears at `…\MontyFinanceStorage\Lead\<leadId>\<file>` on disk,
-   - a row exists in `crm_document` with `relative_path = <leadId>/<file>`,
+5. Open a Lead record — the shared Documents tab (`<DocumentsTab entityType="lead" recordId=... />`,
+   see `src/app/components/DocumentsTab.tsx`) appears automatically when Documents is enabled for the
+   entity. Upload a file and confirm:
+   - the file appears at `…\MontyFinanceStorage\Lead\2026\06\12\<leadId>\<file>` on disk,
+   - a row exists in `crm_document` with `relative_path = 2026/06/12/<leadId>/<file>`,
    - **Download** returns the file and **Delete** removes it.
 
 ## Notes

@@ -491,17 +491,17 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
           <select
             value={draft.value}
             onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
-            className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[#374151] bg-white focus:outline-none appearance-none pr-6 transition"
-            style={{ borderColor: '#e7eaf1' }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+            className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[var(--text)] bg-white focus:outline-none appearance-none pr-6 transition"
+            style={{ borderColor: 'var(--border)' }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
           >
             <option value="">Select value...</option>
             {fieldMeta.options.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
-          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#9ca3af' }} />
+          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--muted)' }} />
         </div>
       );
     }
@@ -511,10 +511,10 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
           type="date"
           value={draft.value}
           onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
-          className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[#374151] bg-white focus:outline-none transition"
-          style={{ borderColor: '#e7eaf1' }}
-          onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-          onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+          className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[var(--text)] bg-white focus:outline-none transition"
+          style={{ borderColor: 'var(--border)' }}
+          onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+          onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
         />
       );
     }
@@ -525,10 +525,10 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
           value={draft.value}
           onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
           placeholder="Enter number..."
-          className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[#374151] placeholder-[#9ca3af] bg-white focus:outline-none transition"
-          style={{ borderColor: '#e7eaf1' }}
-          onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-          onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+          className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[var(--text)] placeholder-[var(--muted)] bg-white focus:outline-none transition"
+          style={{ borderColor: 'var(--border)' }}
+          onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+          onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
         />
       );
     }
@@ -539,26 +539,26 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
         onChange={(e) => updateDraft(draft.id, { value: e.target.value })}
         onKeyDown={(e) => { if (e.key === 'Enter') applyDrafts(); }}
         placeholder="Enter value..."
-        className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[#374151] placeholder-[#9ca3af] bg-white focus:outline-none transition"
-        style={{ borderColor: '#e7eaf1' }}
-        onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-        onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+        className="w-full text-[11px] border rounded-lg px-2.5 py-2 text-[var(--text)] placeholder-[var(--muted)] bg-white focus:outline-none transition"
+        style={{ borderColor: 'var(--border)' }}
+        onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+        onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
       />
     );
   };
 
   return (
-    <div className="flex flex-col h-full shrink-0 bg-white" style={{ width: 320, borderLeft: '1px solid #e7eaf1' }}>
+    <div className="flex flex-col h-full shrink-0 bg-white" style={{ width: 320, borderLeft: '1px solid var(--border)' }}>
 
       {/* ── Header ── */}
-      <div className="flex items-center gap-2.5 px-4 py-3.5" style={{ borderBottom: '1px solid #f0f2f7' }}>
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#eef3ff' }}>
-          <Filter size={13} style={{ color: '#3b6fff' }} />
+      <div className="flex items-center gap-2.5 px-4 py-3.5" style={{ borderBottom: '1px solid var(--surface-2)' }}>
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--row-hover)' }}>
+          <Filter size={13} style={{ color: 'var(--link)' }} />
         </div>
-        <span className="flex-1 text-[13px] font-semibold text-[#111827]">Filters</span>
+        <span className="flex-1 text-[13px] font-semibold text-[var(--text)]">Filters</span>
         {activeCount > 0 && (
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none"
-            style={{ background: '#3b6fff', color: '#fff' }}>
+            style={{ background: 'var(--link)', color: 'var(--surface)' }}>
             {activeCount}
           </span>
         )}
@@ -566,7 +566,7 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
           <button
             onClick={() => setSavedTab(savedTab === 'saved' ? 'active' : 'saved')}
             className="p-1 rounded-md transition"
-            style={{ color: savedTab === 'saved' ? '#3b6fff' : '#9ca3af' }}
+            style={{ color: savedTab === 'saved' ? 'var(--link)' : 'var(--muted)' }}
             title="Saved filters"
           >
             <BookmarkCheck size={13} />
@@ -574,7 +574,7 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
         )}
         <button
           onClick={onClose}
-          className="w-6 h-6 flex items-center justify-center rounded-md text-[#9ca3af] hover:text-[#374151] hover:bg-[#f3f4f6] transition"
+          className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--surface-2)] transition"
         >
           <X size={13} />
         </button>
@@ -585,30 +585,30 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
           {savedFilters.length === 0 ? (
             <div className="text-center py-10">
-              <BookmarkCheck size={24} className="mx-auto mb-2" style={{ color: '#d1d5db' }} />
-              <p className="text-[12px] text-[#9ca3af]">No saved filters yet</p>
-              <p className="text-[11px] mt-0.5" style={{ color: '#d1d5db' }}>Apply filters then save them for quick reuse</p>
+              <BookmarkCheck size={24} className="mx-auto mb-2" style={{ color: 'var(--border)' }} />
+              <p className="text-[12px] text-[var(--muted)]">No saved filters yet</p>
+              <p className="text-[11px] mt-0.5" style={{ color: 'var(--border)' }}>Apply filters then save them for quick reuse</p>
             </div>
           ) : (
             savedFilters.map((sf) => (
               <div
                 key={sf.id}
                 className="flex items-start gap-2 p-2.5 rounded-xl cursor-pointer group transition"
-                style={{ border: '1px solid #e7eaf1' }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#c7d9ff'; (e.currentTarget as HTMLElement).style.background = '#f5f8ff'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#e7eaf1'; (e.currentTarget as HTMLElement).style.background = ''; }}
+                style={{ border: '1px solid var(--border)' }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--surface-2)'; (e.currentTarget as HTMLElement).style.background = 'var(--row-hover)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.background = ''; }}
                 onClick={() => { loadSaved(sf); setSavedTab('active'); }}
               >
-                <BookmarkCheck size={13} className="mt-0.5 shrink-0 transition" style={{ color: '#9ca3af' }} />
+                <BookmarkCheck size={13} className="mt-0.5 shrink-0 transition" style={{ color: 'var(--muted)' }} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-semibold text-[#111827] truncate">{sf.name}</p>
-                  <p className="text-[10px] mt-0.5" style={{ color: '#9ca3af' }}>
+                  <p className="text-[12px] font-semibold text-[var(--text)] truncate">{sf.name}</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>
                     {sf.conditions.length} condition{sf.conditions.length !== 1 ? 's' : ''}
                   </p>
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); handleDeleteSaved(sf.id); }}
-                  className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition text-[#d1d5db] hover:text-red-500"
+                  className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition text-[var(--border)] hover:text-red-500"
                 >
                   <Trash2 size={11} />
                 </button>
@@ -622,30 +622,30 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
       {savedTab === 'active' && (
         <>
           {/* Match All / Any toggle */}
-          <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid #f0f2f7' }}>
-            <span className="text-[11px] text-[#6b7280] font-medium">Match</span>
-            <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #e7eaf1' }}>
+          <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid var(--surface-2)' }}>
+            <span className="text-[11px] text-[var(--muted)] font-medium">Match</span>
+            <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
               {(['all', 'any'] as const).map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setMatchMode(mode)}
                   className="px-3 py-1 text-[11px] font-semibold capitalize transition"
                   style={matchMode === mode
-                    ? { background: '#3b6fff', color: '#fff' }
-                    : { background: '#f9fafb', color: '#6b7280' }}
+                    ? { background: 'var(--link)', color: 'var(--surface)' }
+                    : { background: 'var(--surface-2)', color: 'var(--muted)' }}
                 >
                   {mode}
                 </button>
               ))}
             </div>
-            <span className="text-[11px] text-[#6b7280] font-medium">of the following</span>
+            <span className="text-[11px] text-[var(--muted)] font-medium">of the following</span>
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {fieldsLoading ? (
               <div className="flex items-center justify-center py-10 gap-2">
-                <Loader2 size={16} className="animate-spin" style={{ color: '#9ca3af' }} />
-                <span className="text-[12px]" style={{ color: '#9ca3af' }}>Loading fields…</span>
+                <Loader2 size={16} className="animate-spin" style={{ color: 'var(--muted)' }} />
+                <span className="text-[12px]" style={{ color: 'var(--muted)' }}>Loading fields…</span>
               </div>
             ) : (
               <div className="p-3 space-y-1.5">
@@ -654,23 +654,23 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
                 {filters.map((f, i) => (
                   <div key={f.id} className="flex items-center gap-2">
                     <span className="text-[9px] font-bold uppercase tracking-wide shrink-0 w-10 text-right"
-                      style={{ color: '#9ca3af' }}>
+                      style={{ color: 'var(--muted)' }}>
                       {i === 0 ? 'WHERE' : 'AND'}
                     </span>
                     <div className="flex-1 flex items-center gap-1.5 rounded-xl px-3 py-2 min-w-0"
-                      style={{ background: '#eef3ff', border: '1px solid #c7d9ff' }}>
+                      style={{ background: 'var(--row-hover)', border: '1px solid var(--surface-2)' }}>
                       <div className="flex-1 min-w-0">
-                        <span className="text-[11px] font-semibold truncate block" style={{ color: '#3b6fff' }}>{f.label}</span>
-                        <span className="text-[10px] block truncate" style={{ color: '#6b7280' }}>
+                        <span className="text-[11px] font-semibold truncate block" style={{ color: 'var(--link)' }}>{f.label}</span>
+                        <span className="text-[10px] block truncate" style={{ color: 'var(--muted)' }}>
                           {operatorLabel(f.operator)}
                           {!NO_VALUE_OPERATORS.includes(f.operator) && f.value && (
-                            <span className="font-semibold ml-1" style={{ color: '#374151' }}>"{getDisplayValue(f.field, f.value)}"</span>
+                            <span className="font-semibold ml-1" style={{ color: 'var(--text)' }}>"{getDisplayValue(f.field, f.value)}"</span>
                           )}
                         </span>
                       </div>
-                      <button onClick={() => removeActive(f.id)} className="shrink-0 transition hover:scale-110" style={{ color: '#9ca3af' }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#9ca3af'; }}>
+                      <button onClick={() => removeActive(f.id)} className="shrink-0 transition hover:scale-110" style={{ color: 'var(--muted)' }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--danger)'; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--muted)'; }}>
                         <X size={11} />
                       </button>
                     </div>
@@ -686,11 +686,11 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
                   return (
                     <div key={draft.id} className="flex items-start gap-2">
                       <span className="text-[9px] font-bold uppercase tracking-wide shrink-0 w-10 text-right pt-2.5"
-                        style={{ color: '#9ca3af' }}>
+                        style={{ color: 'var(--muted)' }}>
                         {rowIndex === 0 ? 'WHERE' : 'AND'}
                       </span>
                       <div className="flex-1 space-y-1.5 rounded-xl p-2.5"
-                        style={{ background: '#f9fafb', border: '1px solid #e7eaf1' }}>
+                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
                         {/* Field selector */}
                         <div className="relative">
                           <select
@@ -704,15 +704,15 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
                               });
                             }}
                             className="w-full text-[11px] border rounded-lg px-2.5 py-2 bg-white focus:outline-none appearance-none pr-6 transition font-medium"
-                            style={{ borderColor: '#e7eaf1', color: '#111827' }}
-                            onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-                            onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+                            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+                            onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+                            onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
                           >
                             {fields.map((fd) => (
                               <option key={fd.key} value={fd.key}>{fd.label}</option>
                             ))}
                           </select>
-                          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#9ca3af' }} />
+                          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--muted)' }} />
                         </div>
                         {/* Operator selector */}
                         <div className="relative">
@@ -720,15 +720,15 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
                             value={draft.operator}
                             onChange={(e) => updateDraft(draft.id, { operator: e.target.value as FilterOperator, value: '' })}
                             className="w-full text-[11px] border rounded-lg px-2.5 py-2 bg-white focus:outline-none appearance-none pr-6 transition"
-                            style={{ borderColor: '#e7eaf1', color: '#374151' }}
-                            onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-                            onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+                            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+                            onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+                            onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
                           >
                             {ops.map((o) => (
                               <option key={o.value} value={o.value}>{o.label}</option>
                             ))}
                           </select>
-                          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#9ca3af' }} />
+                          <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--muted)' }} />
                         </div>
                         {/* Value input */}
                         {renderValueInput(draft)}
@@ -736,9 +736,9 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
                       <button
                         onClick={() => removeDraft(draft.id)}
                         className="mt-2.5 shrink-0 w-5 h-5 flex items-center justify-center rounded-md transition"
-                        style={{ color: '#9ca3af' }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.background = '#fef2f2'; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#9ca3af'; (e.currentTarget as HTMLElement).style.background = ''; }}
+                        style={{ color: 'var(--muted)' }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--danger)'; (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--muted)'; (e.currentTarget as HTMLElement).style.background = ''; }}
                       >
                         <X size={11} />
                       </button>
@@ -749,9 +749,9 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
                 {/* Empty state */}
                 {totalConditions === 0 && (
                   <div className="text-center py-8">
-                    <SlidersHorizontal size={22} className="mx-auto mb-2" style={{ color: '#e5e7eb' }} />
-                    <p className="text-[12px]" style={{ color: '#9ca3af' }}>No conditions yet</p>
-                    <p className="text-[11px] mt-0.5" style={{ color: '#d1d5db' }}>Add a condition below to filter records</p>
+                    <SlidersHorizontal size={22} className="mx-auto mb-2" style={{ color: 'var(--border)' }} />
+                    <p className="text-[12px]" style={{ color: 'var(--muted)' }}>No conditions yet</p>
+                    <p className="text-[11px] mt-0.5" style={{ color: 'var(--border)' }}>Add a condition below to filter records</p>
                   </div>
                 )}
 
@@ -761,11 +761,11 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
                     onClick={addDraft}
                     className="w-full flex items-center justify-center gap-1.5 py-2 text-[12px] font-medium transition"
                     style={{
-                      borderRadius: 10, border: '1.5px dashed #c7d9ff',
-                      color: '#3b6fff', background: '#f5f8ff', marginTop: 4,
+                      borderRadius: 10, border: '1.5px dashed var(--surface-2)',
+                      color: 'var(--link)', background: 'var(--row-hover)', marginTop: 4,
                     }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#eef3ff'; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = '#f5f8ff'; }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--row-hover)'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--row-hover)'; }}
                   >
                     <Plus size={13} />
                     Add condition
@@ -784,27 +784,27 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
                           onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setShowSaveInput(false); }}
                           placeholder="Filter set name..."
                           autoFocus
-                          className="flex-1 text-[11px] border border-[#e7eaf1] rounded-lg px-2.5 py-2 text-[#374151] placeholder-[#9ca3af] focus:outline-none"
-                          onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-                          onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+                          className="flex-1 text-[11px] border border-[var(--border)] rounded-lg px-2.5 py-2 text-[var(--text)] placeholder-[var(--muted)] focus:outline-none"
+                          onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+                          onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
                         />
                         <button
                           onClick={handleSave}
                           disabled={saving || !saveName.trim()}
                           className="px-2.5 py-2 text-[11px] font-semibold text-white rounded-lg disabled:opacity-40 transition"
-                          style={{ background: '#3b6fff' }}
+                          style={{ background: 'var(--link)' }}
                         >
                           {saving ? '…' : 'Save'}
                         </button>
-                        <button onClick={() => setShowSaveInput(false)} className="px-2 py-2 rounded-lg text-[#9ca3af] hover:text-[#374151] transition">
+                        <button onClick={() => setShowSaveInput(false)} className="px-2 py-2 rounded-lg text-[var(--muted)] hover:text-[var(--text)] transition">
                           <X size={12} />
                         </button>
                       </div>
                     ) : (
                       <button
                         onClick={() => setShowSaveInput(true)}
-                        className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-[#6b7280] hover:bg-[#f9fafb] transition rounded-lg"
-                        style={{ border: '1px solid #e7eaf1' }}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--surface-2)] transition rounded-lg"
+                        style={{ border: '1px solid var(--border)' }}
                       >
                         <Save size={11} />
                         Save this filter set
@@ -817,17 +817,17 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
           </div>
 
           {/* ── Footer ── */}
-          <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: '1px solid #f0f2f7' }}>
+          <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: '1px solid var(--surface-2)' }}>
             {totalConditions > 0 && (
-              <span className="flex-1 text-[11px] font-medium truncate" style={{ color: '#9ca3af' }}>
+              <span className="flex-1 text-[11px] font-medium truncate" style={{ color: 'var(--muted)' }}>
                 {totalConditions} condition{totalConditions !== 1 ? 's' : ''}
               </span>
             )}
             {(activeCount > 0 || drafts.length > 0) && (
               <button
                 onClick={() => { clearAll(); setDrafts([]); }}
-                className="px-3 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f9fafb] transition"
-                style={{ color: '#6b7280', border: '1px solid #e7eaf1' }}
+                className="px-3 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[var(--surface-2)] transition"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
               >
                 Clear all
               </button>
@@ -836,7 +836,7 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
               <button
                 onClick={applyDrafts}
                 className="px-3 py-1.5 text-[12px] font-semibold text-white rounded-lg transition"
-                style={{ background: 'linear-gradient(135deg,#3b6fff,#5b87ff)', boxShadow: '0 4px 12px rgba(59,111,255,.25)' }}
+                style={{ background: 'linear-gradient(135deg,var(--link),var(--link))', boxShadow: '0 4px 12px rgba(59,111,255,.25)' }}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.filter = 'brightness(1.08)'; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.filter = ''; }}
               >
@@ -846,8 +846,8 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
             {drafts.length === 0 && totalConditions === 0 && (
               <button
                 onClick={onClose}
-                className="px-3 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f9fafb] transition ml-auto"
-                style={{ color: '#6b7280', border: '1px solid #e7eaf1' }}
+                className="px-3 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[var(--surface-2)] transition ml-auto"
+                style={{ color: 'var(--muted)', border: '1px solid var(--border)' }}
               >
                 Close
               </button>

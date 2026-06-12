@@ -2,125 +2,269 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME TOKEN SYSTEM
+   Six selectable themes, each defining the full token set. The active theme is
+   chosen by `data-theme="<key>"` on <html> (set by themeService.applyTheme).
+   :root holds the monty-light tokens as the default (so the app renders before
+   the attribute is applied) plus the legacy-variable aliases and the global
+   top-bar control tokens. Dark themes also get a `dark` class on <html>, which
+   drives the neutral-utility override layer further below.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── monty-light (default) ─────────────────────────────────────────────────── */
+:root,
+[data-theme="monty-light"] {
+  --app-bg:#F7F6F3; --sidebar-bg:#FFFFFF; --sidebar-text:#5A6072;
+  --sidebar-active:#F0EDE6; --sidebar-strong:#16213B; --topbar-bg:#16213B;
+  --surface:#FFFFFF; --surface-2:#FAF9F6; --border:#E7E4DC; --text:#16213B;
+  --muted:#6B7280; --primary:#16213B; --primary-text:#FCF9F2; --link:#2F4DC8;
+  --input-bg:#FAF9F6; --danger:#C2410C; --success:#1FA45C;
+  --warn-bg:#FBF3E2; --warn-text:#A07B2D; --row-hover:#F4F1EA;
+  --shadow:0 6px 20px -12px rgba(22,33,59,.18);
+}
+[data-theme="slate-dark"] {
+  --app-bg:#0F1117; --sidebar-bg:#13161F; --sidebar-text:#9CA3AF;
+  --sidebar-active:#1C2230; --sidebar-strong:#E5E9F0; --topbar-bg:#13161F;
+  --surface:#171B26; --surface-2:#1E2433; --border:#272E40; --text:#E5E9F0;
+  --muted:#8B94A7; --primary:#4F7CFF; --primary-text:#FFFFFF; --link:#6E95FF;
+  --input-bg:#11151F; --danger:#F87171; --success:#34D399;
+  --warn-bg:#2A2310; --warn-text:#E8B864; --row-hover:#1B2130;
+  --shadow:0 8px 24px -12px rgba(0,0,0,.6);
+}
+[data-theme="monty-dark"] {
+  --app-bg:#0E1426; --sidebar-bg:#111A30; --sidebar-text:#94A0BC;
+  --sidebar-active:#1A2742; --sidebar-strong:#EDF0F8; --topbar-bg:#0B1120;
+  --surface:#131D36; --surface-2:#1A2542; --border:#243152; --text:#EDF0F8;
+  --muted:#8B97B4; --primary:#C9A14E; --primary-text:#1A1404; --link:#E3C98E;
+  --input-bg:#0F1830; --danger:#F08080; --success:#3DD68C;
+  --warn-bg:#2C2410; --warn-text:#E3C98E; --row-hover:#182343;
+  --shadow:0 10px 28px -14px rgba(0,0,0,.55);
+}
+[data-theme="graphite"] {
+  --app-bg:#F4F4F5; --sidebar-bg:#1B1B1F; --sidebar-text:#A1A1AA;
+  --sidebar-active:#2A2A30; --sidebar-strong:#FFFFFF; --topbar-bg:#1B1B1F;
+  --surface:#FFFFFF; --surface-2:#FAFAFA; --border:#E4E4E7; --text:#1B1B1F;
+  --muted:#71717A; --primary:#18181B; --primary-text:#FFFFFF; --link:#2563EB;
+  --input-bg:#FAFAFA; --danger:#DC2626; --success:#16A34A;
+  --warn-bg:#FEF3C7; --warn-text:#92400E; --row-hover:#F4F4F5;
+  --shadow:0 6px 20px -12px rgba(0,0,0,.15);
+}
+[data-theme="ocean"] {
+  --app-bg:#F2F7FA; --sidebar-bg:#0C3B5E; --sidebar-text:#9FC2DA;
+  --sidebar-active:#11507F; --sidebar-strong:#FFFFFF; --topbar-bg:#0C3B5E;
+  --surface:#FFFFFF; --surface-2:#F7FAFC; --border:#DBE7EF; --text:#10314B;
+  --muted:#5B7A90; --primary:#0E7AB8; --primary-text:#FFFFFF; --link:#0E7AB8;
+  --input-bg:#F7FAFC; --danger:#D9534F; --success:#14976B;
+  --warn-bg:#FFF4DE; --warn-text:#9A6B15; --row-hover:#F0F6FA;
+  --shadow:0 6px 20px -12px rgba(12,59,94,.18);
+}
+[data-theme="forest"] {
+  --app-bg:#101713; --sidebar-bg:#14201A; --sidebar-text:#93A89B;
+  --sidebar-active:#1D2E24; --sidebar-strong:#E7EFE9; --topbar-bg:#14201A;
+  --surface:#172420; --surface-2:#1E2E27; --border:#2A3D33; --text:#E7EFE9;
+  --muted:#8FA396; --primary:#34C98B; --primary-text:#06251A; --link:#5FD9A6;
+  --input-bg:#121D18; --danger:#F08080; --success:#34C98B;
+  --warn-bg:#2A2610; --warn-text:#D9C36A; --row-hover:#1B2A23;
+  --shadow:0 10px 26px -14px rgba(0,0,0,.5);
+}
+
+/* ── Legacy-variable aliases + global tokens (theme-independent) ────────────────
+   The codebase still references the older variable names below. Aliasing them
+   onto the new tokens means every existing `var(--…)` follows the active theme
+   for free. var() resolves lazily per element, so these pick up whichever
+   [data-theme] block is in effect on <html>. */
 :root {
-  /* Top-bar theming — default is light; JS (applySidebarCssVars) sets
-     adaptive --header-* values whenever the personalizer color changes. */
-  --sidebar-bg: #f7f8fa;
-  --sidebar-hover: color-mix(in srgb, var(--sidebar-bg) 85%, white);
-  --sidebar-active: color-mix(in srgb, var(--sidebar-bg) 70%, white);
-  --sidebar-border: color-mix(in srgb, var(--sidebar-bg) 80%, white);
-  --header-fg: #1f2937;
-  --header-fg-muted: #6b7280;
-  --header-sep: #d1d5db;
-  --header-border: #e5e7eb;
-  --header-input-bg: #f1f3f6;
-  --header-input-border: #e3e6eb;
-  --header-hover-bg: rgba(2,6,23,0.05);
+  --bg: var(--app-bg);
+  --divider: var(--border);
+  --border-strong: color-mix(in srgb, var(--border) 65%, var(--text));
+  --sidebar-hover: color-mix(in srgb, var(--sidebar-active) 55%, transparent);
+  --sidebar-border: var(--border);
+  --navy-900: var(--text);
+  --navy-accent: var(--primary);
+  --ink-900: var(--text);
+  --ink-700: var(--text);
+  --ink-600: var(--muted);
+  --ink-500: var(--muted);
+  --ink-400: var(--muted);
+  --ink-300: color-mix(in srgb, var(--muted) 60%, var(--surface));
+  --ink-200: var(--border);
+  --ink-100: var(--border);
+  --ink-50: var(--surface-2);
 
-  /* Navy palette */
-  --navy-900: #0a1d36;
-  --navy-accent: #2b6cb0;
-  --link: #1a64b6;
+  /* Default top-bar control set: translucent white, for themes whose top bar is
+     a dark surface (every theme except Monty Light — their sidebars and top bar
+     are both dark, so white controls read on them). Light-top-bar themes
+     override these below. */
+  --header-fg: #ffffff;
+  --header-fg-muted: rgba(255,255,255,0.62);
+  --header-sep: rgba(255,255,255,0.20);
+  --header-border: rgba(255,255,255,0.14);
+  --header-input-bg: rgba(255,255,255,0.10);
+  --header-input-border: rgba(255,255,255,0.14);
+  --header-hover-bg: rgba(255,255,255,0.12);
+}
 
-  /* Ink palette */
-  --ink-900: #1b1f26;
-  --ink-700: #3a414c;
-  --ink-600: #4e5663;
-  --ink-500: #5f6776;
-  --ink-400: #7d8693;
-  --ink-300: #a4abb6;
-  --ink-200: #c8cdd5;
-  --ink-100: #e2e5ea;
-  --ink-50: #eef1f5;
+/* Light top bar — Monty Light has a white sidebar, so its top bar tracks the
+   sidebar to read as one light surface, and the top-bar controls flip to
+   dark-on-light. Scoped to the theme and placed after the :root defaults so it
+   wins (equal specificity, later source order); the dark themes keep the white
+   set above. */
+[data-theme="monty-light"] {
+  --topbar-bg: var(--sidebar-bg);
+  --header-fg: var(--text);
+  --header-fg-muted: var(--muted);
+  --header-sep: var(--border);
+  --header-border: var(--border);
+  --header-input-bg: var(--surface-2);
+  --header-input-border: var(--border);
+  --header-hover-bg: var(--row-hover);
+}
 
-  /* Surface and border */
-  --bg: #f3f5f8;
-  --surface: #ffffff;
-  --border: #e1e4ea;
-  --border-strong: #d0d4dc;
-  --divider: #ebedf1;
+[data-theme="slate-dark"], [data-theme="monty-dark"], [data-theme="forest"] { color-scheme: dark; }
+
+/* Smooth theme switching (respecting reduced-motion). */
+body, aside, header,
+.bg-white, [class*="bg-["], [style*="--surface"] {
+  transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  body, aside, header, .bg-white, [class*="bg-["], [style*="--surface"] { transition: none; }
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
-   DARK MODE
-   Activated by adding the `dark` class to <html> (see themeService/AppSidebar).
+   DARK-THEME OVERRIDE LAYER
    The app uses hard-coded light Tailwind utilities (bg-white, text-gray-*, …)
-   across forms, views and admin, so dark mode is implemented as an override
-   layer that remaps those neutral utilities + the CSS variables to dark values.
-   Colored utilities (blue/green/red buttons, badges) are intentionally left
-   alone so accents stay vivid. Selectors are scoped under `html.dark`, giving
-   them higher specificity than the single-class Tailwind utilities they
-   override — no !important needed.
-   ──────────────────────────────────────────────────────────────────────────── */
-:root.dark {
-  --bg: #0e131a;
-  --surface: #171d27;
-  --border: #2a3340;
-  --border-strong: #38424f;
-  --divider: #222a35;
-  --ink-900: #f2f5f9;
-  --ink-700: #dce1e8;
-  --ink-600: #c2c9d4;
-  --ink-500: #a3acba;
-  --ink-400: #8a93a3;
-  --ink-300: #6f7888;
-  --ink-200: #545d6c;
-  --ink-100: #3a4250;
-  --ink-50: #232b35;
-  --navy-accent: #4b8fd6;
-  --link: #6aa9e9;
-  color-scheme: dark;
-}
+   and arbitrary hexes across forms, views and admin. Rather than edit every
+   file, the three dark themes add a `dark` class to <html>; this layer remaps
+   those neutral utilities to the active theme's tokens (so slate-dark, monty-
+   dark and forest each render with their own surfaces). Light themes (monty-
+   light, graphite, ocean) keep Tailwind's real values. Colored utilities
+   (blue/green/red buttons) are left alone so accents stay vivid. Scoping under
+   `html.dark` outranks the single-class utilities — no !important needed. */
 
-/* Backgrounds: neutral light surfaces → dark surfaces */
-html.dark .bg-white { background-color: #171d27; }
-html.dark .bg-gray-50,  html.dark .bg-slate-50,  html.dark .bg-neutral-50  { background-color: #121821; }
-html.dark .bg-gray-100, html.dark .bg-slate-100, html.dark .bg-neutral-100 { background-color: #1c2330; }
-html.dark .bg-gray-200, html.dark .bg-slate-200, html.dark .bg-neutral-200 { background-color: #28313e; }
-html.dark .hover\:bg-gray-50:hover,  html.dark .hover\:bg-slate-50:hover  { background-color: #1c2330; }
-html.dark .hover\:bg-gray-100:hover, html.dark .hover\:bg-slate-100:hover { background-color: #232c3a; }
-html.dark .hover\:bg-white:hover { background-color: #1c2330; }
+/* Backgrounds */
+html.dark .bg-white { background-color: var(--surface); }
+html.dark .bg-gray-50,  html.dark .bg-slate-50,  html.dark .bg-neutral-50  { background-color: var(--app-bg); }
+html.dark .bg-gray-100, html.dark .bg-slate-100, html.dark .bg-neutral-100 { background-color: var(--surface-2); }
+html.dark .bg-gray-200, html.dark .bg-slate-200, html.dark .bg-neutral-200 { background-color: var(--border); }
+html.dark .hover\:bg-gray-50:hover,  html.dark .hover\:bg-slate-50:hover  { background-color: var(--row-hover); }
+html.dark .hover\:bg-gray-100:hover, html.dark .hover\:bg-slate-100:hover { background-color: var(--row-hover); }
+html.dark .hover\:bg-white:hover { background-color: var(--row-hover); }
 
-/* Text: dark ink → light ink */
+/* Text */
 html.dark .text-gray-900, html.dark .text-slate-900, html.dark .text-neutral-900,
-html.dark .text-gray-800, html.dark .text-slate-800, html.dark .text-neutral-800 { color: #e8ebf0; }
+html.dark .text-gray-800, html.dark .text-slate-800, html.dark .text-neutral-800 { color: var(--text); }
 html.dark .text-gray-700, html.dark .text-slate-700, html.dark .text-neutral-700,
-html.dark .text-gray-600, html.dark .text-slate-600, html.dark .text-neutral-600 { color: #bcc4d0; }
+html.dark .text-gray-600, html.dark .text-slate-600, html.dark .text-neutral-600 { color: color-mix(in srgb, var(--text) 75%, var(--muted)); }
 html.dark .text-gray-500, html.dark .text-slate-500, html.dark .text-neutral-500,
-html.dark .text-gray-400, html.dark .text-slate-400, html.dark .text-neutral-400 { color: #8d97a6; }
-html.dark .text-black { color: #e8ebf0; }
+html.dark .text-gray-400, html.dark .text-slate-400, html.dark .text-neutral-400 { color: var(--muted); }
+html.dark .text-black { color: var(--text); }
 
 /* Borders & dividers */
 html.dark .border-gray-100, html.dark .border-slate-100,
 html.dark .border-gray-200, html.dark .border-slate-200,
 html.dark .border-gray-300, html.dark .border-slate-300,
-html.dark .border-neutral-200, html.dark .border-neutral-300 { border-color: #2a3340; }
+html.dark .border-neutral-200, html.dark .border-neutral-300 { border-color: var(--border); }
 html.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
 html.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
 html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
-html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #2a3340; }
+html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--border); }
 
 /* Inputs / placeholders */
-html.dark input, html.dark textarea, html.dark select { color: #e8ebf0; }
-html.dark input::placeholder, html.dark textarea::placeholder { color: #6f7888; }
-html.dark .placeholder-gray-400::placeholder, html.dark .placeholder-slate-400::placeholder { color: #6f7888; }
+html.dark input, html.dark textarea, html.dark select { color: var(--text); }
+html.dark input::placeholder, html.dark textarea::placeholder { color: var(--muted); }
+html.dark .placeholder-gray-400::placeholder, html.dark .placeholder-slate-400::placeholder { color: var(--muted); }
 
 /* Subtle neutral accent backgrounds used for chips/skeletons */
-html.dark .bg-gray-300, html.dark .bg-slate-300 { background-color: #313b49; }
+html.dark .bg-gray-300, html.dark .bg-slate-300 { background-color: var(--border); }
 
-.crm-checkbox { background: white; }
-html.dark .crm-checkbox { background: #1c2330; border-color: #3a4250; }
+.crm-checkbox { background: var(--input-bg); }
+html.dark .crm-checkbox { background: var(--input-bg); border-color: var(--border); }
 
-/* Sidebar uses arbitrary hex utilities — remap the neutral ones for dark mode.
-   Blue accents (#2563eb / #2b6cb0) are lightened slightly but kept as accents. */
-html.dark .text-\[\#1f2937\], html.dark .hover\:text-\[\#1f2937\]:hover { color: #e8ebf0; }
-html.dark .text-\[\#374151\], html.dark .hover\:text-\[\#374151\]:hover { color: #cdd4de; }
-html.dark .text-\[\#4b5563\] { color: #bcc4d0; }
-html.dark .text-\[\#6b7280\] { color: #99a2b1; }
-html.dark .text-\[\#9ca3af\] { color: #828c9b; }
-html.dark .text-\[\#2563eb\], html.dark .text-\[\#2b6cb0\] { color: #6aa9e9; }
-html.dark .bg-\[\#eef2f7\] { background-color: #232c3a; }
-html.dark .hover\:bg-\[\#f3f4f6\]:hover, html.dark .hover\:bg-\[\#eceef1\]:hover { background-color: #232c3a; }
+/* Arbitrary hex utilities used across the app — remap the neutral ones. */
+html.dark .text-\[\#1f2937\], html.dark .hover\:text-\[\#1f2937\]:hover { color: var(--text); }
+html.dark .text-\[\#374151\], html.dark .hover\:text-\[\#374151\]:hover { color: color-mix(in srgb, var(--text) 75%, var(--muted)); }
+html.dark .text-\[\#4b5563\] { color: color-mix(in srgb, var(--text) 70%, var(--muted)); }
+html.dark .text-\[\#6b7280\] { color: var(--muted); }
+html.dark .text-\[\#9ca3af\] { color: var(--muted); }
+html.dark .text-\[\#2563eb\], html.dark .text-\[\#2b6cb0\] { color: var(--link); }
+html.dark .text-\[\#5b6472\], html.dark .text-\[\#3d4453\] { color: var(--muted); }
+html.dark .text-\[\#161a22\], html.dark .hover\:text-\[\#161a22\]:hover { color: var(--text); }
+html.dark .bg-\[\#eef2f7\], html.dark .bg-\[\#f9fafb\], html.dark .bg-\[\#fafbfc\], html.dark .bg-\[\#f3f4f6\] { background-color: var(--surface-2); }
+html.dark .bg-\[\#e7eaf1\], html.dark .bg-\[\#eceef1\], html.dark .bg-\[\#f4f6fb\] { background-color: var(--surface-2); }
+html.dark .border-\[\#e7eaf1\], html.dark .border-\[\#e5e7eb\], html.dark .border-\[\#e2e6ee\], html.dark .border-\[\#d1d5db\] { border-color: var(--border); }
+html.dark .hover\:bg-\[\#f3f4f6\]:hover, html.dark .hover\:bg-\[\#eceef1\]:hover, html.dark .hover\:bg-\[\#f4f6fb\]:hover { background-color: var(--row-hover); }
+html.dark .focus\:bg-white:focus { background-color: var(--surface); }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   COLORED SEMANTIC UTILITIES → THEME TOKENS  (dark themes only)
+   There is no shared Chip/Tile/Badge primitive in this app — status pills,
+   banners and icon tiles are hand-inlined with Tailwind colour utilities in
+   ~200 files. Rather than refactor each, remap the light chip shades to
+   token-derived colours so every inline chip re-tints per dark theme in one
+   place. Light themes (monty-light, graphite, ocean) keep native Tailwind on
+   their light surfaces. Solid accent backgrounds (-500/-600 buttons & dots)
+   are intentionally left vivid. Families:
+     emerald/green/lime/teal → success   amber/yellow/orange → warn
+     red/rose → danger                     blue/sky/indigo/violet/purple/cyan/fuchsia/pink → link */
+
+/* success */
+html.dark .bg-emerald-50, html.dark .bg-emerald-100, html.dark .bg-green-50, html.dark .bg-green-100, html.dark .bg-lime-50, html.dark .bg-lime-100, html.dark .bg-teal-50, html.dark .bg-teal-100 { background-color: color-mix(in srgb, var(--success) 13%, transparent); }
+html.dark .bg-emerald-200, html.dark .bg-green-200, html.dark .bg-teal-200, html.dark .bg-lime-200 { background-color: color-mix(in srgb, var(--success) 22%, transparent); }
+html.dark .text-emerald-400, html.dark .text-emerald-500, html.dark .text-emerald-600, html.dark .text-emerald-700, html.dark .text-emerald-800, html.dark .text-green-500, html.dark .text-green-600, html.dark .text-green-700, html.dark .text-green-800, html.dark .text-teal-500, html.dark .text-teal-600, html.dark .text-teal-700, html.dark .text-lime-600, html.dark .text-lime-700 { color: var(--success); }
+html.dark .border-emerald-100, html.dark .border-emerald-200, html.dark .border-emerald-300, html.dark .border-green-200, html.dark .border-green-300, html.dark .border-teal-200, html.dark .border-lime-200 { border-color: color-mix(in srgb, var(--success) 40%, transparent); }
+html.dark .ring-emerald-200, html.dark .ring-green-200, html.dark .ring-teal-200 { --tw-ring-color: color-mix(in srgb, var(--success) 40%, transparent); }
+
+/* warn */
+html.dark .bg-amber-50, html.dark .bg-amber-100, html.dark .bg-yellow-50, html.dark .bg-yellow-100, html.dark .bg-orange-50, html.dark .bg-orange-100 { background-color: var(--warn-bg); }
+html.dark .bg-amber-200, html.dark .bg-yellow-200, html.dark .bg-orange-200 { background-color: color-mix(in srgb, var(--warn-text) 22%, transparent); }
+html.dark .text-amber-500, html.dark .text-amber-600, html.dark .text-amber-700, html.dark .text-amber-800, html.dark .text-yellow-600, html.dark .text-yellow-700, html.dark .text-yellow-800, html.dark .text-orange-500, html.dark .text-orange-600, html.dark .text-orange-700 { color: var(--warn-text); }
+html.dark .border-amber-100, html.dark .border-amber-200, html.dark .border-amber-300, html.dark .border-yellow-200, html.dark .border-orange-200, html.dark .border-orange-300 { border-color: color-mix(in srgb, var(--warn-text) 40%, transparent); }
+html.dark .ring-amber-200, html.dark .ring-yellow-200, html.dark .ring-orange-200 { --tw-ring-color: color-mix(in srgb, var(--warn-text) 40%, transparent); }
+
+/* danger */
+html.dark .bg-red-50, html.dark .bg-red-100, html.dark .bg-rose-50, html.dark .bg-rose-100 { background-color: color-mix(in srgb, var(--danger) 13%, transparent); }
+html.dark .bg-red-200, html.dark .bg-rose-200 { background-color: color-mix(in srgb, var(--danger) 22%, transparent); }
+html.dark .text-red-400, html.dark .text-red-500, html.dark .text-red-600, html.dark .text-red-700, html.dark .text-red-800, html.dark .text-rose-500, html.dark .text-rose-600, html.dark .text-rose-700 { color: var(--danger); }
+html.dark .border-red-100, html.dark .border-red-200, html.dark .border-red-300, html.dark .border-rose-200, html.dark .border-rose-300 { border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+html.dark .ring-red-200, html.dark .ring-rose-200 { --tw-ring-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+
+/* link / info */
+html.dark .bg-blue-50, html.dark .bg-blue-100, html.dark .bg-sky-50, html.dark .bg-sky-100, html.dark .bg-indigo-50, html.dark .bg-indigo-100, html.dark .bg-cyan-50, html.dark .bg-cyan-100, html.dark .bg-violet-50, html.dark .bg-violet-100, html.dark .bg-purple-50, html.dark .bg-purple-100, html.dark .bg-fuchsia-50, html.dark .bg-pink-50 { background-color: color-mix(in srgb, var(--link) 13%, transparent); }
+html.dark .bg-blue-200, html.dark .bg-sky-200, html.dark .bg-indigo-200, html.dark .bg-cyan-200, html.dark .bg-violet-200, html.dark .bg-purple-200 { background-color: color-mix(in srgb, var(--link) 22%, transparent); }
+html.dark .text-blue-400, html.dark .text-blue-500, html.dark .text-blue-600, html.dark .text-blue-700, html.dark .text-blue-800, html.dark .text-sky-500, html.dark .text-sky-600, html.dark .text-sky-700, html.dark .text-indigo-500, html.dark .text-indigo-600, html.dark .text-indigo-700, html.dark .text-cyan-600, html.dark .text-cyan-700, html.dark .text-violet-600, html.dark .text-violet-700, html.dark .text-purple-600, html.dark .text-purple-700 { color: var(--link); }
+html.dark .border-blue-100, html.dark .border-blue-200, html.dark .border-blue-300, html.dark .border-sky-200, html.dark .border-indigo-200, html.dark .border-cyan-200, html.dark .border-violet-200, html.dark .border-purple-200 { border-color: color-mix(in srgb, var(--link) 40%, transparent); }
+html.dark .ring-blue-100, html.dark .ring-blue-200, html.dark .ring-sky-200, html.dark .ring-indigo-200 { --tw-ring-color: color-mix(in srgb, var(--link) 40%, transparent); }
+
+/* Opacity-modified neutral surfaces (e.g. bg-slate-50/80, bg-white/90) escape the
+   plain-utility remaps above because the generated class differs — catch the
+   common band/tile cases by substring so header bands read as a layered surface. */
+html.dark [class*="bg-white/"], html.dark [class*="bg-slate-50/"], html.dark [class*="bg-gray-50/"], html.dark [class*="bg-slate-100/"], html.dark [class*="bg-gray-100/"] { background-color: var(--surface-2); }
+html.dark [class*="bg-blue-50/"], html.dark [class*="bg-sky-50/"] { background-color: color-mix(in srgb, var(--link) 13%, transparent); }
+html.dark [class*="bg-emerald-50/"], html.dark [class*="bg-green-50/"] { background-color: color-mix(in srgb, var(--success) 13%, transparent); }
+html.dark [class*="bg-amber-50/"] { background-color: var(--warn-bg); }
+html.dark [class*="bg-red-50/"], html.dark [class*="bg-rose-50/"] { background-color: color-mix(in srgb, var(--danger) 13%, transparent); }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   SIDEBAR TOKEN SCOPE
+   The left sidebar still uses arbitrary-hex text utilities. Its background can be
+   light (monty-light) or dark (graphite, ocean) regardless of the app theme, so
+   these must always resolve to the sidebar tokens — not the dark-only override
+   layer. Scope them to `.app-sidebar` so they track --sidebar-text per theme. */
+.app-sidebar .text-\[\#374151\], .app-sidebar .text-\[\#4b5563\],
+.app-sidebar .text-\[\#6b7280\] { color: var(--sidebar-text); }
+.app-sidebar .text-\[\#9ca3af\] { color: color-mix(in srgb, var(--sidebar-text) 72%, transparent); }
+.app-sidebar .text-\[\#1f2937\], .app-sidebar .hover\:text-\[\#1f2937\]:hover,
+.app-sidebar .hover\:text-\[\#374151\]:hover,
+.app-sidebar .text-\[\#1e293b\],
+.app-sidebar .text-\[\#2563eb\] { color: var(--sidebar-strong); }
+/* Admin Studio sidebar (shares .app-sidebar) uses arbitrary-hex backgrounds/borders. */
+.app-sidebar .bg-\[\#f7f8fa\] { background-color: var(--sidebar-bg); }
+.app-sidebar .bg-\[\#e9eef7\] { background-color: var(--sidebar-active); }
+.app-sidebar .bg-\[\#eceef1\], .app-sidebar .hover\:bg-\[\#eceef1\]:hover { background-color: var(--sidebar-hover); }
+.app-sidebar .bg-\[\#2563eb\] { background-color: var(--sidebar-strong); }
+.app-sidebar .border-\[\#e5e7eb\] { border-color: var(--border); }
 
 * {
   font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
@@ -168,8 +312,8 @@ body {
   flex-shrink: 0;
 }
 .crm-checkbox:checked {
-  background: #2b6cb0;
-  border-color: #2b6cb0;
+  background: var(--primary);
+  border-color: var(--primary);
 }
 .crm-checkbox:checked::after {
   content: '';
@@ -183,8 +327,8 @@ body {
   transform: rotate(45deg);
 }
 .crm-checkbox:indeterminate {
-  background: #2b6cb0;
-  border-color: #2b6cb0;
+  background: var(--primary);
+  border-color: var(--primary);
 }
 .crm-checkbox:indeterminate::after {
   content: '';
@@ -200,15 +344,15 @@ body {
   border-color: #7d8693;
 }
 .crm-checkbox:focus-visible {
-  outline: 2px solid #2b6cb0;
+  outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
 
 /* BPF active stage pulse animation */
 @keyframes bpf-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(26, 100, 182, 0.35); }
-  70% { box-shadow: 0 0 0 8px rgba(26, 100, 182, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(26, 100, 182, 0); }
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--link) 35%, transparent); }
+  70% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--link) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--link) 0%, transparent); }
 }
 .animate-bpf-pulse {
   animation: bpf-pulse 2s ease-in-out infinite;

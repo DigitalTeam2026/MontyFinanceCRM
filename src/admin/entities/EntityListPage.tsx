@@ -188,11 +188,10 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
             <button
               key={c.id}
               onClick={() => setChip(c.id)}
-              className={`px-3 py-1 rounded-full text-[11px] font-medium transition-all ${
-                chip === c.id
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              className="px-3 py-1 rounded-full text-[11px] font-medium transition-all"
+              style={chip === c.id
+                ? { background: 'var(--primary)', color: 'var(--primary-text)' }
+                : { background: 'var(--surface-2)', color: 'var(--muted)', border: '1px solid var(--border)' }}
             >
               {c.label}
             </button>
@@ -206,7 +205,8 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
             placeholder="Search tables..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 pr-8 h-[32px] text-[12px] border border-[#e7eaf1] rounded-lg bg-[#f4f6fb] focus:outline-none focus:bg-white focus:border-[#d1d5db] focus:ring-2 focus:ring-blue-500/15 w-64 placeholder:text-[#9ca3af] transition"
+            className="pl-8 pr-8 h-[32px] text-[12px] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/15 w-64 placeholder:text-[var(--muted)] transition"
+            style={{ background: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text)' }}
           />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -302,11 +302,11 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
                     </td>
                     <td className="px-3 py-2.5">
                       {entity.is_custom ? (
-                        <span className="inline-flex items-center text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200">
+                        <span className="inline-flex items-center text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: 'var(--warn-bg)', color: 'var(--warn-text)' }}>
                           Custom
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200">
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ background: 'var(--surface-2)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                           <Lock size={8} /> Standard
                         </span>
                       )}
@@ -398,8 +398,8 @@ function SortableHeader({ label, sortKey, sort, onSort }: { label: string; sortK
 function StatusDot({ active }: { active: boolean }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-      <span className={`text-[11px] ${active ? 'text-emerald-700' : 'text-slate-400'}`}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: active ? 'var(--success)' : 'var(--muted)' }} />
+      <span className="text-[11px]" style={{ color: active ? 'var(--success)' : 'var(--muted)' }}>
         {active ? 'Active' : 'Inactive'}
       </span>
     </div>
@@ -411,7 +411,7 @@ function CmdButton({ children, onClick, icon, primary, danger }: {
 }) {
   const base = 'flex items-center gap-1.5 h-[32px] px-3 text-[12px] font-medium rounded-md transition-all';
   const style = primary
-    ? `${base} bg-[#2563eb] hover:bg-[#1d4ed8] text-white`
+    ? `${base} bg-[var(--primary)] text-[var(--primary-text)] hover:opacity-90`
     : danger
       ? `${base} text-red-600 bg-white border border-red-200 hover:bg-red-50`
       : `${base} text-[#5b6472] bg-white border border-[#e2e6ee] hover:bg-[#f4f6fb] hover:text-[#161a22]`;

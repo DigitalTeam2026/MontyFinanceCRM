@@ -85,8 +85,8 @@ function HighlightLegend({ entity }: { entity: AppEntity }) {
   if (rules.length === 0) return null;
   return (
     <div
-      className="flex items-center justify-end gap-4 px-5 py-1.5 overflow-x-auto shrink-0 bg-white"
-      style={{ borderBottom: '1px solid #e7eaf1' }}
+      className="flex items-center justify-end gap-4 px-5 py-1.5 overflow-x-auto shrink-0"
+      style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
     >
       {rules.map((r) => (
         <span key={r.id} className="flex items-center gap-1.5 shrink-0">
@@ -810,7 +810,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
         return (
           <span className="flex items-center gap-2">
             <span className="rd-avatar">{initials}</span>
-            <span className="text-[13px] text-[#374151] font-medium truncate max-w-[120px]">{shortName}</span>
+            <span className="text-[13px] text-[var(--text)] font-medium truncate max-w-[120px]">{shortName}</span>
           </span>
         );
       }
@@ -892,23 +892,23 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           .rd-active{font-family:'Plus Jakarta Sans','Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
           .rd-pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px 2px 7px;border-radius:99px;font-size:11px;font-weight:600;line-height:1.5;}
           .rd-pill-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
-          .rd-pill-green{background:#e7f8ef;color:#0f9d63;}.rd-pill-green .rd-pill-dot{background:#0f9d63;}
-          .rd-pill-gray{background:#f3f4f6;color:#6b7280;}.rd-pill-gray .rd-pill-dot{background:#9ca3af;}
-          .rd-pill-amber{background:#fdf4e3;color:#c2820a;}.rd-pill-amber .rd-pill-dot{background:#c2820a;}
-          .rd-pill-red{background:#fee2e2;color:#dc2626;}.rd-pill-red .rd-pill-dot{background:#dc2626;}
-          .rd-pill-blue{background:#eff6ff;color:#3b6fff;}.rd-pill-blue .rd-pill-dot{background:#3b6fff;}
+          .rd-pill-green{background:color-mix(in srgb, var(--success) 13%, transparent);color:var(--success);}.rd-pill-green .rd-pill-dot{background:var(--success);}
+          .rd-pill-gray{background:color-mix(in srgb, var(--muted) 16%, transparent);color:var(--muted);}.rd-pill-gray .rd-pill-dot{background:var(--muted);}
+          .rd-pill-amber{background:var(--warn-bg);color:var(--warn-text);}.rd-pill-amber .rd-pill-dot{background:var(--warn-text);}
+          .rd-pill-red{background:color-mix(in srgb, var(--danger) 14%, transparent);color:var(--danger);}.rd-pill-red .rd-pill-dot{background:var(--danger);}
+          .rd-pill-blue{background:color-mix(in srgb, var(--link) 13%, transparent);color:var(--link);}.rd-pill-blue .rd-pill-dot{background:var(--link);}
           .rd-avatar{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#3b6fff,#22d3ee);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-transform:uppercase;}
-          .rd-active .rd-row:hover td{background:#eef3ff !important;}
+          .rd-active .rd-row:hover td{background:var(--row-hover) !important;}
         `}</style>
       )}
-      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: '#ffffff' }}>
-        <div className="flex-1 flex flex-col overflow-hidden bg-white">
-        {/* --- Command bar (48px, white/gradient, bottom border) --- */}
+      <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--surface)' }}>
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--surface)' }}>
+        {/* --- Command bar (48px, surface, bottom border) --- */}
         <div
           className="h-[48px] flex items-center gap-1 px-3 shrink-0"
           style={{
-            borderBottom: selected.size > 0 ? '1px solid #dbe4f3' : '1px solid #e7eaf1',
-            background: selected.size > 0 ? '#f4f7fc' : 'white',
+            borderBottom: selected.size > 0 ? '1px solid var(--border)' : '1px solid var(--border)',
+            background: selected.size > 0 ? 'var(--surface-2)' : 'var(--surface)',
             fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif",
           }}
           ref={toolbarRef}
@@ -916,7 +916,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           {selected.size > 0 ? (
             /* Contextual command bar when rows selected */
             <div className="flex items-center gap-0.5 flex-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-semibold text-[#2563eb] shrink-0" style={{ background: 'white', border: '1px solid #cdddff', borderRadius: 6 }}>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-semibold text-[var(--link)] shrink-0" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
                 {selected.size} selected
                 <button onClick={() => setSelected(new Set())} className="ml-0.5 opacity-70 hover:opacity-100 leading-none">
                   <X size={11} />
@@ -961,10 +961,10 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
               {canCreate && onNewRecord && (
                 <button
                   onClick={onNewRecord}
-                  className="flex items-center gap-1.5 px-3 h-[32px] text-[12px] font-semibold text-white shrink-0 transition-colors"
-                  style={{ background: '#2563eb', borderRadius: 6 }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = '#1d4ed8'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = '#2563eb'; }}
+                  className="flex items-center gap-1.5 px-3 h-[32px] text-[12px] font-semibold shrink-0 transition-colors"
+                  style={{ background: 'var(--primary)', color: 'var(--primary-text)', borderRadius: 6 }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--primary) 88%, #000)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--primary)'; }}
                 >
                   <Plus size={13} />
                   <span>New</span>
@@ -1071,10 +1071,10 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
               )}
               <div className="flex-1" />
               {loading ? (
-                <span className="text-[11px] text-[#9ca3af] animate-pulse">Loading…</span>
+                <span className="text-[11px] text-[var(--muted)] animate-pulse">Loading…</span>
               ) : (
-                <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[#5b6472] px-3 py-1" style={{ background: '#f4f6fb', border: '1px solid #e7eaf1', borderRadius: 99 }}>
-                  <span className="font-bold text-[#3b6fff]">{total.toLocaleString()}</span>
+                <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--muted)] px-3 py-1" style={{ background: 'color-mix(in srgb, var(--link) 12%, transparent)', border: '1px solid var(--border)', borderRadius: 99 }}>
+                  <span className="font-bold text-[var(--link)]">{total.toLocaleString()}</span>
                   &nbsp;record{total !== 1 ? 's' : ''}
                 </span>
               )}
@@ -1084,8 +1084,8 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
 
         {/* --- View row (white, bottom border) --- */}
         <div
-          className="flex items-center gap-3 px-4 py-2 bg-white shrink-0"
-          style={{ borderBottom: '1px solid #e7eaf1', fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif" }}
+          className="flex items-center gap-3 px-4 py-2 shrink-0"
+          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', fontFamily: "'Plus Jakarta Sans','Inter',system-ui,sans-serif" }}
         >
           <ViewSelector
             entityDefinitionId={entityDefinitionId}
@@ -1101,34 +1101,34 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           <div className="flex-1" />
           <button
             onClick={() => setShowColCustomizer((v) => !v)}
-            className="flex items-center gap-1.5 px-2 h-[32px] text-[13px] font-medium text-[#5b6472] shrink-0 transition rounded-md hover:bg-[#f4f6fb] hover:text-[#161a22]"
+            className="flex items-center gap-1.5 px-2 h-[32px] text-[13px] font-medium text-[var(--muted)] shrink-0 transition rounded-md hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
           >
             <Columns3 size={14} />
             <span>Edit columns</span>
           </button>
           <button
             onClick={() => setShowFilters((v) => !v)}
-            className="flex items-center gap-1.5 px-2 h-[32px] text-[13px] font-medium text-[#5b6472] shrink-0 transition rounded-md hover:bg-[#f4f6fb] hover:text-[#161a22]"
+            className="flex items-center gap-1.5 px-2 h-[32px] text-[13px] font-medium text-[var(--muted)] shrink-0 transition rounded-md hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
           >
             <Filter size={14} />
             <span>Edit filters</span>
           </button>
           <div className="relative w-[210px]">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#9ca3af] pointer-events-none" />
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)] pointer-events-none" />
             <input
               type="text"
               value={search}
               onChange={(e) => onSearchChange?.(e.target.value)}
               placeholder="Filter by keyword"
-              className="w-full h-[32px] pl-8 pr-7 text-[12px] text-[#374151] placeholder-[#9ca3af] focus:outline-none transition"
-              style={{ background: '#f4f6fb', border: '1px solid transparent', borderRadius: 10 }}
-              onFocus={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.border = '1px solid #e7eaf1'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.12)'; }}
-              onBlur={(e) => { if (!e.currentTarget.value) { e.currentTarget.style.background = '#f4f6fb'; e.currentTarget.style.border = '1px solid transparent'; } e.currentTarget.style.boxShadow = ''; }}
+              className="w-full h-[32px] pl-8 pr-7 text-[12px] text-[var(--text)] placeholder-[var(--muted)] focus:outline-none transition"
+              style={{ background: 'var(--input-bg)', border: '1px solid transparent', borderRadius: 10 }}
+              onFocus={(e) => { e.currentTarget.style.background = 'var(--surface)'; e.currentTarget.style.border = '1px solid var(--border)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--link) 14%, transparent)'; }}
+              onBlur={(e) => { if (!e.currentTarget.value) { e.currentTarget.style.background = 'var(--input-bg)'; e.currentTarget.style.border = '1px solid transparent'; } e.currentTarget.style.boxShadow = ''; }}
             />
             {search && (
               <button
                 onClick={() => onSearchChange?.('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-[#374151]"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--text)]"
               >
                 <X size={11} />
               </button>
@@ -1143,9 +1143,9 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
         {activeParentFilter && (
           <div
             className="flex items-center gap-2 px-4 py-2"
-            style={{ background: '#e5efff', borderBottom: '1px solid #c3d7f0' }}
+            style={{ background: 'color-mix(in srgb, var(--link) 12%, transparent)', borderBottom: '1px solid var(--border)' }}
           >
-            <span className="text-[11px] text-[#1d4079]">
+            <span className="text-[11px] text-[var(--link)]">
               Showing <span className="font-semibold">{entity}</span> for <span className="font-semibold">{activeParentFilter.parentLabel}</span>
             </span>
             <button
@@ -1164,7 +1164,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
         )}
 
         {/* --- Data grid --- */}
-        <div className="flex-1 overflow-auto bg-white">
+        <div className="flex-1 overflow-auto" style={{ background: 'var(--surface)' }}>
           {error ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-6">
               <p className="text-[13px] text-red-500 font-medium">{error}</p>
@@ -1176,7 +1176,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
             <table className="w-full text-sm border-separate border-spacing-0">
               <thead className="sticky top-0 z-10">
                 <tr>
-                  <th className={`w-10 px-3 py-2 ${isRedesign ? 'bg-[#f3f4f6]' : 'bg-[#fafbfc]'}`} style={{ borderBottom: '1px solid var(--divider)' }}>
+                  <th className={`w-10 px-3 py-2 bg-[var(--surface-2)]`} style={{ borderBottom: '1px solid var(--divider)' }}>
                     <input
                       type="checkbox"
                       checked={allSelected}
@@ -1192,7 +1192,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                       <th
                         key={col.key}
                         style={col.width ? { width: col.width, borderBottom: '1px solid var(--divider)' } : { borderBottom: '1px solid var(--divider)' }}
-                        className={`${isRedesign ? 'bg-[#f3f4f6]' : 'bg-[#fafbfc]'} text-left whitespace-nowrap select-none relative group/th`}
+                        className={`bg-[var(--surface-2)] text-left whitespace-nowrap select-none relative group/th`}
                       >
                         <button
                           onClick={(e) => openColMenu(e, col.key)}
@@ -1203,7 +1203,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                           }`}
                         >
                           <span className={`text-[12px] font-semibold truncate ${
-                            colHasFilter ? 'text-[var(--navy-accent)]' : 'text-[#3d4453]'
+                            colHasFilter ? 'text-[var(--link)]' : 'text-[var(--muted)]'
                           }`}>
                             {col.labelOverride || col.label}
                           </span>
@@ -1227,7 +1227,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                       </th>
                     );
                   })}
-                  <th className={`w-36 px-3 py-2 ${isRedesign ? 'bg-[#f3f4f6]' : 'bg-[#fafbfc]'}`} style={{ borderBottom: '1px solid var(--divider)' }} />
+                  <th className={`w-36 px-3 py-2 bg-[var(--surface-2)]`} style={{ borderBottom: '1px solid var(--divider)' }} />
                 </tr>
               </thead>
               <tbody>
@@ -1290,16 +1290,17 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                             onOpenRecord?.(row.id, label);
                           }
                         }}
-                        style={{ height: 44 }}
                         className={`group transition-colors duration-100 cursor-pointer${isRedesign ? ' rd-row' : ''} ${
-                          isEditingThis
-                            ? 'bg-blue-50'
-                            : isSelected
-                            ? 'bg-[#ddeeff]'
-                            : highlight
-                            ? `bg-white hover:bg-[#ebf1fa] ${highlight.leftBorderClass}`
-                            : 'bg-white hover:bg-[#ebf1fa]'
+                          !isEditingThis && !isSelected && highlight ? highlight.leftBorderClass : ''
                         } ${isSaving ? 'opacity-60' : ''}`}
+                        style={{
+                          height: 44,
+                          background: isEditingThis
+                            ? 'color-mix(in srgb, var(--link) 14%, transparent)'
+                            : isSelected
+                            ? 'color-mix(in srgb, var(--link) 12%, transparent)'
+                            : 'var(--surface)',
+                        }}
                       >
                         <td
                           className="px-3"
@@ -1362,7 +1363,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                                   setShareRecordTarget({ id: row.id, label });
                                 }}
                                 title="Share record"
-                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition opacity-0 group-hover:opacity-100 duration-100"
+                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-[var(--muted)] hover:text-[var(--link)] hover:bg-[var(--row-hover)] rounded transition opacity-0 group-hover:opacity-100 duration-100"
                               >
                                 <Share2 size={11} />
                                 Share
@@ -1551,8 +1552,8 @@ function CmdBtn({ children, onClick, active }: { children: React.ReactNode; onCl
       onClick={onClick}
       className={`h-[32px] flex items-center gap-1.5 px-2.5 text-[12px] font-medium transition-colors ${
         active
-          ? 'text-[#2563eb] bg-[#eef2f7]'
-          : 'text-[#4b5563] hover:bg-[#f1f3f5] hover:text-[#1f2937]'
+          ? 'text-[var(--link)] bg-[var(--surface-2)]'
+          : 'text-[var(--muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]'
       }`}
       style={{ borderRadius: 6, border: 'none' }}
     >
@@ -1562,7 +1563,7 @@ function CmdBtn({ children, onClick, active }: { children: React.ReactNode; onCl
 }
 
 function CmdSep() {
-  return <div className="w-px h-[16px] mx-1.5 shrink-0" style={{ background: '#e7eaf1' }} />;
+  return <div className="w-px h-[16px] mx-1.5 shrink-0" style={{ background: 'var(--border)' }} />;
 }
 
 function PgBtn({ children, disabled, onClick, title }: { children: React.ReactNode; disabled: boolean; onClick: () => void; title?: string }) {

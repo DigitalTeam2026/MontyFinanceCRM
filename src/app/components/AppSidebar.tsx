@@ -3,7 +3,7 @@ import {
   LayoutGrid, FileText, Users, Package, BarChart2, Settings as SettingsIcon,
   Star, Globe, Layers, FolderOpen, BookOpen, ShoppingCart, Briefcase,
   ChevronDown, ChevronRight, Settings, LogOut, PanelLeftClose, PanelLeftOpen,
-  UserCheck, UserPlus, Target, Ticket, Building2, RotateCcw, Check,
+  UserPlus, Target, Ticket, Building2, RotateCcw, Check,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import type { AppModule, AppEntity } from '../types';
@@ -13,7 +13,8 @@ import RecentPinsPanel from './RecentPinsPanel';
 import { fetchFullNavTree } from '../../services/navigationService';
 import type { NavArea, NavGroup, NavItem } from '../../services/navigationService';
 import { fetchCompanyProfile, getCachedCompanyProfile, type CompanyProfile } from '../../services/companyProfileService';
-import { POPULAR_THEMES, DEFAULT_THEME_COLOR, DARK_THEME, getCachedTheme, fetchUserTheme, saveUserTheme } from '../../services/themeService';
+import { THEMES, DEFAULT_THEME, applyTheme, getCachedTheme, fetchUserTheme, saveUserTheme } from '../../services/themeService';
+import type { ThemeKey } from '../../services/themeService';
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   TrendingUp:   <TrendingUp size={16} />,
@@ -67,7 +68,6 @@ interface AppSidebarProps {
   activeEntity: AppEntity;
   onNavigate: (module: AppModule, entity: AppEntity) => void;
   onNavigateToRecord: (module: AppModule, entity: AppEntity, recordId: string) => void;
-  onNavigateAssignedToMe: (module: AppModule, entity: AppEntity) => void;
   onNavigateToDashboard?: (module: AppModule, entity: AppEntity) => void;
   userEmail?: string;
   userName?: string;
@@ -76,104 +76,6 @@ interface AppSidebarProps {
   recentRefreshKey?: number;
   isSystemAdmin?: boolean;
   viewType?: string;
-}
-
-function hexToHsl(hex: string): [number, number, number] {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  if (max === min) return [0, 0, l];
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h = 0;
-  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-  else if (max === g) h = ((b - r) / d + 2) / 6;
-  else h = ((r - g) / d + 4) / 6;
-  return [h * 360, s, l];
-}
-
-function hslToHex(h: number, s: number, l: number): string {
-  const hue2rgb = (p: number, q: number, t: number) => {
-    if (t < 0) t += 1; if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-  const r = Math.round(hue2rgb(p, q, h / 360 + 1 / 3) * 255);
-  const g = Math.round(hue2rgb(p, q, h / 360) * 255);
-  const b = Math.round(hue2rgb(p, q, h / 360 - 1 / 3) * 255);
-  return `#${[r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
-}
-
-function headerLuminance(hex: string): number {
-  const m = hex.replace('#', '');
-  if (m.length < 6) return 1;
-  const r = parseInt(m.slice(0, 2), 16) || 0;
-  const g = parseInt(m.slice(2, 4), 16) || 0;
-  const b = parseInt(m.slice(4, 6), 16) || 0;
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-}
-
-function applySidebarCssVars(color: string) {
-  const root = document.documentElement.style;
-  root.setProperty('--sidebar-bg', color);
-  const [h, s] = hexToHsl(color);
-  const accent = hslToHex(h, Math.max(s, 0.55), 0.43);
-  const link = hslToHex(h, Math.max(s, 0.55), 0.40);
-  root.setProperty('--navy-accent', accent);
-  root.setProperty('--link', link);
-
-  // Adaptive top-bar foreground/controls so text stays readable on a
-  // light OR dark chosen color — keeps the personalizer working for any color.
-  if (headerLuminance(color) > 0.6) {
-    root.setProperty('--header-fg', '#1f2937');
-    root.setProperty('--header-fg-muted', '#6b7280');
-    root.setProperty('--header-sep', '#d1d5db');
-    root.setProperty('--header-border', '#e5e7eb');
-    root.setProperty('--header-input-bg', '#f1f3f6');
-    root.setProperty('--header-input-border', '#e3e6eb');
-    root.setProperty('--header-hover-bg', 'rgba(2,6,23,0.05)');
-  } else {
-    root.setProperty('--header-fg', '#ffffff');
-    root.setProperty('--header-fg-muted', 'rgba(255,255,255,0.55)');
-    root.setProperty('--header-sep', 'rgba(255,255,255,0.22)');
-    root.setProperty('--header-border', 'rgba(255,255,255,0.08)');
-    root.setProperty('--header-input-bg', 'rgba(255,255,255,0.10)');
-    root.setProperty('--header-input-border', 'rgba(255,255,255,0.16)');
-    root.setProperty('--header-hover-bg', 'rgba(255,255,255,0.12)');
-  }
-}
-
-/**
- * Apply a theme value. The special `DARK_THEME` value turns on full system-wide
- * dark mode (the `dark` class drives the override layer in index.css); any other
- * value is treated as a top-bar color and removes dark mode.
- */
-function applyTheme(value: string) {
-  const root = document.documentElement;
-  if (value === DARK_THEME) {
-    root.classList.add('dark');
-    const s = root.style;
-    s.setProperty('--sidebar-bg', '#11161f');
-    s.setProperty('--header-fg', '#e8ebf0');
-    s.setProperty('--header-fg-muted', 'rgba(255,255,255,0.55)');
-    s.setProperty('--header-sep', 'rgba(255,255,255,0.14)');
-    s.setProperty('--header-border', '#2a3340');
-    s.setProperty('--header-input-bg', 'rgba(255,255,255,0.06)');
-    s.setProperty('--header-input-border', 'rgba(255,255,255,0.12)');
-    s.setProperty('--header-hover-bg', 'rgba(255,255,255,0.08)');
-    // Let the :root.dark CSS values drive the accent/link in dark mode.
-    s.removeProperty('--navy-accent');
-    s.removeProperty('--link');
-  } else {
-    root.classList.remove('dark');
-    applySidebarCssVars(value);
-  }
 }
 
 function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
@@ -191,7 +93,7 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function SidebarThemePicker({ currentColor, onChange }: { currentColor: string; onChange: (c: string) => void }) {
+function SidebarThemePicker({ currentTheme, onChange }: { currentTheme: ThemeKey; onChange: (k: ThemeKey) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -204,52 +106,60 @@ function SidebarThemePicker({ currentColor, onChange }: { currentColor: string; 
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  const active = POPULAR_THEMES.find((t) => t.color === currentColor);
+  const active = THEMES.find((t) => t.key === currentTheme);
 
   return (
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-[#4b5563] hover:text-[#1f2937] hover:bg-[#eceef1] transition-colors rounded"
+        className="w-full flex items-center gap-2 px-3 py-2 text-[11px] transition-colors rounded"
+        style={{ color: 'var(--sidebar-text)' }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--sidebar-hover)'; e.currentTarget.style.color = 'var(--sidebar-strong)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--sidebar-text)'; }}
       >
         <span
           className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
-          style={{ background: currentColor === DARK_THEME ? '#11161f' : currentColor }}
+          style={{ background: active?.swatch ?? '#FFFFFF' }}
         />
         <span className="flex-1 text-left font-medium">Theme</span>
-        <span className="text-[10px] text-[#9ca3af] shrink-0">{active?.name ?? 'Custom'}</span>
-        <ChevronRight size={11} className="text-[#9ca3af] shrink-0" />
+        <span className="text-[10px] shrink-0" style={{ color: 'var(--sidebar-text)', opacity: 0.7 }}>{active?.name ?? 'Custom'}</span>
+        <ChevronRight size={11} className="shrink-0" style={{ color: 'var(--sidebar-text)', opacity: 0.7 }} />
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-1 w-[230px] bg-white rounded-lg shadow-2xl border border-[var(--border)] z-50 overflow-hidden">
+        <div className="absolute bottom-full left-0 mb-1 w-[230px] rounded-lg shadow-2xl border z-50 overflow-hidden"
+          style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--shadow)' }}>
           <div className="px-3 pt-3 pb-2">
-            <p className="text-[11px] font-semibold text-[var(--ink-700)]">Popular themes</p>
-            <p className="text-[10px] text-[var(--ink-400)] mt-0.5">Pick a theme — it's saved to your account</p>
+            <p className="text-[11px] font-semibold" style={{ color: 'var(--text)' }}>Themes</p>
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>Pick a theme — it's saved to your account</p>
           </div>
-          <div className="px-2 pb-2 max-h-[260px] overflow-y-auto">
-            {POPULAR_THEMES.map((t) => {
-              const selected = currentColor === t.color;
+          <div className="px-2 pb-2 max-h-[280px] overflow-y-auto">
+            {THEMES.map((t) => {
+              const selected = currentTheme === t.key;
               return (
                 <button
-                  key={t.color}
-                  onClick={() => { onChange(t.color); setOpen(false); }}
-                  className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors ${selected ? 'bg-[#eef2f7]' : 'hover:bg-[#f3f4f6]'}`}
+                  key={t.key}
+                  onClick={() => { onChange(t.key); setOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors"
+                  style={{ background: selected ? 'var(--row-hover)' : 'transparent' }}
+                  onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = 'var(--row-hover)'; }}
+                  onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = 'transparent'; }}
                 >
                   <span
-                    className="w-5 h-5 rounded-md border border-black/10 shrink-0"
-                    style={{ background: t.color === DARK_THEME ? 'linear-gradient(135deg,#1b2230,#0e131a)' : t.color }}
+                    className="w-5 h-5 rounded-md border shrink-0"
+                    style={{ background: t.swatch, borderColor: 'rgba(0,0,0,0.12)' }}
                   />
-                  <span className="flex-1 text-left text-[12px] font-medium text-[#374151]">{t.name}</span>
-                  {selected && <Check size={13} className="text-[#2b6cb0] shrink-0" />}
+                  <span className="flex-1 text-left text-[12px] font-medium" style={{ color: 'var(--text)' }}>{t.name}</span>
+                  {selected && <Check size={13} className="shrink-0" style={{ color: 'var(--primary)' }} />}
                 </button>
               );
             })}
           </div>
-          <div className="border-t border-[var(--divider)] px-3 py-2">
+          <div className="border-t px-3 py-2" style={{ borderColor: 'var(--border)' }}>
             <button
-              onClick={() => { onChange(DEFAULT_THEME_COLOR); setOpen(false); }}
-              className="flex items-center gap-1.5 text-[11px] text-[var(--link)] hover:underline font-medium"
+              onClick={() => { onChange(DEFAULT_THEME); setOpen(false); }}
+              className="flex items-center gap-1.5 text-[11px] hover:underline font-medium"
+              style={{ color: 'var(--link)' }}
             >
               <RotateCcw size={10} />
               Reset to default
@@ -266,7 +176,6 @@ export default function AppSidebar({
   activeEntity,
   onNavigate,
   onNavigateToRecord,
-  onNavigateAssignedToMe,
   onNavigateToDashboard,
   userEmail,
   userName,
@@ -278,8 +187,7 @@ export default function AppSidebar({
 }: AppSidebarProps) {
   const [expanded, setExpanded] = useState<AppModule>(activeModule);
   const [collapsed, setCollapsed] = useState(false);
-  const [myRecordsOpen, setMyRecordsOpen] = useState(false);
-  const [sidebarColor, setSidebarColor] = useState(() => getCachedTheme(userId));
+  const [theme, setTheme] = useState<ThemeKey>(() => getCachedTheme(userId));
 
   const [areas, setAreas] = useState<NavArea[]>([]);
   const [groups, setGroups] = useState<NavGroup[]>([]);
@@ -293,13 +201,13 @@ export default function AppSidebar({
   }, []);
 
   useEffect(() => {
-    applyTheme(sidebarColor);
-  }, [sidebarColor]);
+    applyTheme(theme);
+  }, [theme]);
 
   // Load this user's saved theme from the database (cross-device), then apply.
   useEffect(() => {
     let cancelled = false;
-    fetchUserTheme(userId).then((color) => { if (!cancelled) setSidebarColor(color); }).catch(() => {});
+    fetchUserTheme(userId).then((k) => { if (!cancelled) setTheme(k); }).catch(() => {});
     return () => { cancelled = true; };
   }, [userId]);
 
@@ -317,10 +225,10 @@ export default function AppSidebar({
     setExpanded(activeModule);
   }, [activeModule]);
 
-  const handleColorChange = (color: string) => {
-    setSidebarColor(color);
-    applyTheme(color);
-    saveUserTheme(userId, color).catch(() => {});
+  const handleThemeChange = (key: ThemeKey) => {
+    setTheme(key);
+    applyTheme(key);
+    saveUserTheme(userId, key).catch(() => {});
   };
 
   const initials = getInitials(userName, userEmail);
@@ -352,17 +260,18 @@ export default function AppSidebar({
 
   return (
     <aside
-      className="text-[#374151] flex flex-col h-full shrink-0 select-none overflow-hidden transition-all duration-300 ease-in-out"
+      className="app-sidebar flex flex-col h-full shrink-0 select-none overflow-hidden transition-all duration-300 ease-in-out"
       style={{
         width: collapsed ? '56px' : '220px',
         background: 'var(--sidebar-bg)',
-        borderRight: '1px solid var(--header-border)',
+        color: 'var(--sidebar-text)',
+        borderRight: '1px solid var(--border)',
       }}
     >
       {/* Brand block - 48px */}
       <div
         className={`h-[48px] flex items-center shrink-0 ${collapsed ? 'justify-center px-0' : 'px-4 gap-2.5'}`}
-        style={{ borderBottom: '1px solid #e5e7eb' }}
+        style={{ borderBottom: '1px solid var(--border)' }}
       >
         {collapsed ? (
           <div className="w-[26px] h-[26px] rounded-[6px] bg-[#2b6cb0] flex items-center justify-center shrink-0 text-white text-[11px] font-bold">
@@ -391,13 +300,13 @@ export default function AppSidebar({
             onClick={() => setCollapsed(false)}
             title="Expand sidebar"
             className="w-8 h-8 flex items-center justify-center text-[#6b7280] hover:text-[#374151] rounded-md transition-colors mb-1"
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#eceef1')}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sidebar-hover)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
             <PanelLeftOpen size={14} />
           </button>
 
-          <div className="w-6 mb-1" style={{ borderTop: '1px solid #e5e7eb' }} />
+          <div className="w-6 mb-1" style={{ borderTop: '1px solid var(--border)' }} />
 
           {/* Dashboard button */}
           <Tooltip label="Personal Dashboard">
@@ -405,21 +314,21 @@ export default function AppSidebar({
               onClick={() => onNavigateToDashboard?.('sales', 'accounts')}
               className="w-8 h-8 flex items-center justify-center rounded-md transition-colors"
               style={{
-                background: viewType === 'dashboard' ? '#e9eef7' : 'transparent',
-                color: viewType === 'dashboard' ? '#2563eb' : '#6b7280',
+                background: viewType === 'dashboard' ? 'var(--sidebar-active)' : 'transparent',
+                color: viewType === 'dashboard' ? 'var(--sidebar-strong)' : 'var(--sidebar-text)',
               }}
               onMouseEnter={(e) => {
-                if (viewType !== 'dashboard') { e.currentTarget.style.background = '#eceef1'; e.currentTarget.style.color = '#374151'; }
+                if (viewType !== 'dashboard') { e.currentTarget.style.background = 'var(--sidebar-hover)'; e.currentTarget.style.color = 'var(--sidebar-text)'; }
               }}
               onMouseLeave={(e) => {
-                if (viewType !== 'dashboard') { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
+                if (viewType !== 'dashboard') { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--sidebar-text)'; }
               }}
             >
               <LayoutGrid size={16} />
             </button>
           </Tooltip>
 
-          <div className="w-6 mb-1" style={{ borderTop: '1px solid #e5e7eb' }} />
+          <div className="w-6 mb-1" style={{ borderTop: '1px solid var(--border)' }} />
 
           {areas.map((area) => {
             const isActiveModule = activeModule === area.name;
@@ -432,14 +341,14 @@ export default function AppSidebar({
                   }}
                   className="w-8 h-8 flex items-center justify-center rounded-md transition-colors"
                   style={{
-                    background: isActiveModule ? '#e9eef7' : 'transparent',
-                    color: isActiveModule ? '#2563eb' : '#6b7280',
+                    background: isActiveModule ? 'var(--sidebar-active)' : 'transparent',
+                    color: isActiveModule ? 'var(--sidebar-strong)' : 'var(--sidebar-text)',
                   }}
                   onMouseEnter={(e) => {
-                    if (!isActiveModule) { e.currentTarget.style.background = '#eceef1'; e.currentTarget.style.color = '#374151'; }
+                    if (!isActiveModule) { e.currentTarget.style.background = 'var(--sidebar-hover)'; e.currentTarget.style.color = 'var(--sidebar-text)'; }
                   }}
                   onMouseLeave={(e) => {
-                    if (!isActiveModule) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
+                    if (!isActiveModule) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--sidebar-text)'; }
                   }}
                 >
                   {AREA_ICON_MAP[area.icon_name] ?? <LayoutGrid size={16} />}
@@ -448,7 +357,7 @@ export default function AppSidebar({
             );
           })}
 
-          <div className="w-6 my-1" style={{ borderTop: '1px solid #e5e7eb' }} />
+          <div className="w-6 my-1" style={{ borderTop: '1px solid var(--border)' }} />
 
           {uniqueNavItems.map((item) => {
             const entity = resolveEntity(item.entity_name);
@@ -460,14 +369,14 @@ export default function AppSidebar({
                   onClick={() => { if (area) onNavigate(area.name, entity); }}
                   className="w-8 h-8 flex items-center justify-center rounded-md transition-colors"
                   style={{
-                    background: isActive ? '#e9eef7' : 'transparent',
-                    color: isActive ? '#2563eb' : '#6b7280',
+                    background: isActive ? 'var(--sidebar-active)' : 'transparent',
+                    color: isActive ? 'var(--sidebar-strong)' : 'var(--sidebar-text)',
                   }}
                   onMouseEnter={(e) => {
-                    if (!isActive) { e.currentTarget.style.background = '#eceef1'; e.currentTarget.style.color = '#374151'; }
+                    if (!isActive) { e.currentTarget.style.background = 'var(--sidebar-hover)'; e.currentTarget.style.color = 'var(--sidebar-text)'; }
                   }}
                   onMouseLeave={(e) => {
-                    if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#6b7280'; }
+                    if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--sidebar-text)'; }
                   }}
                 >
                   {ICON_MAP[item.icon_name] ?? <FileText size={16} />}
@@ -483,11 +392,11 @@ export default function AppSidebar({
             onClick={() => onNavigateToDashboard?.('sales', 'accounts')}
             className="w-full flex items-center gap-2 px-3 h-[36px] text-[13px] font-semibold transition-colors"
             style={{
-              color: viewType === 'dashboard' ? '#1f2937' : '#374151',
-              background: viewType === 'dashboard' ? '#eceef1' : 'transparent',
+              color: viewType === 'dashboard' ? 'var(--sidebar-strong)' : 'var(--sidebar-text)',
+              background: viewType === 'dashboard' ? 'var(--sidebar-hover)' : 'transparent',
             }}
             onMouseEnter={(e) => {
-              if (viewType !== 'dashboard') e.currentTarget.style.background = '#eceef1';
+              if (viewType !== 'dashboard') e.currentTarget.style.background = 'var(--sidebar-hover)';
             }}
             onMouseLeave={(e) => {
               if (viewType !== 'dashboard') e.currentTarget.style.background = 'transparent';
@@ -499,7 +408,7 @@ export default function AppSidebar({
             <span className="flex-1 text-left truncate">Dashboard</span>
           </button>
 
-          <div style={{ borderTop: '1px solid #e5e7eb', margin: '4px 0' }} />
+          <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
 
           {areas.map((area) => {
             const isOpen = expanded === area.name;
@@ -516,11 +425,11 @@ export default function AppSidebar({
                   }}
                   className="w-full flex items-center gap-2 px-3 h-[36px] text-[13px] font-semibold transition-colors"
                   style={{
-                    color: isActiveModule ? '#1f2937' : '#374151',
-                    background: isActiveModule ? '#eceef1' : 'transparent',
+                    color: isActiveModule ? 'var(--sidebar-strong)' : 'var(--sidebar-text)',
+                    background: isActiveModule ? 'var(--sidebar-hover)' : 'transparent',
                   }}
                   onMouseEnter={(e) => {
-                    if (!isActiveModule) e.currentTarget.style.background = '#eceef1';
+                    if (!isActiveModule) e.currentTarget.style.background = 'var(--sidebar-hover)';
                   }}
                   onMouseLeave={(e) => {
                     if (!isActiveModule) e.currentTarget.style.background = 'transparent';
@@ -559,21 +468,21 @@ export default function AppSidebar({
                                 className="w-full flex items-center gap-2 text-[13px] transition-colors relative"
                                 style={{
                                   padding: '7px 12px 7px 14px',
-                                  color: isActive ? '#1e293b' : '#374151',
+                                  color: isActive ? 'var(--sidebar-strong)' : 'var(--sidebar-text)',
                                   fontWeight: isActive ? 600 : 500,
-                                  background: isActive ? '#e9eef7' : 'transparent',
-                                  borderLeft: isActive ? '2px solid #2563eb' : '2px solid transparent',
+                                  background: isActive ? 'var(--sidebar-active)' : 'transparent',
+                                  borderLeft: isActive ? '2px solid var(--sidebar-strong)' : '2px solid transparent',
                                 }}
                                 onMouseEnter={(e) => {
                                   if (!isActive) {
-                                    e.currentTarget.style.background = '#eceef1';
-                                    e.currentTarget.style.color = '#1f2937';
+                                    e.currentTarget.style.background = 'var(--sidebar-hover)';
+                                    e.currentTarget.style.color = 'var(--sidebar-strong)';
                                   }
                                 }}
                                 onMouseLeave={(e) => {
                                   if (!isActive) {
                                     e.currentTarget.style.background = 'transparent';
-                                    e.currentTarget.style.color = '#374151';
+                                    e.currentTarget.style.color = 'var(--sidebar-text)';
                                   }
                                 }}
                               >
@@ -593,58 +502,6 @@ export default function AppSidebar({
             );
           })}
 
-          {/* My Records */}
-          <div style={{ borderTop: '1px solid #e5e7eb', marginTop: '4px', paddingTop: '4px' }}>
-            <button
-              onClick={() => setMyRecordsOpen((v) => !v)}
-              className="w-full flex items-center gap-2 px-3 h-[36px] text-[13px] font-semibold text-[#374151] transition-colors"
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#eceef1';
-                e.currentTarget.style.color = '#1f2937';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = '#374151';
-              }}
-            >
-              <span className="text-[#6b7280]">
-                <UserCheck size={16} />
-              </span>
-              <span className="flex-1 text-left">My Records</span>
-              {myRecordsOpen
-                ? <ChevronDown size={11} className="text-[#9ca3af] shrink-0" />
-                : <ChevronRight size={11} className="text-[#9ca3af] shrink-0" />}
-            </button>
-            {myRecordsOpen && (
-              <div className="pb-1">
-                {uniqueNavItems.map((item) => {
-                  const entity = resolveEntity(item.entity_name);
-                  const area = getAreaForItem(item);
-                  if (!area) return null;
-                  return (
-                    <button
-                      key={item.nav_item_id}
-                      onClick={() => onNavigateAssignedToMe(area.name, entity)}
-                      className="w-full flex items-center gap-2 text-[13px] text-[#374151] transition-colors"
-                      style={{ padding: '7px 12px 7px 14px' }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#eceef1';
-                        e.currentTarget.style.color = '#1f2937';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = '#374151';
-                      }}
-                    >
-                      <span className="text-[#6b7280]">{ICON_MAP[item.icon_name] ?? <FileText size={16} />}</span>
-                      <span className="font-medium truncate">{item.display_label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
           <RecentPinsPanel
             userId={userId}
             onNavigate={onNavigateToRecord}
@@ -656,7 +513,7 @@ export default function AppSidebar({
       {/* Footer */}
       <div
         className={collapsed ? 'py-3 flex flex-col items-center gap-2' : 'px-2 py-2'}
-        style={{ borderTop: '1px solid #e5e7eb' }}
+        style={{ borderTop: '1px solid var(--border)' }}
       >
         {collapsed ? (
           <>
@@ -665,7 +522,7 @@ export default function AppSidebar({
                 <a
                   href="#/studio"
                   className="w-8 h-8 flex items-center justify-center text-[#6b7280] hover:text-[#374151] rounded-md transition-colors"
-                  onMouseEnter={(e) => { e.currentTarget.style.background = '#eceef1'; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--sidebar-hover)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                 >
                   <Settings size={13} />
@@ -682,7 +539,7 @@ export default function AppSidebar({
                 <button
                   onClick={onSignOut}
                   className="w-8 h-8 flex items-center justify-center text-[#6b7280] hover:text-[#374151] rounded-md transition-colors"
-                  onMouseEnter={(e) => { e.currentTarget.style.background = '#eceef1'; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--sidebar-hover)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                 >
                   <LogOut size={13} />
@@ -696,7 +553,7 @@ export default function AppSidebar({
               <a
                 href="#/studio"
                 className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-[#4b5563] hover:text-[#1f2937] transition-colors rounded"
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#eceef1'; }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--sidebar-hover)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
                 <Settings size={12} className="text-[#6b7280]" />
@@ -704,9 +561,9 @@ export default function AppSidebar({
               </a>
             )}
 
-            <SidebarThemePicker currentColor={sidebarColor} onChange={handleColorChange} />
+            <SidebarThemePicker currentTheme={theme} onChange={handleThemeChange} />
 
-            <div className="flex items-center gap-2.5 px-3 pt-2 pb-1" style={{ borderTop: '1px solid #e5e7eb', marginTop: '4px' }}>
+            <div className="flex items-center gap-2.5 px-3 pt-2 pb-1" style={{ borderTop: '1px solid var(--border)', marginTop: '4px' }}>
               <div className="w-6 h-6 rounded-full bg-[#2b6cb0] flex items-center justify-center shrink-0">
                 <span className="text-[9px] font-bold text-white">{initials}</span>
               </div>

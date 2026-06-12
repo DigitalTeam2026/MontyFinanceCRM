@@ -1,44 +1,41 @@
-const BADGE_STYLES: Record<string, { bg: string; fg: string; dot: string }> = {
-  active:        { bg: '#dff5e6', fg: '#176e34', dot: '#22c55e' },
-  qualified:     { bg: '#dff5e6', fg: '#176e34', dot: '#22c55e' },
-  won:           { bg: '#dff5e6', fg: '#176e34', dot: '#22c55e' },
-  resolved:      { bg: '#dff5e6', fg: '#176e34', dot: '#22c55e' },
+/**
+ * Status chip families, all derived from theme tokens so they re-tint per theme
+ * (spec §5: status colors must come from tokens, never fixed hexes). Each family
+ * maps to one accent token; the chip background is that accent at low opacity.
+ */
+type Family = 'success' | 'info' | 'warn' | 'danger' | 'neutral';
 
-  new:           { bg: '#e5efff', fg: '#1d4079', dot: '#3b82f6' },
-  open:          { bg: '#e5efff', fg: '#1d4079', dot: '#3b82f6' },
-  qualify:       { bg: '#e5efff', fg: '#1d4079', dot: '#3b82f6' },
-  develop:       { bg: '#e5efff', fg: '#1d4079', dot: '#3b82f6' },
-  in_progress:   { bg: '#e5efff', fg: '#1d4079', dot: '#3b82f6' },
+const STATUS_FAMILY: Record<string, Family> = {
+  active: 'success', qualified: 'success', won: 'success', resolved: 'success',
 
-  contacted:     { bg: '#fff4d6', fg: '#7a5a00', dot: '#f59e0b' },
-  warm:          { bg: '#fff4d6', fg: '#7a5a00', dot: '#f59e0b' },
-  pending:       { bg: '#fff4d6', fg: '#7a5a00', dot: '#f59e0b' },
-  propose:       { bg: '#fff4d6', fg: '#7a5a00', dot: '#f59e0b' },
-  close:         { bg: '#fff4d6', fg: '#7a5a00', dot: '#f59e0b' },
-  high:          { bg: '#fff4d6', fg: '#7a5a00', dot: '#f59e0b' },
+  new: 'info', open: 'info', qualify: 'info', develop: 'info', in_progress: 'info',
 
-  hot:           { bg: '#fde7e9', fg: '#c0392b', dot: '#ef4444' },
-  lost:          { bg: '#fde7e9', fg: '#c0392b', dot: '#ef4444' },
-  disqualified:  { bg: '#fde7e9', fg: '#c0392b', dot: '#ef4444' },
-  urgent:        { bg: '#fde7e9', fg: '#c0392b', dot: '#ef4444' },
+  contacted: 'warn', warm: 'warn', pending: 'warn', propose: 'warn', close: 'warn', high: 'warn',
 
-  inactive:      { bg: '#eef0f3', fg: '#4e5663', dot: '#a4abb6' },
-  cancelled:     { bg: '#eef0f3', fg: '#4e5663', dot: '#a4abb6' },
-  cold:          { bg: '#eef0f3', fg: '#4e5663', dot: '#a4abb6' },
-  closed:        { bg: '#eef0f3', fg: '#4e5663', dot: '#a4abb6' },
-  low:           { bg: '#eef0f3', fg: '#4e5663', dot: '#a4abb6' },
-  normal:        { bg: '#eef0f3', fg: '#4e5663', dot: '#a4abb6' },
+  hot: 'danger', lost: 'danger', disqualified: 'danger', urgent: 'danger',
+
+  inactive: 'neutral', cancelled: 'neutral', cold: 'neutral', closed: 'neutral',
+  low: 'neutral', normal: 'neutral',
 };
 
-const DEFAULT_STYLE = { bg: '#eef0f3', fg: '#4e5663', dot: '#a4abb6' };
+const FAMILY_STYLE: Record<Family, { bg: string; fg: string; dot: string }> = {
+  success: { bg: 'color-mix(in srgb, var(--success) 14%, transparent)', fg: 'var(--success)', dot: 'var(--success)' },
+  info:    { bg: 'color-mix(in srgb, var(--link) 13%, transparent)',    fg: 'var(--link)',    dot: 'var(--link)' },
+  warn:    { bg: 'var(--warn-bg)',                                       fg: 'var(--warn-text)', dot: 'var(--warn-text)' },
+  danger:  { bg: 'color-mix(in srgb, var(--danger) 14%, transparent)',  fg: 'var(--danger)',  dot: 'var(--danger)' },
+  neutral: { bg: 'color-mix(in srgb, var(--muted) 16%, transparent)',   fg: 'var(--muted)',   dot: 'var(--muted)' },
+};
+
+const DEFAULT_FAMILY: Family = 'neutral';
 
 interface StatusBadgeProps {
   value: string;
 }
 
 export default function StatusBadge({ value }: StatusBadgeProps) {
-  if (!value || value === '—') return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
-  const style = BADGE_STYLES[value] ?? BADGE_STYLES[value.toLowerCase()] ?? DEFAULT_STYLE;
+  if (!value || value === '—') return <span className="text-[var(--muted)] text-[12px]">—</span>;
+  const family = STATUS_FAMILY[value] ?? STATUS_FAMILY[value.toLowerCase()] ?? DEFAULT_FAMILY;
+  const style = FAMILY_STYLE[family];
   const label = value.replace(/_/g, ' ');
   return (
     <span

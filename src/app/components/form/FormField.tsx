@@ -289,7 +289,7 @@ function LookupField({
                   onOpenRecord(entitySlug, value);
                 }
               }}
-              className="flex-1 text-blue-600 hover:text-blue-800 hover:underline truncate text-left leading-none"
+              className="flex-1 text-[var(--link)] hover:underline truncate text-left leading-none"
               title={`Open ${shownLabel}`}
             >
               {shownLabel}
@@ -667,6 +667,26 @@ export default function FormField({
     if (errorMessage) setTouched(true);
   }, [errorMessage]);
 
+  // Transient "just saved" flash: when a field's value changes and is valid, show
+  // a success border + check for ~2s, then fade back to the normal border. The
+  // resting state is a plain input — no permanent green ring (which trains users
+  // to ignore green). Skips the initial mount so existing values don't all light up.
+  const [justSaved, setJustSaved] = useState(false);
+  const prevValueRef = useRef(value);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; prevValueRef.current = value; return; }
+    if (value === prevValueRef.current) return;
+    prevValueRef.current = value;
+    const hasVal = value != null && (Array.isArray(value) ? (value as unknown[]).length > 0 : String(value).trim() !== '');
+    if (hasVal && !errorMessage) {
+      setJustSaved(true);
+      const t = setTimeout(() => setJustSaved(false), 2000);
+      return () => clearTimeout(t);
+    }
+    setJustSaved(false);
+  }, [value, errorMessage]);
+
   if (isHidden) return null;
 
   const label = control.label_override ?? control.field_display_name ?? '';
@@ -677,8 +697,6 @@ export default function FormField({
 
   const inlineError = touched ? validateValue(value, fieldType, required, label) : null;
   const activeError = errorMessage ?? inlineError;
-  const isValid = touched && !activeError && (value != null && (Array.isArray(value) ? (value as unknown[]).length > 0 : String(value).trim() !== ''));
-
   const handleChange = useCallback((val: unknown) => {
     if (!readonly) onChange(fieldName, val);
   }, [readonly, onChange, fieldName]);
@@ -688,16 +706,16 @@ export default function FormField({
   }, []);
 
   const borderCls = readonly
-    ? 'border-slate-200'
+    ? 'border-[var(--border)]'
     : activeError
-    ? 'border-red-400 focus:ring-red-400 focus:border-red-400'
-    : isValid
-    ? 'border-emerald-400 focus:ring-emerald-400 focus:border-emerald-400'
-    : 'border-slate-200 focus:ring-blue-500 focus:border-blue-500';
+    ? 'border-[var(--danger)] focus:ring-[var(--danger)] focus:border-[var(--danger)]'
+    : justSaved
+    ? 'border-[var(--success)] focus:ring-[var(--success)] focus:border-[var(--success)]'
+    : 'border-[var(--border)] focus:ring-[var(--link)] focus:border-[var(--link)]';
 
-  const showInlineIcon = !readonly && (activeError || isValid) && fieldType !== 'textarea' && fieldType !== 'choice' && fieldType !== 'multi_choice' && fieldType !== 'boolean';
+  const showInlineIcon = !readonly && (activeError || justSaved) && fieldType !== 'textarea' && fieldType !== 'choice' && fieldType !== 'multi_choice' && fieldType !== 'boolean';
   const iconPadding = showInlineIcon ? 'pr-7' : '';
-  const inputBase = `w-full ${ds.input} ${iconPadding} text-slate-700 bg-white border ${borderCls} rounded-md placeholder-slate-400 focus:outline-none focus:ring-1 transition disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed`;
+  const inputBase = `w-full ${ds.input} ${iconPadding} text-[var(--text)] bg-[var(--input-bg)] border ${borderCls} rounded-md placeholder-[var(--muted)] focus:outline-none focus:ring-1 transition disabled:bg-[var(--surface-2)] disabled:text-[var(--muted)] disabled:cursor-not-allowed`;
 
   const renderInput = () => {
     const strVal = value == null ? '' : String(value);
@@ -1088,8 +1106,8 @@ export default function FormField({
         {helpText && !isPermissionLocked && (
           <HelpTooltip text={helpText} />
         )}
-        {isValid && !isPermissionLocked && (
-          <CheckCircle2 size={11} className="text-emerald-500 ml-auto" />
+        {justSaved && !isPermissionLocked && (
+          <CheckCircle2 size={11} className="ml-auto" style={{ color: 'var(--success)' }} />
         )}
       </label>
 
@@ -1107,10 +1125,11 @@ export default function FormField({
             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-red-400 pointer-events-none"
           />
         )}
-        {!isPermissionLocked && showInlineIcon && isValid && (
+        {!isPermissionLocked && showInlineIcon && justSaved && (
           <CheckCircle2
             size={13}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-400 pointer-events-none"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+            style={{ color: 'var(--success)' }}
           />
         )}
       </div>

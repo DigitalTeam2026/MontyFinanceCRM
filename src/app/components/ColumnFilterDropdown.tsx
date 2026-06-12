@@ -423,33 +423,33 @@ export default function ColumnFilterDropdown({
       className="fixed z-[9999] bg-white overflow-hidden"
       style={{
         top: pos.top, left: pos.left, width: pos.width,
-        border: '1px solid #e7eaf1',
+        border: '1px solid var(--border)',
         borderRadius: 14,
         boxShadow: '0 8px 32px rgba(17,24,39,.12), 0 2px 8px rgba(17,24,39,.06)',
       }}
     >
       {/* ── Header: column name ── */}
-      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #f3f4f6' }}>
-        <span className="text-[13px] font-semibold text-[#111827] truncate">{colLabel}</span>
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--surface-2)' }}>
+        <span className="text-[13px] font-semibold text-[var(--text)] truncate">{colLabel}</span>
         <button onClick={onClose}
-          className="w-6 h-6 flex items-center justify-center rounded-md text-[#9ca3af] hover:text-[#374151] hover:bg-[#f3f4f6] transition shrink-0">
+          className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--surface-2)] transition shrink-0">
           <X size={13} />
         </button>
       </div>
 
       {/* ── SORT section (when sort callbacks provided) ── */}
       {onSort && (
-        <div className="px-4 py-3" style={{ borderBottom: '1px solid #f3f4f6' }}>
-          <p className="text-[9px] font-bold text-[#9ca3af] uppercase tracking-widest mb-2">Sort</p>
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--surface-2)' }}>
+          <p className="text-[9px] font-bold text-[var(--muted)] uppercase tracking-widest mb-2">Sort</p>
           <div className="flex gap-2">
             <button
               onClick={() => { onSort('asc'); onClose(); }}
               className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold rounded-lg transition"
               style={isSortedAsc
-                ? { background: '#eef3ff', color: '#3b6fff', border: '1px solid #c7d9ff' }
-                : { background: '#f9fafb', color: '#374151', border: '1px solid #e7eaf1' }}
-              onMouseEnter={(e) => { if (!isSortedAsc) (e.currentTarget as HTMLElement).style.background = '#f3f4f6'; }}
-              onMouseLeave={(e) => { if (!isSortedAsc) (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
+                ? { background: 'var(--row-hover)', color: 'var(--link)', border: '1px solid var(--surface-2)' }
+                : { background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+              onMouseEnter={(e) => { if (!isSortedAsc) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
+              onMouseLeave={(e) => { if (!isSortedAsc) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
             >
               <ArrowUpAZ size={14} />
               A → Z
@@ -458,10 +458,10 @@ export default function ColumnFilterDropdown({
               onClick={() => { onSort('desc'); onClose(); }}
               className="flex-1 flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold rounded-lg transition"
               style={isSortedDesc
-                ? { background: '#eef3ff', color: '#3b6fff', border: '1px solid #c7d9ff' }
-                : { background: '#f9fafb', color: '#374151', border: '1px solid #e7eaf1' }}
-              onMouseEnter={(e) => { if (!isSortedDesc) (e.currentTarget as HTMLElement).style.background = '#f3f4f6'; }}
-              onMouseLeave={(e) => { if (!isSortedDesc) (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
+                ? { background: 'var(--row-hover)', color: 'var(--link)', border: '1px solid var(--surface-2)' }
+                : { background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+              onMouseEnter={(e) => { if (!isSortedDesc) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
+              onMouseLeave={(e) => { if (!isSortedDesc) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
             >
               <ArrowDownZA size={14} />
               Z → A
@@ -473,7 +473,7 @@ export default function ColumnFilterDropdown({
       {/* ── FILTER section ── */}
       <div className="px-4 py-3">
         {onSort && (
-          <p className="text-[9px] font-bold text-[#9ca3af] uppercase tracking-widest mb-2">Filter</p>
+          <p className="text-[9px] font-bold text-[var(--muted)] uppercase tracking-widest mb-2">Filter</p>
         )}
 
         <div className="space-y-2">
@@ -512,10 +512,10 @@ export default function ColumnFilterDropdown({
                   type="date"
                   value={dateValue}
                   onChange={(e) => setDateValue(e.target.value)}
-                  className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[#374151] focus:outline-none transition"
-                  style={{ borderColor: '#e7eaf1' }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+                  className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[var(--text)] focus:outline-none transition"
+                  style={{ borderColor: 'var(--border)' }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
                 />
               )}
             </>
@@ -526,10 +526,10 @@ export default function ColumnFilterDropdown({
             <select
               value={boolValue}
               onChange={(e) => setBoolValue(e.target.value as 'true' | 'false' | '')}
-              className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[#374151] focus:outline-none transition"
-              style={{ borderColor: '#e7eaf1' }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+              className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[var(--text)] focus:outline-none transition"
+              style={{ borderColor: 'var(--border)' }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
             >
               <option value="">Any</option>
               <option value="true">Yes</option>
@@ -542,10 +542,10 @@ export default function ColumnFilterDropdown({
             <div className="max-h-48 overflow-y-auto space-y-0.5 -mx-1 px-1">
               {choiceLoading ? (
                 <div className="flex items-center justify-center py-6">
-                  <Loader2 size={16} className="animate-spin" style={{ color: '#3b6fff' }} />
+                  <Loader2 size={16} className="animate-spin" style={{ color: 'var(--link)' }} />
                 </div>
               ) : choiceOptions.length === 0 ? (
-                <p className="text-[12px] text-[#9ca3af] py-3 text-center">No options available</p>
+                <p className="text-[12px] text-[var(--muted)] py-3 text-center">No options available</p>
               ) : (
                 choiceOptions.map((opt) => (
                   <button
@@ -553,13 +553,13 @@ export default function ColumnFilterDropdown({
                     onClick={() => toggleChoice(opt.value)}
                     className="w-full flex items-center gap-2.5 px-2.5 py-2 text-[12px] text-left rounded-lg transition"
                     style={selectedChoices.includes(opt.value)
-                      ? { background: '#eef3ff', color: '#3b6fff', border: '1px solid #c7d9ff' }
-                      : { background: 'transparent', color: '#374151' }}
-                    onMouseEnter={(e) => { if (!selectedChoices.includes(opt.value)) (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
+                      ? { background: 'var(--row-hover)', color: 'var(--link)', border: '1px solid var(--surface-2)' }
+                      : { background: 'transparent', color: 'var(--text)' }}
+                    onMouseEnter={(e) => { if (!selectedChoices.includes(opt.value)) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
                     onMouseLeave={(e) => { if (!selectedChoices.includes(opt.value)) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
                   >
                     <span className="w-4 h-4 rounded-sm border flex-shrink-0 flex items-center justify-center transition"
-                      style={selectedChoices.includes(opt.value) ? { background: '#3b6fff', borderColor: '#3b6fff' } : { borderColor: '#d1d5db' }}>
+                      style={selectedChoices.includes(opt.value) ? { background: 'var(--link)', borderColor: 'var(--link)' } : { borderColor: 'var(--border)' }}>
                       {selectedChoices.includes(opt.value) && <Check size={10} className="text-white" />}
                     </span>
                     {opt.label}
@@ -583,35 +583,35 @@ export default function ColumnFilterDropdown({
               {!needsNoValue(lookupOp) && (lookupOp === 'eq' || lookupOp === 'neq') && (
                 <>
                   <div className="relative">
-                    <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#9ca3af' }} />
+                    <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--muted)' }} />
                     <input
                       autoFocus
                       type="text"
                       value={lookupSearch}
                       onChange={(e) => setLookupSearch(e.target.value)}
                       placeholder="Search records..."
-                      className="w-full text-[12px] border rounded-lg pl-8 pr-2.5 py-2 bg-white placeholder-[#9ca3af] focus:outline-none transition"
-                      style={{ borderColor: '#e7eaf1', color: '#374151' }}
-                      onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-                      onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+                      className="w-full text-[12px] border rounded-lg pl-8 pr-2.5 py-2 bg-white placeholder-[var(--muted)] focus:outline-none transition"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+                      onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+                      onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
                     />
                   </div>
                   {selectedLookup && (
                     <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg"
-                      style={{ background: '#eef3ff', border: '1px solid #c7d9ff' }}>
-                      <span className="text-[12px] font-medium truncate" style={{ color: '#3b6fff' }}>{selectedLookup.label}</span>
+                      style={{ background: 'var(--row-hover)', border: '1px solid var(--surface-2)' }}>
+                      <span className="text-[12px] font-medium truncate" style={{ color: 'var(--link)' }}>{selectedLookup.label}</span>
                       <button onClick={() => setSelectedLookup(null)} className="ml-1.5 shrink-0 hover:opacity-70">
-                        <X size={12} style={{ color: '#3b6fff' }} />
+                        <X size={12} style={{ color: 'var(--link)' }} />
                       </button>
                     </div>
                   )}
-                  <div className="max-h-40 overflow-y-auto rounded-lg" style={{ border: '1px solid #e7eaf1' }}>
+                  <div className="max-h-40 overflow-y-auto rounded-lg" style={{ border: '1px solid var(--border)' }}>
                     {lookupLoading ? (
                       <div className="flex items-center justify-center py-3">
-                        <Loader2 size={14} className="animate-spin" style={{ color: '#3b6fff' }} />
+                        <Loader2 size={14} className="animate-spin" style={{ color: 'var(--link)' }} />
                       </div>
                     ) : lookupResults.length === 0 ? (
-                      <p className="text-[12px] text-[#9ca3af] py-3 text-center">
+                      <p className="text-[12px] text-[var(--muted)] py-3 text-center">
                         {lookupSearch ? 'No records found' : 'Type to search...'}
                       </p>
                     ) : (
@@ -621,13 +621,13 @@ export default function ColumnFilterDropdown({
                           onClick={() => { setSelectedLookup(r); setLookupSearch(''); }}
                           className="w-full flex items-center gap-2 px-2.5 py-2 text-[12px] text-left transition-colors"
                           style={selectedLookup?.id === r.id
-                            ? { background: '#eef3ff', color: '#3b6fff', borderBottom: '1px solid #e7eaf1' }
-                            : { background: 'white', color: '#374151', borderBottom: '1px solid #f3f4f6' }}
-                          onMouseEnter={(e) => { if (selectedLookup?.id !== r.id) (e.currentTarget as HTMLElement).style.background = '#f9fafb'; }}
+                            ? { background: 'var(--row-hover)', color: 'var(--link)', borderBottom: '1px solid var(--border)' }
+                            : { background: 'white', color: 'var(--text)', borderBottom: '1px solid var(--surface-2)' }}
+                          onMouseEnter={(e) => { if (selectedLookup?.id !== r.id) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
                           onMouseLeave={(e) => { if (selectedLookup?.id !== r.id) (e.currentTarget as HTMLElement).style.background = 'white'; }}
                         >
                           <span className="w-3.5 h-3.5 rounded-full border flex-shrink-0 flex items-center justify-center transition"
-                            style={selectedLookup?.id === r.id ? { background: '#3b6fff', borderColor: '#3b6fff' } : { borderColor: '#d1d5db' }}>
+                            style={selectedLookup?.id === r.id ? { background: 'var(--link)', borderColor: 'var(--link)' } : { borderColor: 'var(--border)' }}>
                             {selectedLookup?.id === r.id && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
                           </span>
                           {r.label}
@@ -648,15 +648,15 @@ export default function ColumnFilterDropdown({
       </div>
 
       {/* ── Footer ── */}
-      <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: '1px solid #f3f4f6' }}>
+      <div className="flex items-center gap-2 px-4 py-3" style={{ borderTop: '1px solid var(--surface-2)' }}>
         {/* Hide column button */}
         {onHide && (
           <button
             onClick={() => { onHide(); onClose(); }}
             className="flex items-center gap-1.5 text-[12px] font-medium transition"
-            style={{ color: '#6b7280' }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = '#374151'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = '#6b7280'; }}
+            style={{ color: 'var(--muted)' }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--muted)'; }}
           >
             <EyeOff size={13} />
             Hide
@@ -666,8 +666,8 @@ export default function ColumnFilterDropdown({
         {currentFilter && (
           <button
             onClick={handleClear}
-            className="px-3 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f9fafb] transition"
-            style={{ color: '#374151', border: '1px solid #e7eaf1' }}
+            className="px-3 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[var(--surface-2)] transition"
+            style={{ color: 'var(--text)', border: '1px solid var(--border)' }}
           >
             Clear
           </button>
@@ -675,7 +675,7 @@ export default function ColumnFilterDropdown({
         <button
           onClick={handleApply}
           className="px-3 py-1.5 text-[12px] font-semibold text-white rounded-lg transition"
-          style={{ background: 'linear-gradient(135deg,#3b6fff,#5b87ff)', boxShadow: '0 4px 12px rgba(59,111,255,.25)' }}
+          style={{ background: 'linear-gradient(135deg,var(--link),var(--link))', boxShadow: '0 4px 12px rgba(59,111,255,.25)' }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.filter = 'brightness(1.08)'; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.filter = ''; }}
         >
@@ -698,15 +698,15 @@ function StyledSelect({ value, onChange, options }: {
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[#374151] focus:outline-none appearance-none pr-6 transition"
-        style={{ borderColor: '#e7eaf1' }}
-        onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-        onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+        className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[var(--text)] focus:outline-none appearance-none pr-6 transition"
+        style={{ borderColor: 'var(--border)' }}
+        onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+        onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
       >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       <svg className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" width="10" height="10" viewBox="0 0 10 10" fill="none">
-        <path d="M2 3.5L5 6.5L8 3.5" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M2 3.5L5 6.5L8 3.5" stroke="var(--muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </div>
   );
@@ -728,10 +728,10 @@ function StyledInput({ value, onChange, onEnter, placeholder, autoFocus, type = 
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => e.key === 'Enter' && onEnter?.()}
       placeholder={placeholder}
-      className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[#374151] placeholder-[#9ca3af] focus:outline-none transition"
-      style={{ borderColor: '#e7eaf1' }}
-      onFocus={(e) => { e.currentTarget.style.borderColor = '#3b6fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
-      onBlur={(e) => { e.currentTarget.style.borderColor = '#e7eaf1'; e.currentTarget.style.boxShadow = ''; }}
+      className="w-full text-[12px] border rounded-lg px-2.5 py-2 bg-white text-[var(--text)] placeholder-[var(--muted)] focus:outline-none transition"
+      style={{ borderColor: 'var(--border)' }}
+      onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--link)'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,111,255,.1)'; }}
+      onBlur={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = ''; }}
     />
   );
 }

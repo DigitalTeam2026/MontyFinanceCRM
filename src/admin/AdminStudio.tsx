@@ -460,7 +460,7 @@ export default function AdminStudio() {
 
   return (
     <ToastProvider>
-      <div className="flex h-screen bg-[#f3f4f6] overflow-hidden">
+      <div className="flex h-screen overflow-hidden" style={{ background: 'var(--app-bg)' }}>
         <StudioSidebar
           activeModule={activeModule}
           onNavigate={handleNavigate}

@@ -102,15 +102,28 @@ export async function updateEntity(
   id: string,
   form: Partial<EntityFormData>
 ): Promise<EntityDefinition> {
-  const { data, error } = await supabase
+  const payload: Record<string, unknown> = { ...form, modified_at: new Date().toISOString() };
+  let res = await supabase
     .from('entity_definition')
-    .update({ ...form, modified_at: new Date().toISOString() })
+    .update(payload)
     .eq('entity_definition_id', id)
     .select()
     .single();
 
-  if (error) throw error;
-  return data as EntityDefinition;
+  // Resilience during rollout: if documents_enabled isn't in the DB yet
+  // (migration not applied), retry the update without it so entity edits work.
+  if (res.error && /documents_enabled/.test(res.error.message)) {
+    delete payload.documents_enabled;
+    res = await supabase
+      .from('entity_definition')
+      .update(payload)
+      .eq('entity_definition_id', id)
+      .select()
+      .single();
+  }
+
+  if (res.error) throw res.error;
+  return res.data as EntityDefinition;
 }
 
 export async function softDeleteEntity(id: string): Promise<void> {

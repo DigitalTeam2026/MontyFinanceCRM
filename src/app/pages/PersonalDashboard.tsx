@@ -286,14 +286,14 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
       style={{
         textAlign: 'center',
         padding: '48px 24px',
-        color: '#605E5C',
+        color: 'var(--muted)',
       }}
     >
       <InboxIcon size={48} style={{ color: card.color, opacity: 0.2, margin: '0 auto 16px', display: 'block' }} />
-      <p style={{ fontSize: '14px', fontWeight: '500', margin: '0 0 8px 0', color: '#323130' }}>
+      <p style={{ fontSize: '14px', fontWeight: '500', margin: '0 0 8px 0', color: 'var(--text)' }}>
         No {card.shortLabel.toLowerCase()} found
       </p>
-      <p style={{ fontSize: '12px', margin: 0, color: '#605E5C' }}>
+      <p style={{ fontSize: '12px', margin: 0, color: 'var(--muted)' }}>
         {expandedCard?.selectedStatus
           ? `No records with status "${expandedCard.selectedStatus}"`
           : 'Create records to see them here'}
@@ -318,7 +318,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
           }}
         >
           <thead>
-            <tr style={{ backgroundColor: '#F3F2F1', borderBottom: '1px solid #E1DFDD' }}>
+            <tr style={{ backgroundColor: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
               {columns.map((col) => (
                 <th
                   key={col.key}
@@ -327,7 +327,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
                     padding: '12px 16px',
                     fontWeight: '600',
                     fontSize: '13px',
-                    color: '#323130',
+                    color: 'var(--text)',
                   }}
                 >
                   {col.label}
@@ -340,11 +340,11 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
               <tr
                 key={idx}
                 style={{
-                  borderBottom: '1px solid #E1DFDD',
+                  borderBottom: '1px solid var(--border)',
                   transition: 'background-color 0.15s ease',
                 }}
                 onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLTableRowElement).style.backgroundColor = '#F3F2F1';
+                  (e.currentTarget as HTMLTableRowElement).style.backgroundColor = 'var(--surface-2)';
                 }}
                 onMouseLeave={(e) => {
                   (e.currentTarget as HTMLTableRowElement).style.backgroundColor = 'transparent';
@@ -355,7 +355,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
                     key={`${idx}-${col.key}`}
                     style={{
                       padding: '12px 16px',
-                      color: '#323130',
+                      color: 'var(--text)',
                     }}
                   >
                     {getDisplayValue(item, col.key)}
@@ -374,7 +374,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
       style={{
         flex: 1,
         overflowY: 'auto',
-        backgroundColor: '#FAFAF8',
+        backgroundColor: 'var(--surface-2)',
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -383,15 +383,15 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
       <div
         style={{
           padding: '24px 32px',
-          backgroundColor: '#FFFFFF',
-          borderBottom: '1px solid #E1DFDD',
+          backgroundColor: 'var(--surface)',
+          borderBottom: '1px solid var(--border)',
           flexShrink: 0,
         }}
       >
-        <h1 style={{ fontSize: '28px', fontWeight: '600', color: '#323130', margin: '0 0 8px 0' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: '600', color: 'var(--text)', margin: '0 0 8px 0' }}>
           Dashboard
         </h1>
-        <p style={{ fontSize: '14px', color: '#605E5C', margin: 0 }}>
+        <p style={{ fontSize: '14px', color: 'var(--muted)', margin: 0 }}>
           Track your sales pipeline and key metrics at a glance
         </p>
       </div>
@@ -411,7 +411,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
               style={{
                 fontSize: '16px',
                 fontWeight: '600',
-                color: '#323130',
+                color: 'var(--text)',
                 marginBottom: '16px',
                 margin: '0 0 16px 0',
               }}
@@ -437,7 +437,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
                     onClick={() => handleCardClick(card.id)}
                     style={{
                       background: card.lightColor,
-                      border: `1px solid ${isExpanded ? card.color : '#E1DFDD'}`,
+                      border: `1px solid ${isExpanded ? card.color : 'var(--border)'}`,
                       borderRadius: '8px',
                       padding: '16px',
                       cursor: 'pointer',
@@ -458,7 +458,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
                     onMouseLeave={(e) => {
                       if (!isExpanded) {
                         (e.currentTarget as HTMLButtonElement).style.backgroundColor = card.lightColor;
-                        (e.currentTarget as HTMLButtonElement).style.borderColor = '#E1DFDD';
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
                         (e.currentTarget as HTMLButtonElement).style.boxShadow =
                           '0 1px 3px rgba(0, 0, 0, 0.08)';
                       }
@@ -470,7 +470,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
                           padding: '10px',
                           borderRadius: '6px',
                           background: card.color,
-                          color: '#FFFFFF',
+                          color: 'var(--surface)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -484,7 +484,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
                           style={{
                             fontSize: '14px',
                             fontWeight: '600',
-                            color: '#323130',
+                            color: 'var(--text)',
                             margin: 0,
                           }}
                         >
@@ -495,7 +495,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
 
                     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
                       <div>
-                        <p style={{ fontSize: '11px', color: '#605E5C', margin: '0 0 4px 0' }}>
+                        <p style={{ fontSize: '11px', color: 'var(--muted)', margin: '0 0 4px 0' }}>
                           Records
                         </p>
                         <p
@@ -533,9 +533,9 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
           {expandedCard && (
             <div
               style={{
-                backgroundColor: '#FFFFFF',
+                backgroundColor: 'var(--surface)',
                 borderRadius: '8px',
-                border: `1px solid #E1DFDD`,
+                border: `1px solid var(--border)`,
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                 overflow: 'hidden',
                 animation: 'slideDown 0.3s ease',
@@ -545,14 +545,14 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
               <div
                 style={{
                   padding: '16px 24px',
-                  borderBottom: `1px solid #E1DFDD`,
-                  backgroundColor: '#FAFAF8',
+                  borderBottom: `1px solid var(--border)`,
+                  backgroundColor: 'var(--surface-2)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                 }}
               >
-                <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#323130', margin: 0 }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text)', margin: 0 }}>
                   {entityCards.find((c) => c.id === expandedCard.cardId)?.label || 'Records'}
                 </h3>
                 <button
@@ -561,7 +561,7 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
-                    color: '#605E5C',
+                    color: 'var(--muted)',
                     fontSize: '20px',
                     padding: '4px 8px',
                   }}
@@ -579,15 +579,15 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
                   <div
                     style={{
                       padding: '16px 24px',
-                      borderBottom: `1px solid #E1DFDD`,
-                      backgroundColor: '#FAFAF8',
+                      borderBottom: `1px solid var(--border)`,
+                      backgroundColor: 'var(--surface-2)',
                     }}
                   >
                     <p
                       style={{
                         fontSize: '12px',
                         fontWeight: '600',
-                        color: '#323130',
+                        color: 'var(--text)',
                         marginBottom: '12px',
                         margin: '0 0 12px 0',
                       }}
@@ -607,15 +607,15 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
                             border:
                               expandedCard.selectedStatus === status
                                 ? `2px solid ${card?.color}`
-                                : `1px solid #E1DFDD`,
+                                : `1px solid var(--border)`,
                             background:
                               expandedCard.selectedStatus === status
                                 ? card?.color
-                                : '#FFFFFF',
+                                : 'var(--surface)',
                             color:
                               expandedCard.selectedStatus === status
-                                ? '#FFFFFF'
-                                : '#323130',
+                                ? 'var(--surface)'
+                                : 'var(--text)',
                             cursor: 'pointer',
                             transition: 'all 0.15s ease',
                           }}
@@ -629,8 +629,8 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
                           }}
                           onMouseLeave={(e) => {
                             if (expandedCard.selectedStatus !== status) {
-                              (e.currentTarget as HTMLButtonElement).style.borderColor = '#E1DFDD';
-                              (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#FFFFFF';
+                              (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
+                              (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'var(--surface)';
                             }
                           }}
                         >
@@ -644,10 +644,10 @@ export default function PersonalDashboard({ userId }: PersonalDashboardProps) {
                             padding: '6px 12px',
                             borderRadius: '4px',
                             fontSize: '12px',
-                            background: '#FAFAF8',
-                            border: '1px solid #E1DFDD',
+                            background: 'var(--surface-2)',
+                            border: '1px solid var(--border)',
                             cursor: 'pointer',
-                            color: '#605E5C',
+                            color: 'var(--muted)',
                             transition: 'all 0.15s ease',
                           }}
                         >
