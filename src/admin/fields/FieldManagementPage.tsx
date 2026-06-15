@@ -1,11 +1,11 @@
 import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState } from 'react';
 import {
-  Plus, Search, RefreshCw, Layers, Shield, Wrench, Filter, X, Download } from 'lucide-react';
+  Plus, Search, RefreshCw, Layers, Shield, Wrench, Filter, X, Download, DatabaseZap } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
 import type { FieldDefinition, FieldFormData, FieldType, ChoiceOption } from '../../types/field';
 import type { EntityDefinition } from '../../types/entity';
-import { fetchFieldsForEntity, fetchFieldTypes, createField, updateField, softDeleteField } from '../../services/fieldService';
+import { loadEntityColumns, fetchFieldTypes, createField, updateField, softDeleteField, reconcileEntityColumns, setFieldClassification } from '../../services/fieldService';
 import { fetchEntities } from '../../services/entityService';
 import { setFieldSecured } from '../../services/columnSecurityService';
 import { createLookupRelationshipPair } from '../../services/relationshipService';
@@ -57,7 +57,18 @@ export default function FieldManagementPage({ preselectedEntityId }: FieldManage
     if (!selectedEntityId) return;
     (async () => {
       setFieldsLoading(true);
-      try { setFields(await fetchFieldsForEntity(selectedEntityId)); }
+      try {
+        // Reconcile the live schema into metadata first so orphaned physical
+        // columns (e.g. added by a migration without a field_definition) become
+        // visible. Reconciliation is idempotent and best-effort.
+        const { fields: loaded, reconcile } = await loadEntityColumns(selectedEntityId);
+        setFields(loaded);
+        if (reconcile && reconcile.created.length > 0) {
+          showSuccess(
+            `Registered ${reconcile.created.length} column${reconcile.created.length !== 1 ? 's' : ''} from the database: ${reconcile.created.map((c) => c.column).join(', ')}`,
+          );
+        }
+      }
       catch (e: unknown) { showError(e instanceof Error ? e.message : 'Failed to load fields'); }
       finally { setFieldsLoading(false); }
     })();
@@ -125,6 +136,23 @@ export default function FieldManagementPage({ preselectedEntityId }: FieldManage
     finally { setTogglingSecured(null); }
   };
 
+  const [reclassifying, setReclassifying] = useState<string | null>(null);
+  const handleToggleCustom = async (field: FieldDefinition) => {
+    const nextIsCustom = !field.is_custom;
+    setReclassifying(field.field_definition_id);
+    try {
+      await setFieldClassification(field.field_definition_id, nextIsCustom);
+      setFields((prev) => prev.map((f) => f.field_definition_id === field.field_definition_id
+        ? { ...f, is_custom: nextIsCustom, is_system: !nextIsCustom, is_deletable: nextIsCustom, is_schema_editable: nextIsCustom }
+        : f));
+      showSuccess(`"${field.display_name}" is now a ${nextIsCustom ? 'custom' : 'system'} column`);
+    } catch (e: unknown) {
+      showError(e instanceof Error ? e.message : 'Failed to change column category');
+    } finally {
+      setReclassifying(null);
+    }
+  };
+
   const handleDeleteRequest = async (field: FieldDefinition) => {
     setDepChecking(true);
     try {
@@ -154,21 +182,45 @@ export default function FieldManagementPage({ preselectedEntityId }: FieldManage
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await softDeleteField(deleteTarget.field_definition_id);
+      await softDeleteField(deleteTarget);
       setFields((prev) => prev.filter((f) => f.field_definition_id !== deleteTarget.field_definition_id));
       setDeleteTarget(null);
+      showSuccess(`Column "${deleteTarget.display_name}" removed from the database`);
     } catch (e: unknown) { showError(e instanceof Error ? e.message : 'Delete failed'); }
     finally { setDeleting(false); }
   };
 
   const refreshFields = () => {
     if (!selectedEntityId) return;
-    setSelectedEntityId((prev) => prev);
     setFieldsLoading(true);
-    fetchFieldsForEntity(selectedEntityId)
-      .then(setFields)
+    // Refresh re-reads metadata without re-reconciling (read-only).
+    loadEntityColumns(selectedEntityId, { reconcile: false })
+      .then(({ fields }) => setFields(fields))
       .catch((e: unknown) => showError(e instanceof Error ? e.message : 'Failed to reload'))
       .finally(() => setFieldsLoading(false));
+  };
+
+  // Explicit reconcile: pull any new physical columns into metadata, then reload.
+  const [syncing, setSyncing] = useState(false);
+  const handleSyncColumns = async () => {
+    if (!selectedEntityId) return;
+    setSyncing(true);
+    setFieldsLoading(true);
+    try {
+      const result = await reconcileEntityColumns(selectedEntityId);
+      const { fields } = await loadEntityColumns(selectedEntityId, { reconcile: false });
+      setFields(fields);
+      if (result.created.length > 0) {
+        showSuccess(`Synced ${result.created.length} new column${result.created.length !== 1 ? 's' : ''}: ${result.created.map((c) => c.column).join(', ')}`);
+      } else {
+        showSuccess(`All ${result.dbColumnCount} database columns are already in sync`);
+      }
+    } catch (e: unknown) {
+      showError(e instanceof Error ? e.message : 'Column sync failed');
+    } finally {
+      setSyncing(false);
+      setFieldsLoading(false);
+    }
   };
 
   const selectedEntity = entities.find((e) => e.entity_definition_id === selectedEntityId);
@@ -187,6 +239,9 @@ export default function FieldManagementPage({ preselectedEntityId }: FieldManage
         <CmdSep />
         <CmdBtn onClick={refreshFields} icon={<RefreshCw size={12} className={fieldsLoading ? 'animate-spin' : ''} />}>
           Refresh
+        </CmdBtn>
+        <CmdBtn onClick={handleSyncColumns} disabled={!selectedEntityId || syncing} icon={<DatabaseZap size={12} className={syncing ? 'animate-pulse' : ''} />}>
+          Sync columns
         </CmdBtn>
         <CmdBtn icon={<Download size={12} />}>Export</CmdBtn>
         <div className="flex-1" />
@@ -281,6 +336,8 @@ export default function FieldManagementPage({ preselectedEntityId }: FieldManage
             onDelete={handleDeleteRequest}
             onToggleSecured={handleToggleSecured}
             togglingSecured={togglingSecured}
+            onToggleCustom={handleToggleCustom}
+            reclassifying={reclassifying}
           />
         )}
       </div>
@@ -335,7 +392,7 @@ export default function FieldManagementPage({ preselectedEntityId }: FieldManage
       {deleteTarget && (!depResult || depResult.canDelete) && !depChecking && (
         <ConfirmDialog
           title="Delete Custom Column"
-          message={`Delete "${deleteTarget.display_name}"? This cannot be undone.`}
+          message={`Delete "${deleteTarget.display_name}"? This drops the column and all its data from the database table and cannot be undone.`}
           confirmLabel={deleting ? 'Deleting...' : 'Delete'}
           onConfirm={handleDelete}
           onCancel={() => { setDeleteTarget(null); setDepResult(null); }}

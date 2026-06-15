@@ -33,6 +33,8 @@ import DatabaseValidationPage from './validation/DatabaseValidationPage';
 import ApiIntegrationsPage from './integrations/ApiIntegrationsPage';
 import CompanyProfilePage from './companyprofile/CompanyProfilePage';
 import DocumentLocationPage from './documents/DocumentLocationPage';
+import PublishAllButton from './publish/PublishAllButton';
+import PublicationHistoryPage from './publish/PublicationHistoryPage';
 import type { EntityDefinition } from '../types/entity';
 import type { RelationshipDefinitionWithEntities } from '../types/relationship';
 import { fetchEntities } from '../services/entityService';
@@ -283,7 +285,7 @@ export default function AdminStudio() {
       return { title: 'Navigation Designer', subtitle: 'Design the app sitemap — areas, groups, and entity links' };
     }
     if (activeModule === 'dashboard') {
-      return { title: 'Dashboard Management', subtitle: 'Design and manage system and custom dashboards' };
+      return { title: 'Dashboards', subtitle: 'Build, view, and manage Power BI–style dashboards for the whole organization' };
     }
     if (activeModule === 'currencies') {
       return { title: 'Currency Management', subtitle: 'Configure active currencies, exchange rates, and base currency' };
@@ -323,6 +325,9 @@ export default function AdminStudio() {
     }
     if (activeModule === 'documentlocation') {
       return { title: 'Document Location', subtitle: 'Configure the root storage folder per entity — files are saved to <root>/<record id>/<file> by the local file server' };
+    }
+    if (activeModule === 'publishhistory') {
+      return { title: 'Publication History', subtitle: 'Every customization publication — version, who published, components, outcome, and rollback' };
     }
     return { title: 'Admin Studio' };
   };
@@ -436,7 +441,7 @@ export default function AdminStudio() {
     if (activeModule === 'workflows') return <WorkflowsPage />;
     if (activeModule === 'security') return <SecurityManagementPage />;
     if (activeModule === 'navigation') return <NavigationPage />;
-    if (activeModule === 'dashboard') return <DashboardsPage />;
+    if (activeModule === 'dashboard') return <DashboardsPage userId={session.user.id} />;
     if (activeModule === 'currencies') return <CurrenciesPage />;
     if (activeModule === 'processflows') return <ProcessFlowsPage />;
     if (activeModule === 'stages') return <PipelineStagesPage />;
@@ -450,6 +455,7 @@ export default function AdminStudio() {
     if (activeModule === 'integrations') return <ApiIntegrationsPage />;
     if (activeModule === 'companyprofile') return <CompanyProfilePage />;
     if (activeModule === 'documentlocation') return <DocumentLocationPage />;
+    if (activeModule === 'publishhistory') return <PublicationHistoryPage />;
 
     return (
       <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
@@ -473,6 +479,7 @@ export default function AdminStudio() {
             title={header.title}
             subtitle={header.subtitle}
             onBack={header.onBack}
+            actions={<PublishAllButton />}
           />
           {renderContent()}
         </div>

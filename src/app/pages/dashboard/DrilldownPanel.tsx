@@ -4,15 +4,49 @@
 // user's selected saved view with the same cell rendering as the list page.
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { X, ExternalLink, ChevronDown } from 'lucide-react';
+import type { CSSProperties } from 'react';
+import { X, ExternalLink, ChevronDown, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import type { ListRow } from '../../services/listService';
 import type { ColumnState } from '../../components/ColumnCustomizer';
 import { renderListCell } from '../../components/list/renderListCell';
+import AnchoredPopover from '../../components/overlay/AnchoredPopover';
 import {
   listDrilldownViews, resolveDrilldownColumns, fetchDrilldownPage,
+  DRILLDOWN_PAGE_SIZE,
   type DrilldownRequest, type DrilldownView, type DrillChip,
 } from './drilldown';
 import { formatCount } from './theme';
+
+/**
+ * Windowed page numbers for the pagination bar: always show first + last, the
+ * current page and its neighbours, and '…' gaps. Keeps the control compact even
+ * for large result sets.
+ */
+function pageWindow(current: number, totalPages: number): (number | 'gap')[] {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+  const out: (number | 'gap')[] = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(totalPages - 1, current + 1);
+  if (start > 2) out.push('gap');
+  for (let i = start; i <= end; i++) out.push(i);
+  if (end < totalPages - 1) out.push('gap');
+  out.push(totalPages);
+  return out;
+}
+
+/** Shared styling for pager buttons (Prev/Next + numbers), matching the dashboard. */
+function pagerBtnStyle(active: boolean, disabled: boolean): CSSProperties {
+  return {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    minWidth: 30, height: 30, padding: '0 8px', fontSize: 12, fontWeight: 600,
+    borderRadius: 6, cursor: disabled ? 'default' : 'pointer',
+    border: `1px solid ${active ? 'var(--link)' : 'var(--border)'}`,
+    background: active ? 'color-mix(in srgb, var(--link) 13%, transparent)' : 'var(--surface)',
+    color: active ? 'var(--link)' : 'var(--text)',
+    opacity: disabled && !active ? 0.45 : 1,
+    transition: 'background .15s, border-color .15s',
+  };
+}
 
 interface DrilldownPanelProps {
   req: DrilldownRequest;
@@ -34,14 +68,18 @@ export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onO
   const [rows, setRows] = useState<ListRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(false);
   const [primaryActive, setPrimaryActive] = useState(true);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
 
   const panelRef = useRef<HTMLDivElement>(null);
+  const viewBtnRef = useRef<HTMLButtonElement>(null);
   const gen = useRef(0);
+  // Skips the search effect's first run so it doesn't double-fetch over the initial load.
+  const searchMountRef = useRef(false);
 
   // Smooth-scroll the panel into view when it first opens.
   useEffect(() => {
@@ -55,6 +93,8 @@ export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onO
     setError(false);
     setPrimaryActive(true);
     setPage(1);
+    setSearch('');
+    setDebouncedSearch('');
     (async () => {
       try {
         const { views: vs, defaultViewId } = await listDrilldownViews(req.entity);
@@ -63,7 +103,7 @@ export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onO
         })();
         const chosen = (stored && vs.some((v) => v.view_id === stored)) ? stored : defaultViewId;
         const { columns: cols, viewFilterChips: chips } = await resolveDrilldownColumns(req.entity, chosen);
-        const pageData = await fetchDrilldownPage(req, cols, chips, { page: 1, primaryActive: true });
+        const pageData = await fetchDrilldownPage(req, cols, chips, { page: 1, primaryActive: true, search: '' });
         if (g !== gen.current) return;
         setViews(vs);
         setViewId(chosen);
@@ -81,17 +121,20 @@ export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onO
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-fetch page 1 with current columns/filters (after view change or chip toggle).
-  const refetch = useCallback(async (cols: ColumnState[], chips: DrillChip[], usePrimary: boolean) => {
+  // Fetch a specific page (replacing rows — true pagination, not append) using the
+  // supplied columns/filters/search. Resets nothing else; callers decide the page.
+  const fetchPage = useCallback(async (
+    cols: ColumnState[], chips: DrillChip[], usePrimary: boolean, searchTerm: string, targetPage: number,
+  ) => {
     const g = ++gen.current;
     setLoading(true);
     setError(false);
-    setPage(1);
     try {
-      const pageData = await fetchDrilldownPage(req, cols, chips, { page: 1, primaryActive: usePrimary });
+      const pageData = await fetchDrilldownPage(req, cols, chips, { page: targetPage, primaryActive: usePrimary, search: searchTerm });
       if (g !== gen.current) return;
       setRows(pageData.rows);
       setTotal(pageData.total);
+      setPage(targetPage);
       setLoading(false);
     } catch {
       if (g !== gen.current) return;
@@ -99,6 +142,20 @@ export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onO
       setLoading(false);
     }
   }, [req]);
+
+  // Debounce the search box (300ms) so each keystroke doesn't fire a query.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Re-run the search from page 1 when the debounced term changes (skip first mount —
+  // the initial load already fetched page 1 with an empty term).
+  useEffect(() => {
+    if (!searchMountRef.current) { searchMountRef.current = true; return; }
+    fetchPage(columns, viewFilterChips, primaryActive, debouncedSearch, 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
 
   const onSelectView = useCallback(async (id: string) => {
     setViewMenuOpen(false);
@@ -108,29 +165,24 @@ export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onO
     const { columns: cols, viewFilterChips: chips } = await resolveDrilldownColumns(req.entity, id);
     setColumns(cols);
     setViewFilterChips(chips);
-    await refetch(cols, chips, primaryActive);
-  }, [viewId, req.entity, userId, refetch, primaryActive]);
+    await fetchPage(cols, chips, primaryActive, debouncedSearch, 1);
+  }, [viewId, req.entity, userId, fetchPage, primaryActive, debouncedSearch]);
 
   const onRemovePrimary = useCallback(() => {
     setPrimaryActive(false);
-    refetch(columns, viewFilterChips, false);
-  }, [columns, viewFilterChips, refetch]);
+    fetchPage(columns, viewFilterChips, false, debouncedSearch, 1);
+  }, [columns, viewFilterChips, fetchPage, debouncedSearch]);
 
-  const onShowMore = useCallback(async () => {
-    const next = page + 1;
-    setLoadingMore(true);
-    try {
-      const pageData = await fetchDrilldownPage(req, columns, viewFilterChips, { page: next, primaryActive });
-      setRows((prev) => [...prev, ...pageData.rows]);
-      setTotal(pageData.total);
-      setPage(next);
-    } catch { /* ignore */ }
-    setLoadingMore(false);
-  }, [page, req, columns, viewFilterChips, primaryActive]);
+  const totalPages = Math.max(1, Math.ceil(total / DRILLDOWN_PAGE_SIZE));
+  const onGoToPage = useCallback((target: number) => {
+    if (target < 1 || target > totalPages || target === page || loading) return;
+    fetchPage(columns, viewFilterChips, primaryActive, debouncedSearch, target);
+  }, [totalPages, page, loading, fetchPage, columns, viewFilterChips, primaryActive, debouncedSearch]);
 
   const activeView = views.find((v) => v.view_id === viewId);
-  const hasMore = rows.length < total;
   const grayChips: DrillChip[] = [...(req.constraints ?? []), ...viewFilterChips];
+  const rangeStart = total === 0 ? 0 : (page - 1) * DRILLDOWN_PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * DRILLDOWN_PAGE_SIZE, total);
 
   return (
     <div
@@ -185,35 +237,50 @@ export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onO
         {views.length > 0 && (
           <div style={{ position: 'relative' }}>
             <button
+              ref={viewBtnRef}
               onClick={() => setViewMenuOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={viewMenuOpen}
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600,
+                display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 220, fontSize: 12, fontWeight: 600,
                 color: 'var(--text)', background: 'var(--surface)', border: '1px solid var(--border)',
                 padding: '5px 10px', borderRadius: 6, cursor: 'pointer',
               }}
             >
-              {activeView?.name ?? 'View'}
-              <ChevronDown size={13} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {activeView?.name ?? 'View'}
+              </span>
+              <ChevronDown size={13} style={{ flexShrink: 0 }} />
             </button>
-            {viewMenuOpen && (
-              <div style={{
-                position: 'absolute', top: '100%', right: 0, marginTop: 4, minWidth: 180, zIndex: 20,
-                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow)',
-                padding: 4, maxHeight: 260, overflowY: 'auto',
-              }}>
-                {views.map((v) => (
-                  <button key={v.view_id} onClick={() => onSelectView(v.view_id)}
-                    style={{
-                      display: 'flex', width: '100%', textAlign: 'left', alignItems: 'center', gap: 8,
-                      fontSize: 12, padding: '7px 10px', borderRadius: 5, border: 'none', cursor: 'pointer',
-                      background: v.view_id === viewId ? 'color-mix(in srgb, var(--link) 12%, transparent)' : 'transparent',
-                      color: v.view_id === viewId ? 'var(--link)' : 'var(--text)', fontWeight: v.view_id === viewId ? 700 : 500,
-                    }}>
+            <AnchoredPopover
+              anchorEl={viewBtnRef.current}
+              open={viewMenuOpen}
+              onClose={() => setViewMenuOpen(false)}
+              placement="bottom-end"
+              matchWidth
+              minWidth={200}
+              maxHeight={320}
+              role="menu"
+              style={{
+                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+                boxShadow: 'var(--shadow)', padding: 4, overflowY: 'auto',
+              }}
+            >
+              {views.map((v) => (
+                <button key={v.view_id} role="menuitem" onClick={() => onSelectView(v.view_id)}
+                  title={v.name}
+                  style={{
+                    display: 'flex', width: '100%', textAlign: 'left', alignItems: 'center', gap: 8,
+                    fontSize: 12, padding: '7px 10px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                    background: v.view_id === viewId ? 'color-mix(in srgb, var(--link) 12%, transparent)' : 'transparent',
+                    color: v.view_id === viewId ? 'var(--link)' : 'var(--text)', fontWeight: v.view_id === viewId ? 700 : 500,
+                  }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {v.name}{v.is_default ? ' (default)' : ''}
-                  </button>
-                ))}
-              </div>
-            )}
+                  </span>
+                </button>
+              ))}
+            </AnchoredPopover>
           </div>
         )}
 
@@ -231,6 +298,46 @@ export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onO
           style={{ display: 'inline-flex', background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: 'var(--muted)' }}>
           <X size={16} />
         </button>
+      </div>
+
+      {/* Search toolbar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+        padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)',
+      }}>
+        <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: 360, minWidth: 180 }}>
+          <Search
+            size={14}
+            style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)', pointerEvents: 'none' }}
+          />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={`Search ${req.entityLabel.toLowerCase()}…`}
+            aria-label={`Search ${req.entityLabel}`}
+            style={{
+              width: '100%', boxSizing: 'border-box', fontSize: 13, color: 'var(--text)',
+              background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8,
+              padding: '7px 30px 7px 32px', outline: 'none',
+            }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              title="Clear search"
+              style={{
+                position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                display: 'inline-flex', background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: 'var(--muted)',
+              }}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+          {total > 0 ? `${rangeStart}–${rangeEnd} of ${formatCount(total)}` : ''}
+        </span>
       </div>
 
       {/* Body */}
@@ -281,15 +388,46 @@ export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onO
         )}
       </div>
 
-      {/* Show more */}
-      {!loading && !error && hasMore && (
-        <div style={{ padding: 12, textAlign: 'center', borderTop: '1px solid var(--border)' }}>
-          <button onClick={onShowMore} disabled={loadingMore}
-            style={{
-              fontSize: 12, fontWeight: 600, color: 'var(--link)', background: 'var(--surface-2)',
-              border: '1px solid var(--border)', borderRadius: 6, padding: '6px 16px', cursor: 'pointer',
-            }}>
-            {loadingMore ? 'Loading…' : `Show more (${formatCount(total - rows.length)} more)`}
+      {/* Pagination */}
+      {!error && totalPages > 1 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexWrap: 'wrap',
+          padding: '10px 16px', borderTop: '1px solid var(--border)', background: 'var(--surface-2)',
+        }}>
+          <button
+            onClick={() => onGoToPage(page - 1)}
+            disabled={page <= 1 || loading}
+            title="Previous page"
+            style={pagerBtnStyle(false, page <= 1 || loading)}
+          >
+            <ChevronLeft size={14} />
+            <span style={{ marginLeft: 2 }}>Prev</span>
+          </button>
+
+          {pageWindow(page, totalPages).map((p, i) =>
+            p === 'gap' ? (
+              <span key={`gap-${i}`} style={{ padding: '0 4px', fontSize: 12, color: 'var(--muted)' }}>…</span>
+            ) : (
+              <button
+                key={p}
+                onClick={() => onGoToPage(p)}
+                disabled={loading}
+                aria-current={p === page ? 'page' : undefined}
+                style={pagerBtnStyle(p === page, loading && p !== page)}
+              >
+                {p}
+              </button>
+            ),
+          )}
+
+          <button
+            onClick={() => onGoToPage(page + 1)}
+            disabled={page >= totalPages || loading}
+            title="Next page"
+            style={pagerBtnStyle(false, page >= totalPages || loading)}
+          >
+            <span style={{ marginRight: 2 }}>Next</span>
+            <ChevronRight size={14} />
           </button>
         </div>
       )}

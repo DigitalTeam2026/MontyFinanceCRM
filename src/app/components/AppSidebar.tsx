@@ -6,6 +6,7 @@ import {
 import { useState, useEffect, useRef } from 'react';
 import type { AppModule, AppEntity } from '../types';
 import { LOGICAL_NAME_TO_ENTITY } from '../types';
+import { usePermissions } from '../context/PermissionContext';
 import { getInitials } from '../utils/initials';
 import { renderNavIcon, renderAreaIcon } from '../utils/navIcons';
 import RecentPinsPanel from './RecentPinsPanel';
@@ -162,6 +163,18 @@ export default function AppSidebar({
   const [items, setItems] = useState<NavItem[]>([]);
   const [brand, setBrand] = useState<CompanyProfile>(getCachedCompanyProfile);
 
+  // Entity-level navigation security. An entity nav item is shown only if the
+  // user has can_read on that entity (logical name resolved inside
+  // getEntityPrivilege). System admins bypass. While permissions are still
+  // loading, entity items stay hidden to avoid flashing unauthorized nav.
+  const { getEntityPrivilege, ready: permsReady } = usePermissions();
+  const canSeeEntity = (entityName: string | null): boolean => {
+    if (!entityName) return true; // non-entity items (e.g. dashboards)
+    if (isSystemAdmin) return true;
+    if (!permsReady) return false;
+    return getEntityPrivilege(entityName).can_read;
+  };
+
   useEffect(() => {
     let cancelled = false;
     fetchCompanyProfile().then((p) => { if (!cancelled) setBrand(p); }).catch(() => {});
@@ -201,18 +214,27 @@ export default function AppSidebar({
 
   const initials = getInitials(userName, userEmail);
 
-  const getGroupItems = (groupId: string) => items.filter((i) => i.nav_group_id === groupId);
+  // Permission-filtered nav items — drives every entity link in the sidebar.
+  const visibleItems = items.filter((i) => canSeeEntity(i.entity_name));
+
+  const getGroupItems = (groupId: string) => visibleItems.filter((i) => i.nav_group_id === groupId);
 
   const firstEntityOfArea = (area: NavArea): AppEntity => {
     const areaGroups = groups.filter((g) => g.nav_area_id === area.nav_area_id);
     for (const g of areaGroups) {
-      const gItems = items.filter((i) => i.nav_group_id === g.nav_group_id && i.entity_name);
+      const gItems = visibleItems.filter((i) => i.nav_group_id === g.nav_group_id && i.entity_name);
       if (gItems.length > 0) return resolveEntity(gItems[0].entity_name);
     }
     return area.name;
   };
 
-  const allNavItems = items.filter((i) => i.entity_name);
+  const allNavItems = visibleItems.filter((i) => i.entity_name);
+
+  // Hide areas that have no visible entity items for this user.
+  const visibleAreas = areas.filter((a) =>
+    groups.some((g) => g.nav_area_id === a.nav_area_id
+      && visibleItems.some((i) => i.nav_group_id === g.nav_group_id)),
+  );
   const seenEntities = new Set<string>();
   const uniqueNavItems = allNavItems.filter((i) => {
     const key = resolveEntity(i.entity_name);
@@ -298,7 +320,7 @@ export default function AppSidebar({
 
           <div className="w-6 mb-1" style={{ borderTop: '1px solid var(--border)' }} />
 
-          {areas.map((area) => {
+          {visibleAreas.map((area) => {
             const isActiveModule = activeModule === area.name;
             return (
               <Tooltip key={area.nav_area_id} label={area.display_label}>
@@ -378,7 +400,7 @@ export default function AppSidebar({
 
           <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
 
-          {areas.map((area) => {
+          {visibleAreas.map((area) => {
             const isOpen = expanded === area.name;
             const isActiveModule = activeModule === area.name;
             const areaGroups = groups.filter((g) => g.nav_area_id === area.nav_area_id);

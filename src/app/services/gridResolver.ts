@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase';
 import type { ColumnState } from '../components/ColumnCustomizer';
 import type { ListRow } from './listService';
+import { getTable } from './metadata/metadataStore';
 
 export interface LookupSpec {
   colKey: string;
@@ -87,9 +88,26 @@ export function buildOptionSetSpecs(columns: ColumnState[]): OptionSetSpec[] {
 const optionSetCache = new Map<string, Record<string, string>>();
 let optionSetTableExists: boolean | null = null;
 
+/** Drop the grid option-set cache after a publish (see metadata/cacheBus.ts). */
+export function resetGridOptionSetCache(): void {
+  optionSetCache.clear();
+}
+
 async function resolveOptionSetLabels(optionSetId: string): Promise<Record<string, string>> {
   const cached = optionSetCache.get(optionSetId);
   if (cached) return cached;
+
+  const snap = getTable<{ value: string; display_label: string; option_set_id: string; is_active: boolean; display_order: number }>('option_set_value');
+  if (snap !== null) {
+    const map: Record<string, string> = {};
+    for (const r of snap
+      .filter((r) => r.option_set_id === optionSetId && r.is_active === true)
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))) {
+      map[String(r.value)] = r.display_label;
+    }
+    optionSetCache.set(optionSetId, map);
+    return map;
+  }
 
   if (optionSetTableExists === false) {
     const map: Record<string, string> = {};

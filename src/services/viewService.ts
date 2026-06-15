@@ -1,5 +1,99 @@
 import { supabase } from '../lib/supabase';
 import type { ViewDefinition, ViewColumn, FilterGroup, SortDefinition } from '../types/view';
+import { getTable } from '../app/services/metadata/metadataStore';
+
+/** Shape the nested join row (live or snapshot-reconstructed) into a ViewColumn. */
+function mapViewColumnRow(row: Record<string, unknown>): ViewColumn {
+  const fd = row.field_definition as Record<string, unknown> | null;
+  const ft = fd?.field_type as Record<string, unknown> | null;
+  const le = fd?.lookup_entity as Record<string, unknown> | null;
+  const rd = row.relationship_definition as Record<string, unknown> | null;
+  const re = rd?.target_entity as Record<string, unknown> | null;
+  const lf = rd?.lookup_field as Record<string, unknown> | null;
+  return {
+    view_column_id: row.view_column_id,
+    view_id: row.view_id,
+    field_definition_id: row.field_definition_id,
+    field_logical_name: fd?.logical_name as string | undefined,
+    field_display_name: fd?.display_name as string | undefined,
+    field_physical_column: fd?.physical_column_name as string | undefined,
+    field_type_name: ft?.name as string | undefined,
+    option_set_name: fd?.option_set_id as string | undefined,
+    inline_choices: ((fd?.config_json as Record<string, unknown> | null)?.choices as { value: string; label: string }[] | undefined) ?? undefined,
+    lookup_table: le?.physical_table_name as string | undefined,
+    // crm_user primary_field_name is 'full_name' but filter/display uses email
+    lookup_label_field: le?.physical_table_name === 'crm_user'
+      ? 'email'
+      : le?.primary_field_name as string | undefined,
+    display_order: row.display_order,
+    width: row.width as number | null,
+    is_sortable: row.is_sortable as boolean,
+    label_override: row.label_override as string | null,
+    is_hidden: row.is_hidden as boolean,
+    relationship_definition_id: row.relationship_definition_id as string | null,
+    related_entity_logical_name: re?.logical_name as string | undefined,
+    related_entity_display_name: re?.display_name as string | undefined,
+    related_table_name: re?.physical_table_name as string | undefined,
+    fk_physical_column: lf?.physical_column_name as string | undefined,
+    relationship_display_name: rd?.display_name as string | undefined,
+  } as ViewColumn;
+}
+
+// field_type is static reference data (outside publish scope); cache it live.
+let fieldTypeMapCache: { map: Map<string, { name: string }>; ts: number } | null = null;
+async function getFieldTypeMap(): Promise<Map<string, { name: string }>> {
+  if (fieldTypeMapCache && Date.now() - fieldTypeMapCache.ts < 300_000) return fieldTypeMapCache.map;
+  const { data } = await supabase.from('field_type').select('field_type_id, name');
+  const map = new Map<string, { name: string }>();
+  for (const r of (data ?? []) as { field_type_id: string; name: string }[]) {
+    map.set(r.field_type_id, { name: r.name });
+  }
+  fieldTypeMapCache = { map, ts: Date.now() };
+  return map;
+}
+
+/** Reconstruct a fetchViewColumns join row from the published snapshot. */
+async function fetchViewColumnsFromSnapshot(
+  viewId: string,
+  cols: Record<string, unknown>[]
+): Promise<ViewColumn[]> {
+  const fields = new Map((getTable<Record<string, unknown>>('field_definition') ?? []).map((f) => [f.field_definition_id as string, f]));
+  const entities = new Map((getTable<Record<string, unknown>>('entity_definition') ?? []).map((e) => [e.entity_definition_id as string, e]));
+  const rels = new Map((getTable<Record<string, unknown>>('relationship_definition') ?? []).map((r) => [r.relationship_definition_id as string, r]));
+  const fieldTypes = await getFieldTypeMap();
+
+  const buildFieldDef = (fid: string | null): Record<string, unknown> | null => {
+    if (!fid) return null;
+    const f = fields.get(fid);
+    if (!f) return null;
+    return {
+      ...f,
+      field_type: f.field_type_id ? (fieldTypes.get(f.field_type_id as string) ?? null) : null,
+      lookup_entity: f.lookup_entity_id ? (entities.get(f.lookup_entity_id as string) ?? null) : null,
+    };
+  };
+
+  const rows = cols
+    .filter((c) => c.view_id === viewId)
+    .sort((a, b) => (a.display_order as number) - (b.display_order as number))
+    .map((c) => {
+      const rd = c.relationship_definition_id ? rels.get(c.relationship_definition_id as string) : null;
+      return {
+        ...c,
+        field_definition: buildFieldDef(c.field_definition_id as string | null),
+        relationship_definition: rd
+          ? {
+              relationship_definition_id: rd.relationship_definition_id,
+              display_name: rd.display_name,
+              target_entity_id: rd.target_entity_id,
+              target_entity: rd.target_entity_id ? (entities.get(rd.target_entity_id as string) ?? null) : null,
+              lookup_field: rd.source_lookup_field_id ? (fields.get(rd.source_lookup_field_id as string) ?? null) : null,
+            }
+          : null,
+      };
+    });
+  return rows.map(mapViewColumnRow);
+}
 
 export interface ViewShare {
   view_sharing_id: string;
@@ -23,6 +117,12 @@ export interface ViewColumnInput {
 }
 
 export async function fetchViewsForEntity(entityId: string): Promise<ViewDefinition[]> {
+  const snap = getTable<ViewDefinition & { deleted_at: string | null }>('view_definition');
+  if (snap !== null) {
+    return snap
+      .filter((v) => v.entity_definition_id === entityId && v.deleted_at == null)
+      .sort((a, b) => a.view_type.localeCompare(b.view_type) || a.name.localeCompare(b.name));
+  }
   const { data, error } = await supabase
     .from('view_definition')
     .select('*')
@@ -35,6 +135,12 @@ export async function fetchViewsForEntity(entityId: string): Promise<ViewDefinit
 }
 
 export async function fetchViewById(viewId: string): Promise<ViewDefinition> {
+  const snap = getTable<ViewDefinition>('view_definition');
+  if (snap !== null) {
+    const v = snap.find((x) => x.view_id === viewId);
+    if (!v) throw new Error('View not found in published customizations');
+    return v;
+  }
   const { data, error } = await supabase
     .from('view_definition')
     .select('*')
@@ -45,6 +151,10 @@ export async function fetchViewById(viewId: string): Promise<ViewDefinition> {
 }
 
 export async function fetchViewColumns(viewId: string): Promise<ViewColumn[]> {
+  const snapCols = getTable<Record<string, unknown>>('view_column');
+  if (snapCols !== null) {
+    return fetchViewColumnsFromSnapshot(viewId, snapCols);
+  }
   const { data, error } = await supabase
     .from('view_column')
     .select(`
@@ -73,41 +183,7 @@ export async function fetchViewColumns(viewId: string): Promise<ViewColumn[]> {
     .order('display_order');
   if (error) throw error;
 
-  return (data ?? []).map((row: Record<string, unknown>) => {
-    const fd = row.field_definition as Record<string, unknown> | null;
-    const ft = fd?.field_type as Record<string, unknown> | null;
-    const le = fd?.lookup_entity as Record<string, unknown> | null;
-    const rd = row.relationship_definition as Record<string, unknown> | null;
-    const re = rd?.target_entity as Record<string, unknown> | null;
-    const lf = rd?.lookup_field as Record<string, unknown> | null;
-    return {
-      view_column_id: row.view_column_id,
-      view_id: row.view_id,
-      field_definition_id: row.field_definition_id,
-      field_logical_name: fd?.logical_name as string | undefined,
-      field_display_name: fd?.display_name as string | undefined,
-      field_physical_column: fd?.physical_column_name as string | undefined,
-      field_type_name: ft?.name as string | undefined,
-      option_set_name: fd?.option_set_id as string | undefined,
-      inline_choices: ((fd?.config_json as Record<string, unknown> | null)?.choices as { value: string; label: string }[] | undefined) ?? undefined,
-      lookup_table: le?.physical_table_name as string | undefined,
-      // crm_user primary_field_name is 'full_name' but filter/display uses email
-      lookup_label_field: le?.physical_table_name === 'crm_user'
-        ? 'email'
-        : le?.primary_field_name as string | undefined,
-      display_order: row.display_order,
-      width: row.width as number | null,
-      is_sortable: row.is_sortable as boolean,
-      label_override: row.label_override as string | null,
-      is_hidden: row.is_hidden as boolean,
-      relationship_definition_id: row.relationship_definition_id as string | null,
-      related_entity_logical_name: re?.logical_name as string | undefined,
-      related_entity_display_name: re?.display_name as string | undefined,
-      related_table_name: re?.physical_table_name as string | undefined,
-      fk_physical_column: lf?.physical_column_name as string | undefined,
-      relationship_display_name: rd?.display_name as string | undefined,
-    } as ViewColumn;
-  });
+  return (data ?? []).map((row: Record<string, unknown>) => mapViewColumnRow(row));
 }
 
 export async function createView(payload: {
@@ -253,6 +329,12 @@ export async function fetchViewsForEntityLogical(entityLogicalName: string): Pro
 
 /** Fetch views accessible to the current user including shared ones */
 export async function fetchAccessibleViews(entityDefinitionId: string): Promise<ViewDefinition[]> {
+  const snap = getTable<ViewDefinition & { deleted_at: string | null }>('view_definition');
+  if (snap !== null) {
+    return snap
+      .filter((v) => v.entity_definition_id === entityDefinitionId && v.deleted_at == null && v.is_active === true)
+      .sort((a, b) => a.view_type.localeCompare(b.view_type) || a.name.localeCompare(b.name));
+  }
   const { data, error } = await supabase
     .from('view_definition')
     .select('*')

@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase';
+import { getTable } from './metadata/metadataStore';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -108,7 +109,16 @@ export async function resolveOptionSetLabel(
 ): Promise<string | null> {
   let map = optionSetCache.get(optionSetName);
   if (!map) {
-    if (optionSetTableExists === false) {
+    const snap = getTable<{ value: string; display_label: string; option_set_id: string; is_active: boolean; display_order: number }>('option_set_value');
+    if (snap !== null) {
+      map = {};
+      for (const r of snap
+        .filter((r) => r.option_set_id === optionSetName && r.is_active === true)
+        .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))) {
+        map[String(r.value)] = r.display_label;
+      }
+      optionSetCache.set(optionSetName, map);
+    } else if (optionSetTableExists === false) {
       map = {};
       optionSetCache.set(optionSetName, map);
     } else {
@@ -141,13 +151,20 @@ export async function resolveStateCodeLabel(
 ): Promise<string | null> {
   let map = stateCodeCache.get(entityDefId);
   if (!map) {
-    const { data } = await supabase
-      .from('statecode_definition')
-      .select('state_value, display_label')
-      .eq('entity_definition_id', entityDefId);
     map = {};
-    for (const r of (data ?? []) as { state_value: number; display_label: string }[]) {
-      map[r.state_value] = r.display_label;
+    const snap = getTable<{ state_value: number; display_label: string; entity_definition_id: string }>('statecode_definition');
+    if (snap !== null) {
+      for (const r of snap.filter((r) => r.entity_definition_id === entityDefId)) {
+        map[r.state_value] = r.display_label;
+      }
+    } else {
+      const { data } = await supabase
+        .from('statecode_definition')
+        .select('state_value, display_label')
+        .eq('entity_definition_id', entityDefId);
+      for (const r of (data ?? []) as { state_value: number; display_label: string }[]) {
+        map[r.state_value] = r.display_label;
+      }
     }
     stateCodeCache.set(entityDefId, map);
   }
@@ -162,14 +179,21 @@ export async function resolveStatusReasonLabel(
 ): Promise<string | null> {
   let map = statusReasonCache.get(entityDefId);
   if (!map) {
-    const { data } = await supabase
-      .from('status_reason_definition')
-      .select('reason_value, display_label')
-      .eq('entity_definition_id', entityDefId)
-      .eq('is_active', true);
     map = {};
-    for (const r of (data ?? []) as { reason_value: string; display_label: string }[]) {
-      map[String(r.reason_value)] = r.display_label;
+    const snap = getTable<{ reason_value: string; display_label: string; entity_definition_id: string; is_active: boolean }>('status_reason_definition');
+    if (snap !== null) {
+      for (const r of snap.filter((r) => r.entity_definition_id === entityDefId && r.is_active === true)) {
+        map[String(r.reason_value)] = r.display_label;
+      }
+    } else {
+      const { data } = await supabase
+        .from('status_reason_definition')
+        .select('reason_value, display_label')
+        .eq('entity_definition_id', entityDefId)
+        .eq('is_active', true);
+      for (const r of (data ?? []) as { reason_value: string; display_label: string }[]) {
+        map[String(r.reason_value)] = r.display_label;
+      }
     }
     statusReasonCache.set(entityDefId, map);
   }

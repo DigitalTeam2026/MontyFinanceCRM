@@ -7,6 +7,7 @@ import type { FormDefinition, FormType } from '../../types/form';
 import { fetchEntities } from '../../services/entityService';
 import { fetchFormsForEntity, createForm, softDeleteForm, cloneForm } from '../../services/formService';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { usePendingComponentIds } from '../publish/usePendingComponentIds';
 
 const FORM_TYPE_META: Record<FormType, { label: string; icon: React.ReactNode; color: string; desc: string }> = {
   main: {
@@ -40,6 +41,7 @@ export default function FormListPage({ onOpen, preselectedEntityId }: FormListPa
   const [entities, setEntities] = useState<EntityDefinition[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState(preselectedEntityId ?? '');
   const [forms, setForms] = useState<FormDefinition[]>([]);
+  const pendingFormIds = usePendingComponentIds('forms');
   const [loading, setLoading] = useState(true);
   const [formsLoading, setFormsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -305,6 +307,11 @@ export default function FormListPage({ onOpen, preselectedEntityId }: FormListPa
                       )}
                       {form.is_default && (
                         <span className="text-[10px] text-blue-500 font-medium">Default</span>
+                      )}
+                      {pendingFormIds.has(form.form_id) && (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium bg-amber-50 border-amber-200 text-amber-700" title="This form has unpublished changes">
+                          Unpublished
+                        </span>
                       )}
                     </div>
                   </div>

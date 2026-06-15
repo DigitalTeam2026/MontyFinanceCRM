@@ -1,5 +1,6 @@
 import FilterSelect from './FilterSelect';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import AnchoredPopover from './overlay/AnchoredPopover';
+import { useState, useEffect, useCallback } from 'react';
 import { Search, X, Check, Loader2, ArrowUpAZ, ArrowDownZA, EyeOff } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { ColumnState } from './ColumnCustomizer';
@@ -121,13 +122,11 @@ export default function ColumnFilterDropdown({
   onClose,
   entityDefinitionId,
   entityTable,
-  isRedesign: _isRedesign = false,
   sortKey,
   sortDir,
   onSort,
   onHide,
 }: ColumnFilterDropdownProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
   const colType = resolveColType(column);
 
   /* ── Text state ── */
@@ -186,27 +185,6 @@ export default function ColumnFilterDropdown({
     }
     return null;
   });
-
-  /* ── Dropdown position ── */
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 300 });
-  useEffect(() => {
-    if (!anchorEl) return;
-    const rect = anchorEl.getBoundingClientRect();
-    const w = 300;
-    let left = rect.left + window.scrollX;
-    if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;
-    setPos({ top: rect.bottom + window.scrollY + 4, left, width: w });
-  }, [anchorEl]);
-
-  /* ── Outside click close ── */
-  useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node) &&
-          anchorEl && !anchorEl.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [anchorEl, onClose]);
 
   /* ── Load choice options — column-aware ── */
   useEffect(() => {
@@ -419,11 +397,14 @@ export default function ColumnFilterDropdown({
   const colLabel = column.labelOverride ?? column.label;
 
   return (
-    <div
-      ref={panelRef}
-      className="fixed z-[9999] bg-white overflow-hidden"
+    <AnchoredPopover
+      anchorEl={anchorEl}
+      open
+      onClose={onClose}
+      width={300}
+      role="dialog"
+      className="bg-white overflow-y-auto flex flex-col"
       style={{
-        top: pos.top, left: pos.left, width: pos.width,
         border: '1px solid var(--border)',
         borderRadius: 14,
         boxShadow: '0 8px 32px rgba(17,24,39,.12), 0 2px 8px rgba(17,24,39,.06)',
@@ -683,7 +664,7 @@ export default function ColumnFilterDropdown({
           Apply
         </button>
       </div>
-    </div>
+    </AnchoredPopover>
   );
 }
 

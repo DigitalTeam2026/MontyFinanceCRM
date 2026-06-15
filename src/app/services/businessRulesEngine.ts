@@ -375,15 +375,30 @@ export function evaluateRules(
   return state;
 }
 
+/**
+ * Fields that govern Business Process Flow stage position. These must NEVER be
+ * written by business-rule actions (forced/default/clear values): a BPF stage may
+ * only change via explicit, user-initiated stage navigation (Next Stage / Previous /
+ * Finish / Qualify). Guarding them here guarantees manual-only stage advancement
+ * for every flow — current and future — regardless of how a rule is configured.
+ */
+export const BPF_STAGE_CONTROL_FIELDS = ['active_process_stage_id', 'bpf_is_finished'] as const;
+
 export function applyRuleStateToValues(
   ruleState: FormRuleState,
   currentValues: RecordData,
+  protectedFields?: Iterable<string>,
 ): RecordData | null {
   let changed = false;
   const next = { ...currentValues };
 
+  const guarded = new Set<string>(BPF_STAGE_CONTROL_FIELDS);
+  if (protectedFields) for (const f of protectedFields) { if (f) guarded.add(f); }
+
   for (const [field, fs] of Object.entries(ruleState.fields)) {
     if (field.startsWith('__msg_')) continue;
+    // Never let a business rule advance/move the BPF stage — manual navigation only.
+    if (guarded.has(field)) continue;
 
     if (fs.clearValue) {
       if (next[field] !== null && next[field] !== undefined) {

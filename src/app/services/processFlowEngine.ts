@@ -4,6 +4,7 @@ import { isConditionGroup } from '../../types/processFlow';
 import type { RecordData } from './recordService';
 import type { DesignerLayout } from '../../types/form';
 import type { FormRuleState, FieldRuleState } from './businessRulesEngine';
+import { getTable } from './metadata/metadataStore';
 
 export interface LoadedProcessFlow {
   flow: ProcessFlow;
@@ -46,23 +47,40 @@ async function loadFlowById(flowId: string): Promise<LoadedProcessFlow | null> {
   const cached = flowCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.data;
 
-  const { data: flow } = await supabase
-    .from('process_flow')
-    .select('*')
-    .eq('process_flow_id', flowId)
-    .eq('is_active', true)
-    .is('deleted_at', null)
-    .maybeSingle();
+  let flow: ProcessFlow | null;
+  let stages: ProcessStage[];
+  let transitions: ProcessFlowTransition[];
 
-  if (!flow) return null;
+  const snapFlows = getTable<ProcessFlow & { is_active: boolean; deleted_at: string | null }>('process_flow');
+  if (snapFlows !== null) {
+    // Sales reads the published snapshot; Admin Studio falls through to live.
+    flow = snapFlows.find((f) => f.process_flow_id === flowId && f.is_active === true && f.deleted_at == null) ?? null;
+    if (!flow) return null;
+    stages = (getTable<ProcessStage>('process_stage') ?? [])
+      .filter((s) => s.process_flow_id === flowId)
+      .sort((a, b) => ((a as { display_order?: number }).display_order ?? 0) - ((b as { display_order?: number }).display_order ?? 0));
+    transitions = (getTable<ProcessFlowTransition>('process_flow_transition') ?? [])
+      .filter((t) => t.process_flow_id === flowId);
+  } else {
+    const { data: flowRow } = await supabase
+      .from('process_flow')
+      .select('*')
+      .eq('process_flow_id', flowId)
+      .eq('is_active', true)
+      .is('deleted_at', null)
+      .maybeSingle();
 
-  const [{ data: stagesRaw }, { data: transitionsRaw }] = await Promise.all([
-    supabase.from('process_stage').select('*').eq('process_flow_id', flowId).order('display_order'),
-    supabase.from('process_flow_transition').select('*').eq('process_flow_id', flowId),
-  ]);
+    if (!flowRow) return null;
+    flow = flowRow as ProcessFlow;
 
-  const stages = (stagesRaw ?? []) as ProcessStage[];
-  const transitions = (transitionsRaw ?? []) as ProcessFlowTransition[];
+    const [{ data: stagesRaw }, { data: transitionsRaw }] = await Promise.all([
+      supabase.from('process_stage').select('*').eq('process_flow_id', flowId).order('display_order'),
+      supabase.from('process_flow_transition').select('*').eq('process_flow_id', flowId),
+    ]);
+    stages = (stagesRaw ?? []) as ProcessStage[];
+    transitions = (transitionsRaw ?? []) as ProcessFlowTransition[];
+  }
+
   const activeStages = stages.filter((s) => s.stage_type === 'active');
   const terminalStages = stages.filter((s) => s.stage_type !== 'active');
 

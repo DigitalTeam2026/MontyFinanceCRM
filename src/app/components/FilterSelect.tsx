@@ -5,6 +5,7 @@ import {
 import type { ReactNode, ChangeEventHandler, SelectHTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Search, X, Check } from 'lucide-react';
+import { OVERLAY_Z } from './overlay/overlayTokens';
 
 /**
  * Drop-in, API-compatible replacement for the native <select> element that adds
@@ -213,15 +214,17 @@ export default function FilterSelect({
       {open && rect && createPortal(
         <div
           ref={menuRef}
+          data-overlay-portal=""
           style={{
             position: 'fixed',
             left: rect.left,
             width: rect.width,
+            zIndex: OVERLAY_Z.popover,
             ...(rect.openUp
               ? { bottom: window.innerHeight - rect.top + 4 }
               : { top: rect.top + 4 }),
           }}
-          className="z-[1000] min-w-[180px] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+          className="min-w-[180px] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
         >
           {showSearch && (
             <div className="p-2 border-b border-slate-100">

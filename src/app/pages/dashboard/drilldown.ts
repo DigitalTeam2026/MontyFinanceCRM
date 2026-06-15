@@ -39,6 +39,21 @@ const FALLBACK_COLUMNS: Record<string, ColumnState[]> = {
     { key: 'source',       label: 'Source',     visible: true, type: 'text' },
     { key: 'created_at',   label: 'Created',    visible: true, type: 'date' },
   ],
+  contacts: [
+    { key: 'first_name',  label: 'First Name', visible: true, type: 'text' },
+    { key: 'last_name',   label: 'Last Name',  visible: true, type: 'text' },
+    { key: 'email',       label: 'Email',      visible: true, type: 'text' },
+    { key: 'job_title',   label: 'Job Title',  visible: true, type: 'text' },
+    { key: 'status_code', label: 'Status',     visible: true, type: 'badge' },
+    { key: 'created_at',  label: 'Created',    visible: true, type: 'date' },
+  ],
+  product: [
+    { key: 'name',         label: 'Name',    visible: true, type: 'text' },
+    { key: 'code',         label: 'Code',    visible: true, type: 'text' },
+    { key: 'product_type', label: 'Type',    visible: true, type: 'text' },
+    { key: 'is_active',    label: 'Active',  visible: true, type: 'boolean' },
+    { key: 'created_at',   label: 'Created', visible: true, type: 'date' },
+  ],
 };
 
 /** A filter applied to the drill-down, surfaced in the panel header as a chip. */
@@ -188,7 +203,7 @@ export async function fetchDrilldownPage(
   req: DrilldownRequest,
   columns: ColumnState[],
   viewFilterChips: DrillChip[],
-  opts: { page: number; primaryActive: boolean },
+  opts: { page: number; primaryActive: boolean; search?: string },
 ): Promise<DrilldownPage> {
   const filters = buildFilters(req, opts.primaryActive, viewFilterChips);
   const { relatedColumns, columnKeyMap } = specsFor(columns);
@@ -196,6 +211,9 @@ export async function fetchDrilldownPage(
   const result = await fetchEntityList(req.entity, {
     page: opts.page,
     pageSize: PAGE_SIZE,
+    // Server-side text search (ilike across the entity's search fields). Empty/whitespace
+    // is normalized to undefined so a blank box doesn't add a no-op filter.
+    search: opts.search?.trim() || undefined,
     sortKey: req.dateField,
     sortDir: 'desc',
     filters,

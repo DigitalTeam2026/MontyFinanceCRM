@@ -13,6 +13,7 @@ import {
   writeMonetaryFieldAudit,
   fetchCurrencies,
 } from './currencyService';
+import { getTable } from './metadata/metadataStore';
 
 export type RecordData = Record<string, unknown>;
 
@@ -153,6 +154,20 @@ const fieldMappingCache: Partial<Record<AppEntity, FieldMapping>> = {};
 export function clearFieldMappingCache(entity?: AppEntity) {
   if (entity) delete fieldMappingCache[entity];
   else for (const k of Object.keys(fieldMappingCache)) delete fieldMappingCache[k as AppEntity];
+}
+
+/**
+ * Drop ALL metadata-derived caches in this service. Called after a new
+ * customization version is published so the next reads rebuild from the
+ * fresh snapshot. (See src/app/services/metadata/cacheBus.ts.)
+ */
+export function resetMetadataCaches(): void {
+  clearFieldMappingCache();
+  dynamicEntityMetaCache.clear();
+  tableColumnsCache.clear();
+  entityDefIdCache.clear();
+  defaultFormCache.clear();
+  entityRulesCache.clear();
 }
 
 async function getFieldMapping(entity: AppEntity): Promise<FieldMapping> {
@@ -538,6 +553,14 @@ export async function getEntityDefinitionId(logicalName: string): Promise<string
   const cached = entityDefIdCache.get(logicalName);
   if (cached && Date.now() - cached.ts < ENTITY_DEF_CACHE_TTL) return cached.id;
 
+  const snap = getTable<{ entity_definition_id: string; logical_name: string }>('entity_definition');
+  if (snap !== null) {
+    const ent = snap.find((e) => e.logical_name === logicalName);
+    if (!ent) return null;
+    entityDefIdCache.set(logicalName, { id: ent.entity_definition_id, ts: Date.now() });
+    return ent.entity_definition_id;
+  }
+
   const { data } = await supabase
     .from('entity_definition')
     .select('entity_definition_id')
@@ -561,6 +584,17 @@ export async function fetchDefaultForm(entity: AppEntity): Promise<FormDefinitio
   const entityDefId = await getEntityDefinitionId(logicalName);
   if (!entityDefId) return null;
 
+  const snap = getTable<FormDefinition & { deleted_at: string | null }>('form_definition');
+  if (snap !== null) {
+    const fd = snap.find((f) =>
+      f.entity_definition_id === entityDefId &&
+      f.form_type === 'main' &&
+      f.is_default === true &&
+      f.deleted_at == null) ?? null;
+    defaultFormCache.set(cacheKey, { data: fd, ts: Date.now() });
+    return fd;
+  }
+
   const { data, error } = await supabase
     .from('form_definition')
     .select('form_id, entity_definition_id, name, form_type, is_default, layout_json, is_active, is_system, created_at, modified_at, deleted_at')
@@ -578,6 +612,10 @@ export async function fetchDefaultForm(entity: AppEntity): Promise<FormDefinitio
 }
 
 export async function fetchFormById(formId: string): Promise<FormDefinition | null> {
+  const snap = getTable<FormDefinition & { deleted_at: string | null }>('form_definition');
+  if (snap !== null) {
+    return snap.find((f) => f.form_id === formId && f.deleted_at == null) ?? null;
+  }
   const { data, error } = await supabase
     .from('form_definition')
     .select('*')
@@ -598,6 +636,15 @@ export async function fetchEntityRules(entity: AppEntity): Promise<BusinessRule[
 
   const entityDefId = await getEntityDefinitionId(logicalName);
   if (!entityDefId) return [];
+
+  const snap = getTable<BusinessRule & { deleted_at: string | null; run_order: number }>('business_rule');
+  if (snap !== null) {
+    const rules = snap
+      .filter((r) => r.entity_definition_id === entityDefId && r.is_active === true && r.deleted_at == null)
+      .sort((a, b) => (a.run_order ?? 0) - (b.run_order ?? 0));
+    entityRulesCache.set(logicalName, { data: rules, ts: Date.now() });
+    return rules;
+  }
 
   const { data, error } = await supabase
     .from('business_rule')

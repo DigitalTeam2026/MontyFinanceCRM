@@ -1291,13 +1291,14 @@ export default function RecordFormPage({
         const freshRuleState = mergeStageVisibilityIntoRuleState(
           entity, prev, evaluateRules(currentRules, prev, currentActiveFormId, buildCtx(prev), currentLookupLabels), currentProcessFlow,
         );
-        const patch1 = applyRuleStateToValues(freshRuleState, prev);
+        const protectedStageFields = currentProcessFlow ? [currentProcessFlow.flow.stage_field] : undefined;
+        const patch1 = applyRuleStateToValues(freshRuleState, prev, protectedStageFields);
         if (!patch1) return prev;
 
         const cascadeState = mergeStageVisibilityIntoRuleState(
           entity, patch1, evaluateRules(currentRules, patch1, currentActiveFormId, buildCtx(patch1), currentLookupLabels), currentProcessFlow,
         );
-        const patch2 = applyRuleStateToValues(cascadeState, patch1);
+        const patch2 = applyRuleStateToValues(cascadeState, patch1, protectedStageFields);
         return patch2 ?? patch1;
       });
     }
@@ -1552,7 +1553,15 @@ export default function RecordFormPage({
     }
   }, [entity, recordId]);
 
-  useEffect(() => { const gen = ++loadGenRef.current; loadAll(gen); }, [loadAll]);
+  useEffect(() => {
+    // Do not run ANY data/metadata load (incl. fetchRecord) before authorization
+    // is confirmed. New record requires can_create; existing requires can_read.
+    if (!permissionsReady) return;
+    const authorized = isNewRecord ? canCreate : canRead;
+    if (!authorized) { setLoading(false); return; }
+    const gen = ++loadGenRef.current;
+    loadAll(gen);
+  }, [loadAll, permissionsReady, isNewRecord, canCreate, canRead]);
 
   // Report the active tab upward so the URL can track it across a refresh.
   useEffect(() => {
@@ -1746,13 +1755,14 @@ export default function RecordFormPage({
       const pass1State = mergeStageVisibilityIntoRuleState(
         entity, next, evaluateRules(rules, next, activeFormId, buildCtx(next), currentLookupLabels), processFlow,
       );
-      const patch1 = applyRuleStateToValues(pass1State, next);
+      const protectedStageFields = processFlow ? [processFlow.flow.stage_field] : undefined;
+      const patch1 = applyRuleStateToValues(pass1State, next, protectedStageFields);
       if (patch1) {
         next = patch1;
         const pass2State = mergeStageVisibilityIntoRuleState(
           entity, next, evaluateRules(rules, next, activeFormId, buildCtx(next), currentLookupLabels), processFlow,
         );
-        const patch2 = applyRuleStateToValues(pass2State, next);
+        const patch2 = applyRuleStateToValues(pass2State, next, protectedStageFields);
         if (patch2) next = patch2;
       }
       return next;
@@ -2618,7 +2628,9 @@ export default function RecordFormPage({
     );
   }
 
-  if (permissionsReady && !canRead && recordId) {
+  // Default-deny route guard. New record requires can_create; existing requires
+  // can_read. This blocks direct-URL access, not just hidden buttons.
+  if (permissionsReady && (isNewRecord ? !canCreate : !canRead)) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 gap-4 p-8">
         <div className="w-14 h-14 rounded-full bg-red-50 border border-red-200 flex items-center justify-center">
@@ -2626,7 +2638,11 @@ export default function RecordFormPage({
         </div>
         <div className="text-center">
           <h2 className="text-[16px] font-semibold text-slate-700 mb-1">Access Denied</h2>
-          <p className="text-[13px] text-slate-500 max-w-sm">You do not have permission to view this record. Contact your administrator to request access.</p>
+          <p className="text-[13px] text-slate-500 max-w-sm">
+            {isNewRecord
+              ? 'You do not have permission to create this record. Contact your administrator to request access.'
+              : 'You do not have permission to view this record. Contact your administrator to request access.'}
+          </p>
         </div>
         <button
           onClick={onBack}

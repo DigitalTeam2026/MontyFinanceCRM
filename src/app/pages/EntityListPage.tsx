@@ -350,8 +350,11 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
       setActiveParentFilter(parentFilter);
     }
     if (!viewsReady || !permissionsReady) return;
+    // Default-deny: do not query the entity at all without read privilege.
+    // The Access Denied screen is rendered separately; this blocks the data call.
+    if (!canRead) return;
     load();
-  }, [entity, debouncedSearch, sortKey, sortDir, page, pageSize, filters, relatedColKeys, load, viewsReady, permissionsReady]);
+  }, [entity, debouncedSearch, sortKey, sortDir, page, pageSize, filters, relatedColKeys, load, viewsReady, permissionsReady, canRead]);
 
   /** Apply a saved view's columns, filters, and sort to the current grid state */
   const applyView = useCallback(async (view: ViewDefinition) => {

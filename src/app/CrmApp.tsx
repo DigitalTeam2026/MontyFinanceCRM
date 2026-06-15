@@ -13,6 +13,7 @@ import LoginPage from '../LoginPage';
 import { PermissionProvider } from './context/PermissionContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { ToastProvider } from './context/ToastContext';
+import { PublishedMetadataProvider } from './context/PublishedMetadataProvider';
 import { trackRecentItem } from './services/recentPinsService';
 import type { QuickCreateType } from './components/QuickCreateButton';
 import QuickCreateModal from './components/form/QuickCreateModal';
@@ -88,6 +89,15 @@ export default function CrmApp({
   const [quickCreateType, setQuickCreateType] = useState<QuickCreateType | null>(null);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [creationRules, setCreationRules] = useState<DigitalRule[]>([]);
+  // Bumped when new customizations are published, to remount the content area so
+  // open lists/records/dashboards reload metadata from the fresh snapshot.
+  const [metadataEpoch, setMetadataEpoch] = useState(0);
+
+  useEffect(() => {
+    const onPublished = () => setMetadataEpoch((e) => e + 1);
+    window.addEventListener('customizations-published', onPublished);
+    return () => window.removeEventListener('customizations-published', onPublished);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -386,6 +396,7 @@ export default function CrmApp({
   };
 
   return (
+    <PublishedMetadataProvider>
     <PermissionProvider userId={session.user.id}>
     <ToastProvider>
     <NotificationProvider userId={session.user.id}>
@@ -417,7 +428,7 @@ export default function CrmApp({
           isSystemAdmin={isSystemAdmin}
           viewType={view.type}
         />
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div key={metadataEpoch} className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {view.type === 'dashboard' && (
             <PersonalDashboard
               userId={session.user.id}
@@ -497,5 +508,6 @@ export default function CrmApp({
     </NotificationProvider>
     </ToastProvider>
     </PermissionProvider>
+    </PublishedMetadataProvider>
   );
 }

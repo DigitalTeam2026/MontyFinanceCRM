@@ -12,6 +12,7 @@ import {
   renameView,
 } from '../../services/viewService';
 import { useToast, toFriendlyError } from '../context/ToastContext';
+import AnchoredPopover from './overlay/AnchoredPopover';
 
 interface ViewSelectorProps {
   entityDefinitionId: string | null;
@@ -49,6 +50,7 @@ export default function ViewSelector({
   const [deleteTarget, setDeleteTarget] = useState<ViewDefinition | null>(null);
   const [deleting, setDeleting] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const actionRef = useRef<HTMLDivElement>(null);
 
   const activeView = views.find((v) => v.view_id === activeViewId) ?? null;
@@ -89,16 +91,7 @@ export default function ViewSelector({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entityDefinitionId]);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropRef.current && !dropRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setActionMenuId(null);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  const closePanel = () => { setOpen(false); setActionMenuId(null); };
 
   const handleSelect = (view: ViewDefinition) => {
     onViewChange(view);
@@ -300,7 +293,10 @@ export default function ViewSelector({
     <div ref={dropRef} className="relative">
       {/* Trigger */}
       <button
+        ref={triggerRef}
         onClick={() => { const w = !open; setOpen(w); if (w) load(); }}
+        aria-haspopup="menu"
+        aria-expanded={open}
         className="flex items-center gap-1.5 max-w-[260px] transition"
       >
         <span className="text-[20px] font-semibold text-[var(--ink-900)] truncate">
@@ -313,11 +309,16 @@ export default function ViewSelector({
       </button>
 
       {/* Dropdown panel */}
-      {open && (
-        <div
-          className="absolute left-0 top-full mt-1.5 z-50 bg-white overflow-hidden"
-          style={{ width: 280, borderRadius: 14, border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(17,24,39,.12), 0 2px 8px rgba(17,24,39,.06)' }}
-        >
+      <AnchoredPopover
+        anchorEl={triggerRef.current}
+        open={open}
+        onClose={closePanel}
+        width={280}
+        role="menu"
+        className="bg-white overflow-hidden flex flex-col"
+        style={{ borderRadius: 14, border: '1px solid var(--border)', boxShadow: '0 8px 32px rgba(17,24,39,.12), 0 2px 8px rgba(17,24,39,.06)' }}
+      >
+        <>
           {/* Header */}
           <div className="flex items-center gap-2.5 px-4 py-3" style={{ borderBottom: '1px solid var(--surface-2)' }}>
             <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
@@ -393,8 +394,8 @@ export default function ViewSelector({
               Create view
             </button>
           </div>
-        </div>
-      )}
+        </>
+      </AnchoredPopover>
 
       {/* Delete confirmation dialog */}
       {deleteTarget && (

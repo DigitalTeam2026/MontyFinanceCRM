@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase';
 import { loadColumnSecurityForUser } from '../../services/columnSecurityService';
+import { ENTITY_LOGICAL_NAME } from '../types';
 import type { AccessLevel } from '../../types/security';
 
 export type { AccessLevel };
@@ -153,12 +154,13 @@ export async function loadUserPermissions(userId: string): Promise<UserPermissio
     const existing = entityPrivileges[row.entity_name];
     if (!existing) {
       entityPrivileges[row.entity_name] = {
-        can_create: row.can_create,
-        can_read: row.can_read,
-        can_write: row.can_write,
-        can_delete: row.can_delete,
-        can_assign: row.can_assign,
-        can_share: row.can_share,
+        // Coerce null/undefined → false so a missing flag never grants access.
+        can_create: row.can_create === true,
+        can_read: row.can_read === true,
+        can_write: row.can_write === true,
+        can_delete: row.can_delete === true,
+        can_assign: row.can_assign === true,
+        can_share: row.can_share === true,
         create_access_level: (row.create_access_level as AccessLevel) ?? 'user',
         read_access_level: (row.read_access_level as AccessLevel) ?? 'user',
         write_access_level: (row.write_access_level as AccessLevel) ?? 'user',
@@ -167,14 +169,14 @@ export async function loadUserPermissions(userId: string): Promise<UserPermissio
         share_access_level: (row.share_access_level as AccessLevel) ?? 'user',
       };
     } else {
-      // Multiple roles: OR the booleans, take highest access level
+      // Multiple roles: OR the booleans (only explicit true grants), take highest access level
       entityPrivileges[row.entity_name] = {
-        can_create: existing.can_create || row.can_create,
-        can_read: existing.can_read || row.can_read,
-        can_write: existing.can_write || row.can_write,
-        can_delete: existing.can_delete || row.can_delete,
-        can_assign: existing.can_assign || row.can_assign,
-        can_share: existing.can_share || row.can_share,
+        can_create: existing.can_create || row.can_create === true,
+        can_read: existing.can_read || row.can_read === true,
+        can_write: existing.can_write || row.can_write === true,
+        can_delete: existing.can_delete || row.can_delete === true,
+        can_assign: existing.can_assign || row.can_assign === true,
+        can_share: existing.can_share || row.can_share === true,
         create_access_level: mergeLevel(existing.create_access_level, row.create_access_level as AccessLevel),
         read_access_level: mergeLevel(existing.read_access_level, row.read_access_level as AccessLevel),
         write_access_level: mergeLevel(existing.write_access_level, row.write_access_level as AccessLevel),
@@ -242,12 +244,30 @@ async function loadSecuredFieldIndex(): Promise<Record<string, Set<string>>> {
   return index;
 }
 
+/**
+ * Maps a physical table name (e.g. "crm_prospect") to its logical entity name
+ * (e.g. "prospect") so privilege lookups always key on the logical name stored
+ * in role_privilege. Logical names and unknown names pass through unchanged.
+ */
+const PHYSICAL_TO_LOGICAL: Record<string, string> = {
+  crm_prospect: 'prospect',
+  crm_partners: 'partners',
+  crm_reseller: 'reseller',
+  crm_opportunity_partner: 'opportunity_partner',
+  crm_continent: 'continent',
+};
+
+export function toLogicalEntityName(entityName: string): string {
+  return ENTITY_LOGICAL_NAME[entityName] ?? PHYSICAL_TO_LOGICAL[entityName] ?? entityName;
+}
+
 export function getEntityPrivilege(perms: UserPermissions, entityName: string): EntityPrivilege {
   if (perms.isSystemAdmin) return DEFAULT_PRIVILEGE;
-  // If privilege rows were loaded and entity is not in them → deny (not granted)
-  // If no rows at all (permissions loading or user has no roles) → default open
-  const hasRows = Object.keys(perms.entityPrivileges).length > 0;
-  return perms.entityPrivileges[entityName] ?? (hasRows ? DENY_PRIVILEGE : DEFAULT_PRIVILEGE);
+  // Default-deny: no matching privilege row (no role, empty role, unknown
+  // entity, or simply not granted) ⇒ DENY. Missing privilege NEVER means access.
+  // Only is_system_admin (handled above) bypasses. Resolve physical→logical so a
+  // lookup keyed on a table name still finds the privilege.
+  return perms.entityPrivileges[toLogicalEntityName(entityName)] ?? DENY_PRIVILEGE;
 }
 
 export function getFieldRestriction(perms: UserPermissions, entityName: string, fieldName: string): FieldRestriction {

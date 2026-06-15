@@ -42,9 +42,11 @@ interface FieldGridProps {
   onDelete: (field: FieldDefinition) => void;
   onToggleSecured?: (field: FieldDefinition, secured: boolean) => void;
   togglingSecured?: string | null;
+  onToggleCustom?: (field: FieldDefinition) => void;
+  reclassifying?: string | null;
 }
 
-export default function FieldGrid({ fields, onEdit, onDelete, onToggleSecured, togglingSecured }: FieldGridProps) {
+export default function FieldGrid({ fields, onEdit, onDelete, onToggleSecured, togglingSecured, onToggleCustom, reclassifying }: FieldGridProps) {
   if (fields.length === 0) return null;
 
   return (
@@ -91,16 +93,29 @@ export default function FieldGrid({ fields, onEdit, onDelete, onToggleSecured, t
                   {field.field_type?.display_name ?? tn}
                 </span>
               </td>
-              <td className="px-3 py-2.5">
-                {isSystem ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200">
-                    <Shield size={8} /> System
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200">
-                    <Wrench size={8} /> Custom
-                  </span>
-                )}
+              <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                {(() => {
+                  const isReclassifying = reclassifying === field.field_definition_id;
+                  const badge = isSystem
+                    ? <><Shield size={8} /> System</>
+                    : <><Wrench size={8} /> Custom</>;
+                  const cls = isSystem
+                    ? 'bg-slate-100 text-slate-600 ring-slate-200'
+                    : 'bg-amber-50 text-amber-700 ring-amber-200';
+                  if (!onToggleCustom) {
+                    return <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-semibold ring-1 ring-inset ${cls}`}>{badge}</span>;
+                  }
+                  return (
+                    <button
+                      onClick={() => onToggleCustom(field)}
+                      disabled={isReclassifying}
+                      title={isSystem ? 'Convert to custom column' : 'Convert to system column'}
+                      className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-semibold ring-1 ring-inset transition-colors hover:brightness-95 ${cls} ${isReclassifying ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      {badge}
+                    </button>
+                  );
+                })()}
               </td>
               <td className="px-3 py-2.5">
                 {field.is_required

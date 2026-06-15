@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase';
 import { type AppEntity, ENTITY_DEFINITION_ID } from '../types';
 import { getTableColumns } from './recordService';
+import { getTable } from './metadata/metadataStore';
 import type { AccessLevel, UserAccessContext } from './permissionService';
 
 
@@ -486,12 +487,17 @@ const STATUS_LABEL_CACHE_TTL = 300_000;
 async function resolveStateCodeLabels(entityDefId: string): Promise<Record<string, string>> {
   const cached = stateCodeLabelCache.get(entityDefId);
   if (cached && Date.now() - cached.ts < STATUS_LABEL_CACHE_TTL) return cached.data;
-  const { data } = await supabase
-    .from('statecode_definition')
-    .select('state_value, display_label')
-    .eq('entity_definition_id', entityDefId);
   const map: Record<string, string> = {};
-  for (const r of data ?? []) map[String(r.state_value)] = r.display_label;
+  const snap = getTable<{ state_value: number; display_label: string; entity_definition_id: string }>('statecode_definition');
+  if (snap !== null) {
+    for (const r of snap.filter((r) => r.entity_definition_id === entityDefId)) map[String(r.state_value)] = r.display_label;
+  } else {
+    const { data } = await supabase
+      .from('statecode_definition')
+      .select('state_value, display_label')
+      .eq('entity_definition_id', entityDefId);
+    for (const r of data ?? []) map[String(r.state_value)] = r.display_label;
+  }
   stateCodeLabelCache.set(entityDefId, { data: map, ts: Date.now() });
   return map;
 }
@@ -499,15 +505,27 @@ async function resolveStateCodeLabels(entityDefId: string): Promise<Record<strin
 async function resolveStatusReasonLabels(entityDefId: string): Promise<Record<string, string>> {
   const cached = statusReasonLabelCache.get(entityDefId);
   if (cached && Date.now() - cached.ts < STATUS_LABEL_CACHE_TTL) return cached.data;
-  const { data } = await supabase
-    .from('status_reason_definition')
-    .select('reason_value, display_label')
-    .eq('entity_definition_id', entityDefId)
-    .eq('is_active', true);
   const map: Record<string, string> = {};
-  for (const r of data ?? []) map[String(r.reason_value)] = r.display_label;
+  const snap = getTable<{ reason_value: string; display_label: string; entity_definition_id: string; is_active: boolean }>('status_reason_definition');
+  if (snap !== null) {
+    for (const r of snap.filter((r) => r.entity_definition_id === entityDefId && r.is_active === true)) map[String(r.reason_value)] = r.display_label;
+  } else {
+    const { data } = await supabase
+      .from('status_reason_definition')
+      .select('reason_value, display_label')
+      .eq('entity_definition_id', entityDefId)
+      .eq('is_active', true);
+    for (const r of data ?? []) map[String(r.reason_value)] = r.display_label;
+  }
   statusReasonLabelCache.set(entityDefId, { data: map, ts: Date.now() });
   return map;
+}
+
+/** Drop list-grid metadata caches after a publish (see metadata/cacheBus.ts). */
+export function resetListMetadataCaches(): void {
+  stateCodeLabelCache.clear();
+  statusReasonLabelCache.clear();
+  dynamicEntityMetaCache.clear();
 }
 
 // A BPF stage key (e.g. "stage_1780914561053" / "condition_…") must never surface
@@ -637,6 +655,8 @@ const SEARCH_FIELDS: Record<string, string[]> = {
   leads:         ['first_name', 'last_name', 'company_name', 'email'],
   opportunities: ['topic'],
   tickets:       ['title'],
+  prospect:      ['first_name', 'last_name', 'company_name', 'email'],
+  prospects:     ['first_name', 'last_name', 'company_name', 'email'],
 };
 
 // Entities that have computed full_name from first_name + last_name

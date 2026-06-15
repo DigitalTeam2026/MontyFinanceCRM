@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { getTable } from '../app/services/metadata/metadataStore';
 
 export interface NavArea {
   nav_area_id: string;
@@ -49,6 +50,18 @@ export interface NavTree {
 }
 
 export async function fetchFullNavTree(): Promise<NavTree> {
+  // Sales reads the published snapshot when hydrated; Admin Studio (snapshot
+  // not hydrated) falls through to the live draft tables below.
+  const snapAreas = getTable<NavArea>('nav_area');
+  if (snapAreas !== null) {
+    const bySort = (a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order;
+    return {
+      areas: snapAreas.filter((a) => a.deleted_at == null).sort(bySort),
+      groups: (getTable<NavGroup>('nav_group') ?? []).slice().sort(bySort),
+      items: (getTable<NavItem>('nav_item') ?? []).slice().sort(bySort),
+    };
+  }
+
   const [areasRes, groupsRes, itemsRes] = await Promise.all([
     supabase.from('nav_area').select('*').is('deleted_at', null).order('sort_order'),
     supabase.from('nav_group').select('*').order('sort_order'),
