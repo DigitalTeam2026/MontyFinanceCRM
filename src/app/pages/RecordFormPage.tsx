@@ -1344,6 +1344,11 @@ export default function RecordFormPage({
       setCrmUsers(usersData);
       setCurrencies(currencyList);
       setBaseCurrency(base);
+      // Make the entity definition id available immediately — including for brand-new
+      // records — so the Status / Status Reason controls can load their option sets and
+      // be selectable on the New form (previously this was only set when editing an
+      // existing record, so status reason couldn't be chosen until after the first save).
+      if (resolvedEntityDefId) setEntityDefId(resolvedEntityDefId);
 
       // Build (targetEntityLogical_fkColumn) → relationship_definition_id map for subgrid resolution
       const relDefMap = new Map<string, string>();
@@ -1430,7 +1435,27 @@ export default function RecordFormPage({
         const pf = await resolveProcessFlowForRecord(entityLogical, null);
         setProcessFlow(pf);
         await applyFlowForm(pf);
-        const defaults = ENTITY_NEW_DEFAULTS[entity] ?? {};
+        // Resolve the default Status + Status Reason for a brand-new record so both are
+        // populated and selectable immediately on the New form — no save or "activate"
+        // step required. State value 1 is the first active state for every entity
+        // ("Open" for leads / opportunities / prospects, "Active" for the generic
+        // entities). Entities without a statecode definition (e.g. reference data) resolve
+        // to null and simply get no status default. This supersedes the legacy hardcoded
+        // per-entity map so the behavior is consistent across ALL entities.
+        let statusDefaults: Record<string, unknown> = {};
+        if (resolvedEntityDefId) {
+          try {
+            const def = await getDefaultStatusForState(resolvedEntityDefId, 1);
+            if (def) {
+              statusDefaults = {
+                state_code: String(def.stateValue),
+                status_reason: String(def.reasonValue),
+              };
+            }
+          } catch { /* non-fatal: fall back to no status default */ }
+        }
+        if (gen !== loadGenRef.current) return;
+        const defaults = { ...(ENTITY_NEW_DEFAULTS[entity] ?? {}), ...statusDefaults };
         setValues((prev) => {
           const base = { ...defaults };
           if (pf && pf.activeStages.length > 0) {
