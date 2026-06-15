@@ -26,3 +26,4 @@ dist-ssr
 # QA Agent generated reports
 qa-report.md
 qa-db.md
+.env*
