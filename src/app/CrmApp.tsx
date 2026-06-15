@@ -6,7 +6,7 @@ import AppHeader from './components/AppHeader';
 import { useCurrentUserName } from './hooks/useCurrentUserName';
 import EntityListPage from './pages/EntityListPage';
 import RecordFormPage from './pages/RecordFormPage';
-import PersonalDashboard from './pages/PersonalDashboard';
+import SalesDashboard from './pages/SalesDashboard';
 import type { AppEntity, AppModule } from './types';
 import { ENTITY_LOGICAL_NAME } from './types';
 import LoginPage from '../LoginPage';
@@ -430,7 +430,7 @@ export default function CrmApp({
         />
         <div key={metadataEpoch} className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {view.type === 'dashboard' && (
-            <PersonalDashboard
+            <SalesDashboard
               userId={session.user.id}
               onNavigateFiltered={(entity, module, filters, contextLabel) =>
                 handleDashboardNavigateFiltered(entity, module, filters as ActiveFilter[], contextLabel)

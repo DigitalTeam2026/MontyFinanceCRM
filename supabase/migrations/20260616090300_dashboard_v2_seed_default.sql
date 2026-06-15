@@ -42,7 +42,7 @@ BEGIN
   SELECT v_dash, v_page, w.wtype, w.title, w.dstype, w.entity,
          w.qdef::jsonb, w.vcfg::jsonb, w.width, w.height, w.ord
   FROM (VALUES
-    -- KPI bundle (preset)
+    -- KPI bundle (preset) — top row, no section
     ('kpi','Total Prospects',              'preset', NULL, '{"preset":"kpi.prospects"}',  '{"icon":"user-plus"}', 3, 2, 1),
     ('kpi','Prospect → Lead Conversion',   'preset', NULL, '{"preset":"kpi.conversion"}', '{"icon":"repeat"}',    3, 2, 2),
     ('kpi','Total Leads',                  'preset', NULL, '{"preset":"kpi.leads"}',      '{"icon":"users"}',     3, 2, 3),
@@ -52,27 +52,27 @@ BEGIN
     ('kpi','Pipeline Value',               'preset', NULL, '{"preset":"kpi.pipeline"}',   '{"icon":"dollar"}',    3, 2, 7),
     ('kpi','Total Contacts',               'preset', NULL, '{"preset":"kpi.contacts"}',   '{"icon":"contact"}',   3, 2, 8),
     ('kpi','Products / Services',          'preset', NULL, '{"preset":"kpi.products"}',   '{"icon":"package"}',   3, 2, 9),
-    -- Funnel (preset)
-    ('chart','Conversion Funnel',          'preset', NULL, '{"preset":"funnel"}',         '{}', 8, 4, 10),
-    -- Prospects (generic entity charts)
-    ('chart','Prospects by Status',        'entity','prospect', '{"entity":"prospect","dimension":"state_code"}', '{"chartType":"donut","title":"Prospects by Status"}', 4, 4, 11),
-    ('chart','Prospects by Source',        'entity','prospect', '{"entity":"prospect","dimension":"source"}',     '{"chartType":"bars","title":"Prospects by Source"}',  4, 4, 12),
+    -- Funnel
+    ('chart','Conversion Funnel',          'preset', NULL, '{"preset":"funnel","section":"Conversion Funnel"}', '{}', 8, 4, 10),
+    -- Prospects
+    ('chart','Prospects by Status',        'entity','prospect', '{"entity":"prospect","dimension":"state_code","section":"Prospects"}', '{"chartType":"donut","title":"Prospects by Status"}', 4, 4, 11),
+    ('chart','Prospects by Source',        'entity','prospect', '{"entity":"prospect","dimension":"source","section":"Prospects"}',     '{"chartType":"bars","title":"Prospects by Source"}',  4, 4, 12),
     -- Leads
-    ('chart','Leads by Status',            'entity','leads', '{"entity":"leads","dimension":"state_code"}',  '{"chartType":"donut","title":"Leads by Status"}', 4, 4, 13),
-    ('chart','Leads by Source',            'entity','leads', '{"entity":"leads","dimension":"lead_source"}', '{"chartType":"bars","title":"Leads by Source"}',  4, 4, 14),
-    ('chart','Leads by Product',           'entity','leads', '{"entity":"leads","dimension":"product_id"}',  '{"chartType":"bars","title":"Leads by Product"}', 4, 4, 15),
-    -- Opportunities (preset)
-    ('chart','Won / Lost / Open',          'preset', NULL, '{"preset":"oppBreakdown"}', '{}', 8, 4, 16),
-    ('chart','Won Trend (6 months)',       'preset', NULL, '{"preset":"oppTrend"}',     '{}', 4, 4, 17),
+    ('chart','Leads by Status',            'entity','leads', '{"entity":"leads","dimension":"state_code","section":"Leads"}',  '{"chartType":"donut","title":"Leads by Status"}', 4, 4, 13),
+    ('chart','Leads by Source',            'entity','leads', '{"entity":"leads","dimension":"lead_source","section":"Leads"}', '{"chartType":"bars","title":"Leads by Source"}',  4, 4, 14),
+    ('chart','Leads by Product',           'entity','leads', '{"entity":"leads","dimension":"product_id","section":"Leads"}',  '{"chartType":"bars","title":"Leads by Product"}', 4, 4, 15),
+    -- Opportunities
+    ('chart','Won / Lost / Open',          'preset', NULL, '{"preset":"oppBreakdown","section":"Opportunities"}', '{}', 8, 4, 16),
+    ('chart','Won Trend (6 months)',       'preset', NULL, '{"preset":"oppTrend","section":"Opportunities"}',     '{}', 4, 4, 17),
     -- Accounts
-    ('chart','Accounts by Industry',       'entity','accounts', '{"entity":"accounts","dimension":"industry"}',   '{"chartType":"bars","title":"Accounts by Industry"}', 4, 4, 18),
-    ('chart','Accounts by Country',        'entity','accounts', '{"entity":"accounts","dimension":"country_id"}', '{"chartType":"bars","title":"Accounts by Country"}',  4, 4, 19),
-    ('chart','Accounts Health & Growth',   'preset', NULL, '{"preset":"accountsHealth"}', '{}', 4, 4, 20),
+    ('chart','Accounts by Industry',       'entity','accounts', '{"entity":"accounts","dimension":"industry","section":"Accounts"}',   '{"chartType":"bars","title":"Accounts by Industry"}', 4, 4, 18),
+    ('chart','Accounts by Country',        'entity','accounts', '{"entity":"accounts","dimension":"country_id","section":"Accounts"}', '{"chartType":"bars","title":"Accounts by Country"}',  4, 4, 19),
+    ('chart','Accounts Health & Growth',   'preset', NULL, '{"preset":"accountsHealth","section":"Accounts"}', '{}', 4, 4, 20),
     -- Contacts
-    ('chart','Contacts by Status',         'entity','contacts', '{"entity":"contacts","dimension":"status_code"}', '{"chartType":"donut","title":"Contacts by Status"}', 4, 4, 21),
-    ('chart','Contacts by Country',        'entity','contacts', '{"entity":"contacts","dimension":"country_id"}',  '{"chartType":"bars","title":"Contacts by Country"}',  4, 4, 22),
+    ('chart','Contacts by Status',         'entity','contacts', '{"entity":"contacts","dimension":"status_code","section":"Contacts"}', '{"chartType":"donut","title":"Contacts by Status"}', 4, 4, 21),
+    ('chart','Contacts by Country',        'entity','contacts', '{"entity":"contacts","dimension":"country_id","section":"Contacts"}',  '{"chartType":"bars","title":"Contacts by Country"}',  4, 4, 22),
     -- Products
-    ('chart','Products by Type',           'entity','product', '{"entity":"product","dimension":"product_type"}', '{"chartType":"donut","title":"Products by Type"}', 4, 4, 23),
-    ('chart','Products by Family',         'entity','product', '{"entity":"product","dimension":"family_id"}',    '{"chartType":"bars","title":"Products by Family"}', 4, 4, 24)
+    ('chart','Products by Type',           'entity','product', '{"entity":"product","dimension":"product_type","section":"Products / Services"}', '{"chartType":"donut","title":"Products by Type"}', 4, 4, 23),
+    ('chart','Products by Family',         'entity','product', '{"entity":"product","dimension":"family_id","section":"Products / Services"}',    '{"chartType":"bars","title":"Products by Family"}', 4, 4, 24)
   ) AS w(wtype, title, dstype, entity, qdef, vcfg, width, height, ord);
 END $$;

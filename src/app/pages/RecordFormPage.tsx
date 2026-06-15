@@ -2172,6 +2172,14 @@ export default function RecordFormPage({
         suppressNextLoadingRef.current = true;
         onNavigate?.(entity, pk);
       }
+      // Create-only: row was created but is not readable back (no can_read).
+      // Confirm success and return to the list rather than opening a record the
+      // user cannot view.
+      if (isNew && !pk) {
+        setSaveStatus('saved');
+        setTimeout(() => onBack(), 700);
+        return;
+      }
       setValues((prev) => {
         const merged = { ...prev };
         for (const key of Object.keys(saved)) {

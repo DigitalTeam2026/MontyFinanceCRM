@@ -60,6 +60,46 @@ function lastViewKey(entityLogical: string, userId: string): string {
   return `dash_drill_view_${entityLogical}_${userId}`;
 }
 
+// Keys never worth showing as a drill-down column.
+const DERIVE_HIDDEN_KEYS = new Set([
+  'id', 'owner_id', 'owner_email', 'currency_id', 'currency_code', 'currency_symbol',
+  'custom_fields', 'is_deleted', 'deleted_at', 'created_by', 'modified_by', 'modified_at',
+  'version_no', 'business_unit_id', 'import_id',
+]);
+// Preferred leading columns when deriving from row data.
+const DERIVE_PREFERRED = [
+  'name', 'full_name', 'first_name', 'last_name', 'topic', 'company_name', 'title', 'subject',
+  'email', 'state_code', 'status_reason', 'status_code', 'source', 'lead_source', 'product_type',
+  'amount', 'estimated_value', 'actual_value', 'created_at',
+];
+
+function prettyLabel(key: string): string {
+  return key.replace(/_id$/, '').replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
+}
+function guessColType(key: string): string {
+  if (key.endsWith('_at') || key.endsWith('_date')) return 'date';
+  if (key === 'state_code' || key.startsWith('status') || key === 'state_code_label') return 'badge';
+  if (key.includes('value') || key.includes('amount') || key.includes('revenue') || key.includes('price')) return 'currency';
+  return 'text';
+}
+
+/**
+ * Last-resort columns derived from the fetched rows. Used when an entity has no
+ * default columns, no saved view, and no static fallback — so the drill-down
+ * still shows the records instead of an empty (invisible) table.
+ */
+function deriveColumnsFromRows(rows: ListRow[]): ColumnState[] {
+  if (rows.length === 0) return [];
+  const present = Object.keys(rows[0]).filter(
+    (k) => !DERIVE_HIDDEN_KEYS.has(k) && rows.some((r) => r[k] !== null && r[k] !== undefined && r[k] !== ''),
+  );
+  const ordered = [
+    ...DERIVE_PREFERRED.filter((k) => present.includes(k)),
+    ...present.filter((k) => !DERIVE_PREFERRED.includes(k)),
+  ];
+  return ordered.slice(0, 7).map((k) => ({ key: k, label: prettyLabel(k), visible: true, type: guessColType(k) }));
+}
+
 export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onOpenRecord }: DrilldownPanelProps) {
   const [views, setViews] = useState<DrilldownView[]>([]);
   const [viewId, setViewId] = useState<string | null>(null);
@@ -107,7 +147,9 @@ export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onO
         if (g !== gen.current) return;
         setViews(vs);
         setViewId(chosen);
-        setColumns(cols);
+        // Fall back to row-derived columns when the entity yields none, so the
+        // records always render (empty columns would draw an invisible table).
+        setColumns(cols.length > 0 ? cols : deriveColumnsFromRows(pageData.rows));
         setViewFilterChips(chips);
         setRows(pageData.rows);
         setTotal(pageData.total);
@@ -133,6 +175,7 @@ export default function DrilldownPanel({ req, userId, onClose, onOpenInList, onO
       const pageData = await fetchDrilldownPage(req, cols, chips, { page: targetPage, primaryActive: usePrimary, search: searchTerm });
       if (g !== gen.current) return;
       setRows(pageData.rows);
+      if (cols.length === 0) setColumns(deriveColumnsFromRows(pageData.rows));
       setTotal(pageData.total);
       setPage(targetPage);
       setLoading(false);

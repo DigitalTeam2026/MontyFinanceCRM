@@ -500,7 +500,14 @@ export async function saveRecord(
       .select()
       .maybeSingle();
     if (error) rethrowProductAccessError(entity, error);
-    if (!data) throw new Error(`Insert returned no data for ${table}`);
+    if (!data) {
+      // The INSERT committed but the new row is not readable under RLS — e.g. a
+      // create-only user (can_create without can_read). Ownership does not grant
+      // read, by design, so RETURNING yields no row. Return the submitted values
+      // (no server-generated id) so the caller can finish gracefully; downstream
+      // steps that need the new PK are skipped.
+      return translateToLogical(insertPayload as RecordData, mapping);
+    }
     const created = translateToLogical(data as RecordData, mapping);
 
     if (hasCurrencyLock(entity) && created.currency_id) {

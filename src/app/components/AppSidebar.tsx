@@ -7,6 +7,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { AppModule, AppEntity } from '../types';
 import { LOGICAL_NAME_TO_ENTITY } from '../types';
 import { usePermissions } from '../context/PermissionContext';
+import { hasAnyEntityPrivilege } from '../services/permissionService';
 import { getInitials } from '../utils/initials';
 import { renderNavIcon, renderAreaIcon } from '../utils/navIcons';
 import RecentPinsPanel from './RecentPinsPanel';
@@ -172,7 +173,8 @@ export default function AppSidebar({
     if (!entityName) return true; // non-entity items (e.g. dashboards)
     if (isSystemAdmin) return true;
     if (!permsReady) return false;
-    return getEntityPrivilege(entityName).can_read;
+    // Visible if the user holds ANY privilege on the entity (open-then-gate).
+    return hasAnyEntityPrivilege(getEntityPrivilege(entityName));
   };
 
   useEffect(() => {

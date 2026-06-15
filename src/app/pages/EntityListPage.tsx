@@ -149,6 +149,9 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
   const isRedesign = true;
   const priv = getEntityPrivilege(entityName);
   const canRead = priv.can_read;
+  // Entity-open gate: any one of the six privileges lets the user open the
+  // entity; each action below is still gated by its own flag.
+  const canOpenEntity = permissions.isSystemAdmin || hasAnyEntityPrivilege(priv);
   const canCreate = priv.can_create && !creationBlocked;
   const canWrite = priv.can_write;
   const canDelete = priv.can_delete;
@@ -617,7 +620,8 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
     );
   }
 
-  if (!canRead) {
+  // Fully denied only when the user has NONE of the six privileges.
+  if (!canOpenEntity) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 gap-4 p-8">
         <div className="w-14 h-14 rounded-full bg-red-50 border border-red-200 flex items-center justify-center">
@@ -625,8 +629,33 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
         </div>
         <div className="text-center">
           <h2 className="text-[16px] font-semibold text-slate-700 mb-1">Access Denied</h2>
-          <p className="text-[13px] text-slate-500 max-w-sm">You do not have permission to view these records. Contact your administrator to request access.</p>
+          <p className="text-[13px] text-slate-500 max-w-sm">You do not have permission to access this entity. Contact your administrator to request access.</p>
         </div>
+      </div>
+    );
+  }
+
+  // Entity is open but the user cannot READ the record list (e.g. create-only).
+  // Show a focused panel that still allows the actions they DO have.
+  if (!canRead) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 gap-4 p-8">
+        <div className="w-14 h-14 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center">
+          <Lock size={24} className="text-amber-400" />
+        </div>
+        <div className="text-center">
+          <h2 className="text-[16px] font-semibold text-slate-700 mb-1">List view not available</h2>
+          <p className="text-[13px] text-slate-500 max-w-sm">You do not have permission to view records for this entity, but you can still perform the actions granted to your role.</p>
+        </div>
+        {canCreate && onNewRecord && (
+          <button
+            onClick={onNewRecord}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-md text-[13px] font-medium bg-blue-600 text-white hover:bg-blue-700 transition"
+          >
+            <Plus size={14} />
+            New
+          </button>
+        )}
       </div>
     );
   }

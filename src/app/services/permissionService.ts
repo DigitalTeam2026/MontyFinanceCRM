@@ -261,6 +261,16 @@ export function toLogicalEntityName(entityName: string): string {
   return ENTITY_LOGICAL_NAME[entityName] ?? PHYSICAL_TO_LOGICAL[entityName] ?? entityName;
 }
 
+/**
+ * Entity-level "can open" gate. A user may open an entity (nav + list page) if
+ * they hold ANY of the six privileges on it; each individual action is still
+ * gated by its specific flag. All-false / no row ⇒ entity is fully denied.
+ */
+export function hasAnyEntityPrivilege(priv: EntityPrivilege): boolean {
+  return priv.can_create || priv.can_read || priv.can_write
+    || priv.can_delete || priv.can_assign || priv.can_share;
+}
+
 export function getEntityPrivilege(perms: UserPermissions, entityName: string): EntityPrivilege {
   if (perms.isSystemAdmin) return DEFAULT_PRIVILEGE;
   // Default-deny: no matching privilege row (no role, empty role, unknown

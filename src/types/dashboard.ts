@@ -46,6 +46,8 @@ export interface WidgetQueryDefinition {
   field?: string;
   dimension?: string;
   status?: WidgetStatusFilter;
+  /** Section/group header this widget renders under (null/absent = top KPI row). */
+  section?: string;
 }
 
 export interface WidgetVisualConfig {

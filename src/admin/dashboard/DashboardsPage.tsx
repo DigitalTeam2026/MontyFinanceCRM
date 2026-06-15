@@ -1,17 +1,16 @@
 // Single entry point for the unified Dashboards area (Admin Studio → Dashboards).
 //
-// Flow: on open, auto-loads the organization DEFAULT dashboard into the live
-// runtime viewer (Power BI–style). From there: Back → gallery (browse/manage all
-// dashboards), Edit → designer. Gallery "open" returns to the viewer.
+// On open, auto-loads the organization DEFAULT dashboard into the shared renderer
+// (the SAME component Sales uses). "Edit" switches the same renderer into edit
+// mode — there is no separate designer canvas. Back → gallery to browse/manage all.
 
 import { useEffect, useState } from 'react';
 import type { Dashboard } from '../../types/dashboard';
 import { fetchDefaultDashboard } from '../../services/dashboardService';
 import DashboardListPage from './DashboardListPage';
-import DashboardDesignerPage from './DashboardDesignerPage';
-import DashboardRuntime from './DashboardRuntime';
+import DashboardRenderer from './DashboardRenderer';
 
-type View = 'loading' | 'viewer' | 'gallery' | 'designer';
+type View = 'loading' | 'viewer' | 'editor' | 'gallery';
 
 interface DashboardsPageProps {
   userId: string;
@@ -19,48 +18,52 @@ interface DashboardsPageProps {
 
 export default function DashboardsPage({ userId }: DashboardsPageProps) {
   const [view, setView] = useState<View>('loading');
-  const [activeDashboardId, setActiveDashboardId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
-  // Auto-open the default dashboard on first entry.
   useEffect(() => {
     let alive = true;
     fetchDefaultDashboard()
-      .then((d) => {
-        if (!alive) return;
-        if (d) { setActiveDashboardId(d.dashboard_id); setView('viewer'); }
-        else setView('gallery');
-      })
+      .then((d) => { if (!alive) return; if (d) { setActiveId(d.dashboard_id); setView('viewer'); } else setView('gallery'); })
       .catch(() => { if (alive) setView('gallery'); });
     return () => { alive = false; };
   }, []);
 
-  const openViewer = (d: Dashboard) => { setActiveDashboardId(d.dashboard_id); setView('viewer'); };
-  const openDesigner = (id: string) => { setActiveDashboardId(id); setView('designer'); };
-  const backToGallery = () => { setActiveDashboardId(null); setView('gallery'); };
+  const openViewer = (d: Dashboard) => { setActiveId(d.dashboard_id); setView('viewer'); };
+  const backToGallery = () => { setActiveId(null); setView('gallery'); };
 
   if (view === 'loading') {
     return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
-  if (view === 'viewer' && activeDashboardId) {
+  if (view === 'viewer' && activeId) {
     return (
-      <DashboardRuntime
-        dashboardId={activeDashboardId}
+      <DashboardRenderer
+        dashboardId={activeId}
         userId={userId}
+        mode="view"
+        canEdit
         onBack={backToGallery}
-        onEdit={openDesigner}
+        onRequestEdit={() => setView('editor')}
       />
     );
   }
 
-  if (view === 'designer' && activeDashboardId) {
-    return <DashboardDesignerPage dashboardId={activeDashboardId} onBack={backToGallery} />;
+  if (view === 'editor' && activeId) {
+    return (
+      <DashboardRenderer
+        dashboardId={activeId}
+        userId={userId}
+        mode="edit"
+        onBack={backToGallery}
+        onExitEdit={() => setView('viewer')}
+      />
+    );
   }
 
-  // Gallery: "View/Open" opens the runtime viewer; Edit opens the designer.
+  // Gallery: opening a dashboard loads it in the shared renderer.
   return <DashboardListPage onEdit={openViewer} />;
 }
