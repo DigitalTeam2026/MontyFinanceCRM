@@ -99,16 +99,13 @@ export default function CrmApp({
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (data.session) {
-        const { data: refreshed } = await supabase.auth.refreshSession();
-        // If refresh fails, treat as signed out — don't fall back to the expired session
-        const s = refreshed.session ?? null;
-        setSession(s);
-        if (s) loadAdminFlag(s.user.id);
-      } else {
-        setSession(null);
-      }
+    // getSession() returns the stored session and auto-refreshes it when expired
+    // (autoRefreshToken is on). Do NOT call refreshSession() here too — a second
+    // concurrent refresh reuses an already-rotated token and gets a 400.
+    supabase.auth.getSession().then(({ data }) => {
+      const s = data.session ?? null;
+      setSession(s);
+      if (s) loadAdminFlag(s.user.id);
     }).catch((err) => {
       // Never leave the app stuck on the loading spinner if session bootstrap throws
       console.error('[CrmApp] session bootstrap failed:', err);

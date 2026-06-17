@@ -1448,9 +1448,18 @@ export default function RecordFormPage({
           try {
             const def = await getDefaultStatusForState(resolvedEntityDefId, 1);
             if (def) {
+              // Seed BOTH the logical (state_code/status_reason) and physical
+              // (statecode/statusreason) aliases so the New form shows the default
+              // Status + Status Reason pre-selected regardless of which name the
+              // field control reads (FormField keys off statecode/statusreason).
+              // Without the physical aliases the reason dropdown rendered empty, so
+              // users had to re-pick a reason and save twice. Extra keys are dropped
+              // by translateToPhysical, so this is safe across all entities.
               statusDefaults = {
                 state_code: String(def.stateValue),
+                statecode: String(def.stateValue),
                 status_reason: String(def.reasonValue),
+                statusreason: String(def.reasonValue),
               };
             }
           } catch { /* non-fatal: fall back to no status default */ }

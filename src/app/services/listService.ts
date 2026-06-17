@@ -331,6 +331,9 @@ async function resolveFilters(filters: ActiveFilter[]): Promise<ActiveFilter[]> 
  * Normalise an input date string to YYYY-MM-DD regardless of input format.
  * <input type="date"> always produces YYYY-MM-DD, but guard against MM/DD/YYYY too.
  */
+/** Matches a date-only string (YYYY-MM-DD) — what <input type="date"> produces. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
 function toUtcDateStr(value: string): string {
   // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -366,13 +369,35 @@ function applyFilterToQuery<T>(q: T, f: ActiveFilter): T {
     case 'not_contains': return qb.not(f.field, 'ilike', `%${f.value}%`);
     case 'starts_with':  return qb.ilike(f.field, `${f.value}%`);
     case 'ends_with':    return qb.ilike(f.field, `%${f.value}`);
-    case 'eq':           return qb.eq(f.field, f.value);
-    case 'neq':          return qb.neq(f.field, f.value);
+    // For a date-only value (YYYY-MM-DD) on a datetime column, comparing against the raw
+    // string only matches exactly-midnight rows and skews the gt/lte boundaries. Expand to
+    // the full UTC calendar day so "on date" / "after" / "on or before" behave as expected.
+    // Numeric/text eq values never match DATE_ONLY, so they fall through unchanged.
+    case 'eq':
+      if (DATE_ONLY.test(f.value)) {
+        const d = toUtcDateStr(f.value);
+        return qb.gte(f.field, `${d}T00:00:00.000Z`).lte(f.field, `${d}T23:59:59.999Z`);
+      }
+      return qb.eq(f.field, f.value);
+    case 'neq':
+      if (DATE_ONLY.test(f.value)) {
+        const d = toUtcDateStr(f.value);
+        return qb.or(`${f.field}.lt.${d}T00:00:00.000Z,${f.field}.gt.${d}T23:59:59.999Z`);
+      }
+      return qb.neq(f.field, f.value);
     case 'in':           return qb.in(f.field, f.value.split(',').filter(Boolean));
-    case 'gt':           return qb.gt(f.field, f.value);
-    case 'gte':          return qb.gte(f.field, f.value);
-    case 'lt':           return qb.lt(f.field, f.value);
-    case 'lte':          return qb.lte(f.field, f.value);
+    case 'gt': // strictly after the whole selected day
+      if (DATE_ONLY.test(f.value)) return qb.gt(f.field, `${toUtcDateStr(f.value)}T23:59:59.999Z`);
+      return qb.gt(f.field, f.value);
+    case 'gte':
+      if (DATE_ONLY.test(f.value)) return qb.gte(f.field, `${toUtcDateStr(f.value)}T00:00:00.000Z`);
+      return qb.gte(f.field, f.value);
+    case 'lt':
+      if (DATE_ONLY.test(f.value)) return qb.lt(f.field, `${toUtcDateStr(f.value)}T00:00:00.000Z`);
+      return qb.lt(f.field, f.value);
+    case 'lte': // through the end of the selected day
+      if (DATE_ONLY.test(f.value)) return qb.lte(f.field, `${toUtcDateStr(f.value)}T23:59:59.999Z`);
+      return qb.lte(f.field, f.value);
     case 'is_empty':     return qb.or(`${f.field}.is.null,${f.field}.eq.`);
     case 'is_not_empty': return qb.not(f.field, 'is', null);
     case 'last_7_days': {
@@ -917,16 +942,31 @@ export async function deleteSavedFilter(id: string): Promise<void> {
   await supabase.from('saved_filter').delete().eq('id', id);
 }
 
+/**
+ * Translate a PostgREST/Postgres error into a short, user-facing reason.
+ * Recognises the read-only-converted-record guard (a BEFORE UPDATE trigger on
+ * crm_prospect that raises with HINT 'CONVERTED_RECORD_READONLY').
+ */
+function friendlyDbError(error: { message?: string; hint?: string | null }): string {
+  const hint = error.hint ?? '';
+  const msg = error.message ?? '';
+  if (hint.includes('CONVERTED_RECORD_READONLY') || /converted prospect cannot be edited/i.test(msg)) {
+    return 'A converted Prospect cannot be edited.';
+  }
+  return msg || 'Update failed.';
+}
+
 export async function bulkUpdateRows(
   entity: AppEntity,
   ids: string[],
   fields: Record<string, unknown>,
   userId: string
-): Promise<{ updated: number; errors: number }> {
+): Promise<{ updated: number; errors: number; message?: string }> {
   const { table, pk } = await resolveEntityMeta(entity);
   const tableCols = await getTableColumns(table);
   let updated = 0;
   let errors = 0;
+  let firstError: string | undefined;
   const payload: Record<string, unknown> = { ...fields };
   if (tableCols.has('modified_at')) payload.modified_at = new Date().toISOString();
   if (tableCols.has('modified_by')) payload.modified_by = userId;
@@ -937,10 +977,22 @@ export async function bulkUpdateRows(
       .from(table)
       .update(payload)
       .in(pk, chunk);
-    if (error) errors += chunk.length;
-    else updated += chunk.length;
+    if (!error) { updated += chunk.length; continue; }
+    // A row-level rejection (e.g. a read-only/converted record blocked by a BEFORE UPDATE
+    // trigger or RLS) aborts the entire IN(...) statement, which would otherwise sink every
+    // other row in the chunk. Retry each row on its own so the good rows still update and
+    // only the genuinely-blocked rows count as failures.
+    for (const id of chunk) {
+      const { error: rowErr } = await supabase.from(table).update(payload).eq(pk, id);
+      if (rowErr) {
+        errors += 1;
+        if (!firstError) firstError = friendlyDbError(rowErr);
+      } else {
+        updated += 1;
+      }
+    }
   }
-  return { updated, errors };
+  return { updated, errors, message: errors > 0 ? firstError : undefined };
 }
 
 export async function bulkDeleteRows(

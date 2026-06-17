@@ -89,8 +89,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function toFriendlyError(e: unknown, fallback = 'Something went wrong. Please try again.'): string {
-  if (!(e instanceof Error)) return fallback;
-  const msg = e.message.toLowerCase();
+  // Supabase/PostgREST errors are thrown as plain objects ({message, hint, code}),
+  // not Error instances — read the text/hint from either shape.
+  const raw = e instanceof Error
+    ? e.message
+    : (e && typeof e === 'object' && 'message' in e ? String((e as { message?: unknown }).message ?? '') : '');
+  const hint = e && typeof e === 'object' && 'hint' in e ? String((e as { hint?: unknown }).hint ?? '') : '';
+  if (!raw && !hint) return fallback;
+  const msg = raw.toLowerCase();
+
+  // Read-only converted record (BEFORE UPDATE trigger on crm_prospect).
+  if (hint.includes('CONVERTED_RECORD_READONLY') || msg.includes('converted prospect cannot be edited')) {
+    return 'A converted Prospect cannot be edited.';
+  }
 
   if (msg.includes('fetch') || msg.includes('network') || msg.includes('failed to fetch')) {
     return 'Unable to connect. Please check your connection and try again.';

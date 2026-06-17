@@ -34,10 +34,12 @@ import CompanyProfilePage from './companyprofile/CompanyProfilePage';
 import DocumentLocationPage from './documents/DocumentLocationPage';
 import PublishAllButton from './publish/PublishAllButton';
 import PublicationHistoryPage from './publish/PublicationHistoryPage';
+import DashboardsPage from './dashboards/DashboardsPage';
 import type { EntityDefinition } from '../types/entity';
 import type { RelationshipDefinitionWithEntities } from '../types/relationship';
 import { fetchEntities } from '../services/entityService';
 import { parseRoute, buildStudioHash, replaceHash } from '../lib/appRoute';
+import type { StudioDashboardView } from '../lib/appRoute';
 
 type EntityView = 'list' | 'new' | 'edit' | 'detail' | 'data';
 
@@ -60,6 +62,11 @@ interface RelationshipState {
   editing?: RelationshipDefinitionWithEntities;
 }
 
+export interface DashboardState {
+  view: StudioDashboardView;
+  dashboardId?: string;
+}
+
 export default function AdminStudio() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const userName = useCurrentUserName(session?.user?.id);
@@ -73,16 +80,20 @@ export default function AdminStudio() {
     return { view: 'list' };
   });
   const [relationshipState, setRelationshipState] = useState<RelationshipState>({ view: 'list' });
+  const [dashboardState, setDashboardState] = useState<DashboardState>(() => {
+    const r = parseRoute();
+    if (r.surface === 'studio' && r.module === 'dashboards') {
+      return { view: r.dashboardView ?? 'list', dashboardId: r.dashboardId };
+    }
+    return { view: 'list' };
+  });
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (data.session) {
-        const { data: refreshed } = await supabase.auth.refreshSession();
-        // If refresh fails, treat as signed out — don't fall back to the expired session
-        setSession(refreshed.session ?? null);
-      } else {
-        setSession(null);
-      }
+    // getSession() returns the stored session and auto-refreshes it when expired
+    // (autoRefreshToken is on). Do NOT call refreshSession() here too — a second
+    // concurrent refresh reuses an already-rotated token and gets a 400.
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session ?? null);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
@@ -135,9 +146,11 @@ export default function AdminStudio() {
         module: activeModule,
         entityId: entityState.selectedEntity?.entity_definition_id,
         entityView: activeModule === 'entities' ? entityState.view : undefined,
+        dashboardId: activeModule === 'dashboards' ? dashboardState.dashboardId : undefined,
+        dashboardView: activeModule === 'dashboards' ? dashboardState.view : undefined,
       })
     );
-  }, [activeModule, entityState.view, entityState.selectedEntity]);
+  }, [activeModule, entityState.view, entityState.selectedEntity, dashboardState.view, dashboardState.dashboardId]);
 
   if (session === undefined) {
     return (
@@ -155,6 +168,7 @@ export default function AdminStudio() {
     setActiveModule(id);
     setEntityState({ view: 'list' });
     setRelationshipState({ view: 'list' });
+    setDashboardState({ view: 'list' });
   };
 
   const navigateEntitySubArea = (module: string, ent: EntityDefinition) => {
@@ -325,10 +339,15 @@ export default function AdminStudio() {
     if (activeModule === 'publishhistory') {
       return { title: 'Publication History', subtitle: 'Every customization publication — version, who published, components, outcome, and rollback' };
     }
+    if (activeModule === 'dashboards') {
+      return { title: 'Dashboards', subtitle: 'Design interactive analytical dashboards from CRM entities, fields, and views' };
+    }
     return { title: 'Admin Studio' };
   };
 
   const header = getHeader();
+  // The dashboard designer is immersive — it renders its own toolbar full-bleed.
+  const immersive = activeModule === 'dashboards' && dashboardState.view === 'designer';
 
   const renderContent = () => {
     if (activeModule === 'entities') {
@@ -451,6 +470,9 @@ export default function AdminStudio() {
     if (activeModule === 'companyprofile') return <CompanyProfilePage />;
     if (activeModule === 'documentlocation') return <DocumentLocationPage />;
     if (activeModule === 'publishhistory') return <PublicationHistoryPage />;
+    if (activeModule === 'dashboards') {
+      return <DashboardsPage state={dashboardState} onStateChange={setDashboardState} />;
+    }
 
     return (
       <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
@@ -470,12 +492,14 @@ export default function AdminStudio() {
           onSignOut={handleSignOut}
         />
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <StudioHeader
-            title={header.title}
-            subtitle={header.subtitle}
-            onBack={header.onBack}
-            actions={<PublishAllButton />}
-          />
+          {!immersive && (
+            <StudioHeader
+              title={header.title}
+              subtitle={header.subtitle}
+              onBack={header.onBack}
+              actions={<PublishAllButton />}
+            />
+          )}
           {renderContent()}
         </div>
       </div>

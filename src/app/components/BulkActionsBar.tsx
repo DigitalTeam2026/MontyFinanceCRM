@@ -36,7 +36,7 @@ interface BulkUser {
 }
 
 type ModalType = 'assign' | 'update' | 'delete' | null;
-type OpResult = { updated?: number; deleted?: number; errors: number } | null;
+type OpResult = { updated?: number; deleted?: number; errors: number; message?: string } | null;
 
 interface Props {
   entity: AppEntity;
@@ -97,7 +97,7 @@ function ResultBanner({ result, onClose }: { result: OpResult; onClose: () => vo
       {ok ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
       {ok
         ? `${count} record${count !== 1 ? 's' : ''} updated`
-        : `${count} updated, ${result.errors} failed`}
+        : `${count} updated, ${result.errors} failed${result.message ? ` — ${result.message}` : ''}`}
       <button onClick={onClose} className="ml-1 opacity-60 hover:opacity-100"><X size={11} /></button>
     </div>
   );

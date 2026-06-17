@@ -69,11 +69,15 @@ export interface CrmRoute {
 
 export type StudioEntityView = 'list' | 'new' | 'edit' | 'detail' | 'data';
 
+export type StudioDashboardView = 'list' | 'create' | 'designer' | 'themes' | 'permissions';
+
 export interface StudioRoute {
   surface: 'studio';
   module: string; // active Admin Studio page, e.g. 'entities' | 'forms' | ...
   entityId?: string; // selected entity definition id (sub-context)
   entityView?: StudioEntityView; // sub-view within the entities module
+  dashboardId?: string; // selected dashboard id (dashboards module sub-context)
+  dashboardView?: StudioDashboardView; // sub-view within the dashboards module
 }
 
 export type AppRoute = CrmRoute | StudioRoute;
@@ -114,11 +118,14 @@ export function parseRoute(): AppRoute {
 
   if (head === 'studio') {
     const entityView = query.get('ev');
+    const dashboardView = query.get('dv');
     return {
       surface: 'studio',
       module: segs[1] || 'entities',
       entityId: query.get('eid') ?? undefined,
       entityView: (entityView as StudioEntityView) || undefined,
+      dashboardId: query.get('did') ?? undefined,
+      dashboardView: (dashboardView as StudioDashboardView) || undefined,
     };
   }
 
@@ -202,6 +209,8 @@ export function buildStudioHash(route: Omit<StudioRoute, 'surface'>): string {
   return withQuery(`#/studio/${route.module}`, {
     eid: route.entityId,
     ev: route.entityView && route.entityView !== 'list' ? route.entityView : undefined,
+    did: route.dashboardId,
+    dv: route.dashboardView && route.dashboardView !== 'list' ? route.dashboardView : undefined,
   });
 }
 

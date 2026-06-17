@@ -372,21 +372,55 @@ export function applyColumnFilters(
     const col = field.physical_column_name;
     const val = f.value;
 
+    // A datetime column stores a full timestamp (e.g. 2026-06-17T10:33:00Z), but the
+    // date picker yields a date-only string (2026-06-17). Comparing them directly makes
+    // `eq` match only exactly-midnight rows (so "Equals today" returns nothing) and skews
+    // the gt/lt/lte boundaries. For date fields with a date-only value, expand to the
+    // full local calendar day [dayStart, nextDayStart) instead.
+    const isDateField = getFieldCategory(field) === 'date';
+    const isDateVal = isDateOnly(val);
+
     switch (f.operator) {
-      case 'eq': query = query.eq(col, val); break;
-      case 'neq': query = query.neq(col, val); break;
+      case 'eq':
+        if (isDateField && isDateVal) query = query.gte(col, dayStartISO(val as string)).lt(col, nextDayStartISO(val as string));
+        else query = query.eq(col, val);
+        break;
+      case 'neq':
+        if (isDateField && isDateVal) query = query.or(`${col}.lt.${dayStartISO(val as string)},${col}.gte.${nextDayStartISO(val as string)}`);
+        else query = query.neq(col, val);
+        break;
       case 'contains': query = query.ilike(col, `%${val}%`); break;
       case 'not_contains': query = query.not(col, 'ilike', `%${val}%`); break;
       case 'begins_with': query = query.ilike(col, `${val}%`); break;
       case 'not_begins_with': query = query.not(col, 'ilike', `${val}%`); break;
       case 'ends_with': query = query.ilike(col, `%${val}`); break;
       case 'not_ends_with': query = query.not(col, 'ilike', `%${val}`); break;
-      case 'gt': query = query.gt(col, val); break;
-      case 'gte': query = query.gte(col, val); break;
-      case 'lt': query = query.lt(col, val); break;
-      case 'lte': query = query.lte(col, val); break;
+      // After: strictly after the whole selected day.
+      case 'gt':
+        if (isDateField && isDateVal) query = query.gte(col, nextDayStartISO(val as string));
+        else query = query.gt(col, val);
+        break;
+      // On or after: from the start of the selected day.
+      case 'gte':
+        if (isDateField && isDateVal) query = query.gte(col, dayStartISO(val as string));
+        else query = query.gte(col, val);
+        break;
+      // Before: strictly before the start of the selected day.
+      case 'lt':
+        if (isDateField && isDateVal) query = query.lt(col, dayStartISO(val as string));
+        else query = query.lt(col, val);
+        break;
+      // On or before: through the end of the selected day.
+      case 'lte':
+        if (isDateField && isDateVal) query = query.lt(col, nextDayStartISO(val as string));
+        else query = query.lte(col, val);
+        break;
       case 'between':
-        query = query.gte(col, val).lte(col, f.valueTo);
+        if (isDateField && isDateVal && isDateOnly(f.valueTo)) {
+          query = query.gte(col, dayStartISO(val as string)).lt(col, nextDayStartISO(f.valueTo as string));
+        } else {
+          query = query.gte(col, val).lte(col, f.valueTo);
+        }
         break;
       case 'has_data': query = query.not(col, 'is', null); break;
       case 'no_data': query = query.is(col, null); break;
@@ -438,6 +472,23 @@ export function applyColumnFilters(
     }
   }
   return query;
+}
+
+/** True when `v` is a date-only string in YYYY-MM-DD form (what <input type="date"> yields). */
+function isDateOnly(v: unknown): v is string {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+/** Local midnight at the start of `dateStr` (YYYY-MM-DD), as a UTC ISO string. */
+function dayStartISO(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toISOString();
+}
+
+/** Local midnight at the start of the day AFTER `dateStr` — the exclusive upper bound. */
+function nextDayStartISO(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d + 1).toISOString();
 }
 
 function todayRange() {

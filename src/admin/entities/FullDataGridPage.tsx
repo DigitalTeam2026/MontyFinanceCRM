@@ -177,7 +177,7 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
     const entityIds = [...new Set(lookupFields.map((f) => f.lookup_entity_id!))];
     supabase
       .from('entity_definition')
-      .select('entity_definition_id, physical_table_name, primary_field_name, display_name')
+      .select('entity_definition_id, physical_table_name, primary_field_name, display_name, logical_name, is_custom')
       .in('entity_definition_id', entityIds)
       .then(({ data }) => {
         if (!data) return;
@@ -187,7 +187,8 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
           const ent = entMap.get(f.lookup_entity_id!);
           if (!ent) continue;
           const tbl = ent.physical_table_name;
-          const pkName = PK_OVERRIDES[tbl] ?? `${tbl}_id`;
+          // Custom entities key on `<logical_name>_id` (not `<table>_id`); mirror guessPK.
+          const pkName = PK_OVERRIDES[tbl] ?? (ent.is_custom ? `${ent.logical_name}_id` : `${tbl}_id`);
           const labelField = tbl === 'crm_user' ? 'email' : (ent.primary_field_name ?? 'name');
           meta.set(f.field_definition_id, { table: tbl, pk: pkName, labelField, entityName: ent.display_name });
         }
@@ -1360,6 +1361,12 @@ const PK_OVERRIDES: Record<string, string> = {
 function guessPK(entity: EntityDefinition): string {
   const t = entity.physical_table_name;
   if (PK_OVERRIDES[t]) return PK_OVERRIDES[t];
+  // Custom entities are created with a PK column of `<logical_name>_id` (see the
+  // create_crm_entity RPC), which differs from the physical table name — e.g. table
+  // `crm_continent` has PK `continent_id`, not `crm_continent_id`. Deriving the PK
+  // from the table name there yields a missing column, collapsing every row's _pk to
+  // '' and making row selection select all rows at once.
+  if (entity.is_custom) return `${entity.logical_name}_id`;
   if (t === 'account') return 'account_id';
   if (t === 'contact') return 'contact_id';
   if (t === 'lead') return 'lead_id';
