@@ -1,4 +1,4 @@
-import { Database, Settings, ChevronRight, GitBranch, ShieldCheck, Map, LayoutDashboard, LogOut, ExternalLink, GitMerge, Milestone, ScanSearch, ClipboardCheck, FileWarning, KeyRound, ShieldAlert, Activity, Zap, Building2, FolderCog, History } from 'lucide-react';
+import { Database, Settings, ChevronRight, GitBranch, ShieldCheck, Map, LogOut, ExternalLink, GitMerge, Milestone, ScanSearch, ClipboardCheck, FileWarning, KeyRound, ShieldAlert, Activity, Zap, Building2, FolderCog, History } from 'lucide-react';
 import { getInitials } from '../../app/utils/initials';
 
 interface SideNavItem {
@@ -35,7 +35,6 @@ const SECTIONS: { label: string; items: SideNavItem[] }[] = [
     label: 'Platform',
     items: [
       { id: 'navigation',  label: 'Navigation',        icon: <Map size={14} /> },
-      { id: 'dashboard',   label: 'Dashboards',        icon: <LayoutDashboard size={14} /> },
       { id: 'duplicates',       label: 'Duplicate Detection', icon: <ScanSearch size={14} /> },
       { id: 'approvals',            label: 'Approval Processes',      icon: <ClipboardCheck size={14} /> },
       { id: 'policies',          label: 'Data Policies',       icon: <FileWarning size={14} /> },

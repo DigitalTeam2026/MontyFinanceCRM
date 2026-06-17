@@ -31,8 +31,6 @@ export const CUSTOMIZATION_MODULES: CustomizationModule[] = [
   { key: 'processflows', label: 'Business Process Flows', moduleRoute: 'processflows',
     tables: ['process_flow', 'process_stage', 'process_flow_transition'] },
   { key: 'navigation', label: 'Navigation', moduleRoute: 'navigation', tables: ['nav_area', 'nav_group', 'nav_item'] },
-  { key: 'dashboards', label: 'Dashboards', moduleRoute: 'dashboard',
-    tables: ['dashboard', 'dashboard_widget', 'dashboard_role_assignment'] },
   { key: 'optionsets', label: 'Option Sets', tables: ['option_set', 'option_set_value'] },
   { key: 'status', label: 'Status & Status Reason', tables: ['statecode_definition', 'status_reason_definition'] },
   { key: 'relationships', label: 'Relationships', moduleRoute: 'relationships', tables: ['relationship_definition'] },

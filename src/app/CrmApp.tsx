@@ -6,7 +6,6 @@ import AppHeader from './components/AppHeader';
 import { useCurrentUserName } from './hooks/useCurrentUserName';
 import EntityListPage from './pages/EntityListPage';
 import RecordFormPage from './pages/RecordFormPage';
-import SalesDashboard from './pages/SalesDashboard';
 import type { AppEntity, AppModule } from './types';
 import { ENTITY_LOGICAL_NAME } from './types';
 import LoginPage from '../LoginPage';
@@ -288,40 +287,11 @@ export default function CrmApp({
     setView({ type: 'record', id: recordId });
   };
 
-  // Dashboard drill-down → open a record of an arbitrary entity (switches entity).
-  const handleDashboardOpenRecord = (entity: AppEntity, id: string, label?: string) => {
-    setActiveEntity(entity);
-    setActiveModule('sales');
-    setSearch('');
-    setView({ type: 'record', id });
-    if (label) {
-      trackRecentItem(session.user.id, entity, 'sales', id, label).then(() => {
-        setRecentRefreshKey((k) => k + 1);
-      });
-    }
-  };
-
   const handleNavigateToDashboard = (module: AppModule, entity: AppEntity) => {
     setActiveModule(module);
     setActiveEntity(entity);
     setSearch('');
     setView({ type: 'dashboard' });
-  };
-
-  const handleDashboardNavigateFiltered = (
-    entity: AppEntity,
-    module: AppModule,
-    filters: ActiveFilter[],
-    contextLabel = 'Personal Dashboard',
-  ) => {
-    setActiveModule(module);
-    setActiveEntity(entity);
-    setSearch('');
-    setView({
-      type: 'filtered-list',
-      filters,
-      contextLabel,
-    });
   };
 
   const handleSignOut = async () => {
@@ -429,14 +399,10 @@ export default function CrmApp({
           viewType={view.type}
         />
         <div key={metadataEpoch} className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Dashboard intentionally blank — the dashboard feature was removed; the
+              nav item remains and shows an empty page pending the next design. */}
           {view.type === 'dashboard' && (
-            <SalesDashboard
-              userId={session.user.id}
-              onNavigateFiltered={(entity, module, filters, contextLabel) =>
-                handleDashboardNavigateFiltered(entity, module, filters as ActiveFilter[], contextLabel)
-              }
-              onOpenRecord={handleDashboardOpenRecord}
-            />
+            <div className="flex-1" style={{ background: 'var(--app-bg)' }} />
           )}
 
           {(view.type === 'list' || view.type === 'filtered-list') && (

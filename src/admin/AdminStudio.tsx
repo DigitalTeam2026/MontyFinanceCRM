@@ -17,7 +17,6 @@ import BusinessRulesPage from './rules/BusinessRulesPage';
 import WorkflowsPage from './workflows/WorkflowsPage';
 import SecurityManagementPage from './security/SecurityManagementPage';
 import NavigationPage from './navigation/NavigationPage';
-import DashboardsPage from './dashboard/DashboardsPage';
 import CurrenciesPage from './currencies/CurrenciesPage';
 import ProcessFlowsPage from './processflows/ProcessFlowsPage';
 import PipelineStagesPage from './stages/PipelineStagesPage';
@@ -284,9 +283,6 @@ export default function AdminStudio() {
     if (activeModule === 'navigation') {
       return { title: 'Navigation Designer', subtitle: 'Design the app sitemap — areas, groups, and entity links' };
     }
-    if (activeModule === 'dashboard') {
-      return { title: 'Dashboards', subtitle: 'Build, view, and manage Power BI–style dashboards for the whole organization' };
-    }
     if (activeModule === 'currencies') {
       return { title: 'Currency Management', subtitle: 'Configure active currencies, exchange rates, and base currency' };
     }
@@ -441,7 +437,6 @@ export default function AdminStudio() {
     if (activeModule === 'workflows') return <WorkflowsPage />;
     if (activeModule === 'security') return <SecurityManagementPage />;
     if (activeModule === 'navigation') return <NavigationPage />;
-    if (activeModule === 'dashboard') return <DashboardsPage userId={session.user.id} />;
     if (activeModule === 'currencies') return <CurrenciesPage />;
     if (activeModule === 'processflows') return <ProcessFlowsPage />;
     if (activeModule === 'stages') return <PipelineStagesPage />;

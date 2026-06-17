@@ -26,6 +26,7 @@ import { supabase } from '../../lib/supabase';
 import type { ActiveFilter, ListRow, RelatedColumnSpec } from '../services/listService';
 import { fetchEntityList, ENTITY_COLUMNS, updateRowFields, fetchCrmUsers } from '../services/listService';
 import { evaluateRowHighlight, getEntityRules } from '../services/rowHighlightService';
+import { hasAnyEntityPrivilege } from '../services/permissionService';
 import FilterPanel from '../components/FilterPanel';
 import InlineRowActions from '../components/InlineRowActions';
 import ColumnCustomizer, { type ColumnState } from '../components/ColumnCustomizer';
