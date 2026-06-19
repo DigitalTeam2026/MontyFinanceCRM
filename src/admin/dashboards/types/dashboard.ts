@@ -361,16 +361,23 @@ export interface FunnelStage {
 // The timeline visual is NOT a chart: it binds directly to a date/datetime field
 // and broadcasts a date-range filter to the other visuals. None of the chart
 // wells (category/legend/measure) apply.
+/**
+ * Extra context a slicer can attach to its broadcast. `entityIds` carries the
+ * timeline_card runtime entity narrowing (see DashboardSemanticFilter mappings):
+ * a non-empty list restricts the date filter to those entities' visuals only.
+ */
+export interface SlicerBroadcastOpts { entityIds?: string[] | null }
+
 export type DateFilterMode =
   | 'between' | 'before' | 'after' | 'on'
   | 'relative_date' | 'relative_period' | 'timeline';
 
 export type SlicerDateRange =
-  | 'all_time' | 'today' | 'yesterday' | 'this_week' | 'last_week'
+  | 'all_time' | 'today' | 'tomorrow' | 'yesterday' | 'this_week' | 'last_week'
   | 'last_7_days' | 'last_30_days' | 'this_month' | 'last_month'
   | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year' | 'custom';
 
-export type SlicerStyle = 'date_inputs' | 'range_slider' | 'timeline' | 'dropdown_preset' | 'button_presets';
+export type SlicerStyle = 'date_inputs' | 'range_slider' | 'timeline' | 'dropdown_preset' | 'button_presets' | 'timeline_card';
 export type ApplyFilterTo = 'dashboard' | 'page' | 'selected';
 export type SlicerOrientation = 'horizontal' | 'vertical';
 export type SlicerHandleStyle = 'circle' | 'square' | 'bar';
@@ -399,6 +406,14 @@ export interface DateSlicerConfig {
   endDate?: string;
   // ── Format ────────────────────────────────────────────────────────────────
   style?: SlicerStyle;
+  /** Optional heading shown on the 'timeline_card' style (defaults to the visual title). */
+  cardTitle?: string;
+  /** 'timeline_card': show the interactive Entities chip row (runtime entity narrowing). */
+  showEntitySelector?: boolean;
+  /** 'timeline_card': show the read-only per-entity date-field mapping row. */
+  showFieldMapping?: boolean;
+  /** 'timeline_card': show the active-filter chips row (preset + per-entity field chips). */
+  showActiveChips?: boolean;
   orientation?: SlicerOrientation;
   showStartInput?: boolean;
   showEndInput?: boolean;
@@ -915,7 +930,7 @@ export interface ThemeConfig {
 export interface DashboardPermission {
   dashboard_permission_id: string;
   dashboard_id: string;
-  principal_type: 'user' | 'team' | 'role' | 'business_unit';
+  principal_type: 'user' | 'team' | 'role' | 'business_unit' | 'organization';
   principal_id: string;
   can_read: boolean;
   can_write: boolean;
@@ -979,6 +994,7 @@ export const DATE_FILTER_MODES: { value: DateFilterMode; label: string }[] = [
 export const SLICER_DATE_RANGES: { value: SlicerDateRange; label: string }[] = [
   { value: 'all_time', label: 'All Time' },
   { value: 'today', label: 'Today' },
+  { value: 'tomorrow', label: 'Tomorrow' },
   { value: 'yesterday', label: 'Yesterday' },
   { value: 'this_week', label: 'This Week' },
   { value: 'last_week', label: 'Last Week' },
@@ -1013,6 +1029,7 @@ export const SLICER_STYLES: { value: SlicerStyle; label: string }[] = [
   { value: 'timeline', label: 'Timeline' },
   { value: 'dropdown_preset', label: 'Dropdown preset' },
   { value: 'button_presets', label: 'Button presets' },
+  { value: 'timeline_card', label: 'Timeline / Date card' },
 ];
 
 // ── Layout / alignment option lists (used by the properties panel) ────────────

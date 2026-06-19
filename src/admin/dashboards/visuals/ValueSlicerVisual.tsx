@@ -11,7 +11,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Loader2, Filter, X, Lock, AlertTriangle, Search, CheckSquare, Square } from 'lucide-react';
 import type {
-  DashboardVisual, DashboardDefinition, ThemeConfig, VisualFilter, ValueSlicerConfig,
+  DashboardVisual, DashboardDefinition, ThemeConfig, VisualFilter, ValueSlicerConfig, SlicerBroadcastOpts,
 } from '../types/dashboard';
 import { runDistinctValues, type DistinctSource } from '../services/queryEngine';
 import { buildSlicerSources, type SlicerSelection } from './slicerValues';
@@ -26,7 +26,7 @@ interface Props {
   definition?: DashboardDefinition;
   /** Current semantic selections (so the value set stays contextual). */
   semanticSelections?: Record<string, SlicerSelection>;
-  onFilterChange?: (filters: VisualFilter[]) => void;
+  onFilterChange?: (filters: VisualFilter[], opts?: SlicerBroadcastOpts) => void;
 }
 
 // Placeholder leaf field: resolveForVisual overwrites it per entity (direct) or

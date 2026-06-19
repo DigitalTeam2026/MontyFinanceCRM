@@ -35,6 +35,10 @@ export function computeDateRange(preset: SlicerDateRange, now: Date = new Date()
       return { start: null, end: null };
     case 'today':
       return { start: today, end: endOfDay(today) };
+    case 'tomorrow': {
+      const tm = addDays(today, 1);
+      return { start: tm, end: endOfDay(tm) };
+    }
     case 'yesterday': {
       const yd = addDays(today, -1);
       return { start: yd, end: endOfDay(yd) };

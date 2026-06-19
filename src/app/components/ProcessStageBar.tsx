@@ -10,6 +10,7 @@ import { validateStageAdvance, isTransitionAllowed, getCrossEntityInfo, filterLo
 import type { StageGateViolation } from '../services/stageValidationService';
 import type { ProcessFlow } from '../../types/processFlow';
 import { supabase } from '../../lib/supabase';
+import { OVERLAY_Z, OVERLAY_PORTAL_ATTR } from './overlay/overlayTokens';
 
 interface ProcessStageField {
   psf_id: string;
@@ -43,6 +44,18 @@ interface StageFieldDef extends ProcessStageField {
   config_json: Record<string, unknown> | null;
   lookup_entity_id: string | null;
   option_set_name: string | null;
+}
+
+/**
+ * Fallback label for a field that has no configured display label/name: turn a
+ * technical logical name into readable Title Case — "SEND_NOTE" / "send_note" →
+ * "Send Note". Lower-casing first prevents all-caps technical names leaking through.
+ */
+function humanizeFieldName(logicalName: string): string {
+  return logicalName
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // ─── Stage Popup (Dynamics 365 style flyout) ────────────────────────────────
@@ -99,9 +112,13 @@ function StagePopup({
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        onClose();
-      }
+      const target = e.target as Node;
+      if (popoverRef.current?.contains(target)) return;
+      // A dropdown (FilterSelect) inside the popup renders its menu in a sibling
+      // portal on document.body, so it is NOT a DOM child of the popup. Treat clicks
+      // inside any overlay portal as "inside" so picking an option never closes the popup.
+      if (target instanceof Element && target.closest(`[${OVERLAY_PORTAL_ATTR}]`)) return;
+      onClose();
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -220,15 +237,17 @@ function StagePopup({
   };
 
   const popupWidth = expanded ? 480 : 350;
+  // The panel sits in the dedicated panel band (below the popover band) so any
+  // FilterSelect dropdown opened inside it portals ABOVE the panel instead of behind it.
   const popupStyle: React.CSSProperties = anchorRect
     ? {
         position: 'fixed',
         top: anchorRect.bottom + 8,
         left: Math.max(8, Math.min(anchorRect.left + anchorRect.width / 2 - popupWidth / 2, window.innerWidth - popupWidth - 8)),
         width: popupWidth,
-        zIndex: 9999,
+        zIndex: OVERLAY_Z.panel,
       }
-    : { position: 'fixed', top: 80, left: '50%', transform: 'translateX(-50%)', width: popupWidth, zIndex: 9999 };
+    : { position: 'fixed', top: 80, left: '50%', transform: 'translateX(-50%)', width: popupWidth, zIndex: OVERLAY_Z.panel };
 
   return createPortal(
     <div ref={popoverRef} style={popupStyle}>
@@ -258,7 +277,9 @@ function StagePopup({
             <p className="text-[12px] text-slate-400 text-center py-3 col-span-2">No fields configured for this stage.</p>
           ) : (
             stageFields.map((sf) => {
-              const label = sf.display_label || sf.display_name || sf.field_logical_name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+              // Prefer the stage-field's configured label, then the entity field's
+              // display name, and only fall back to a humanized technical name.
+              const label = sf.display_label || sf.display_name || humanizeFieldName(sf.field_logical_name);
               const hasError = validationErrors.has(sf.field_logical_name);
               return (
                 <div key={sf.psf_id}>
@@ -629,15 +650,6 @@ interface ProcessStageBarProps {
   lookupLabels?: Record<string, string>;
   onCrossEntityAdvance?: (info: CrossEntitySwitchInfo) => void;
   entityNameMap?: Record<string, string>;
-  /**
-   * Opportunity BPF enhancements (opt-in). When true:
-   *  - completed stages render green with a checkmark (active stays blue, future gray),
-   *  - the final stage only turns completed after Finish (cleared on returning to a prior stage),
-   *  - stage-panel dropdowns open below the field, width-matched, and never over the command bar.
-   * Driven by the real BPF state: activeStageId (currentStageKey), the completed set
-   * (stages before the active one), and isFinished.
-   */
-  enhancedStageStates?: boolean;
 }
 
 export type { CrossEntitySwitchInfo };
@@ -663,7 +675,6 @@ export default function ProcessStageBar({
   lookupLabels = {},
   onCrossEntityAdvance,
   entityNameMap = {},
-  enhancedStageStates = false,
 }: ProcessStageBarProps) {
   const processFlow = useMemo(
     () => filterLoadedFlowForEntity(processFlowRaw, entityDefId ?? null),
@@ -836,7 +847,7 @@ export default function ProcessStageBar({
       .filter((sf) => sf.is_required)
       .filter((sf) => { const val = values[sf.field_logical_name]; return val == null || String(val).trim() === ''; })
       .map((sf) => {
-        const label = sf.display_label || sf.field_logical_name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+        const label = sf.display_label || humanizeFieldName(sf.field_logical_name);
         return { field: sf.field_logical_name, label, reason: 'required' as const, message: `${label} is required to advance` };
       });
   };
@@ -863,16 +874,42 @@ export default function ProcessStageBar({
 
   // ─── Click handlers ───────────────────────────────────────────────────────
 
-  const handleStageClick = useCallback((stageKey: string, e: React.MouseEvent<HTMLButtonElement>) => {
+  // Clicking a stage badge. Movement is strictly sequential — you can only ever
+  // enter the stage immediately after the active one, and only via the validated
+  // advance path. Current/completed stages just open for viewing (no state change);
+  // a stage more than one step ahead is blocked. (Defined as a plain function, not a
+  // useCallback, so it can safely reference handleNextStageFromPopup declared below —
+  // the body only runs on click, long after every const is initialized.)
+  const handleStageClick = (stageKey: string, e: React.MouseEvent<HTMLButtonElement>) => {
     if (isTerminal) return;
+    // Toggle the popup closed if the same stage is clicked again.
     if (openPopupStageKey === stageKey) {
       setOpenPopupStageKey(null);
       setPopupAnchorRect(null);
-    } else {
-      setOpenPopupStageKey(stageKey);
-      setPopupAnchorRect((e.currentTarget as HTMLButtonElement).getBoundingClientRect());
+      return;
     }
-  }, [isTerminal, openPopupStageKey]);
+    setPopupAnchorRect((e.currentTarget as HTMLButtonElement).getBoundingClientRect());
+
+    const targetIdx = displayStages.findIndex((s) => s.stage_key === stageKey);
+
+    // The immediate next stage: advance one step through the validated path. This runs
+    // the same required-field/gate checks as the "Next Stage" button. On success the
+    // active stage moves forward (previous → green, new → blue) and persists.
+    if (!isReadonly && currentIdx >= 0 && targetIdx === currentIdx + 1) {
+      handleNextStageFromPopup();
+      return;
+    }
+
+    // More than one step ahead — block the skip. Keep the user on the active stage so
+    // they progress one stage at a time (no auto-completing the stages in between).
+    if (!isReadonly && currentIdx >= 0 && targetIdx > currentIdx + 1) {
+      setOpenPopupStageKey(currentStageKey);
+      return;
+    }
+
+    // Current stage or an already-completed earlier stage: open for viewing only.
+    setOpenPopupStageKey(stageKey);
+  };
 
   const handleNextStageFromPopup = () => {
     if (isReadonly || isTerminal) return;
@@ -951,39 +988,17 @@ export default function ProcessStageBar({
   };
 
   const handlePrevStage = () => {
-    console.group('[BPF] handlePrevStage');
-    console.log('isReadonly:', isReadonly);
-    console.log('isTerminal:', isTerminal);
-    console.log('isFinished:', isFinished, '(raw bpf_is_finished:', values['bpf_is_finished'], ')');
-    console.log('currentStageKey:', currentStageKey);
-    console.log('currentIdx:', currentIdx);
-    console.log('displayStages:', displayStages.map(s => s.stage_key));
-    console.log('openPopupStageKey:', openPopupStageKey);
-
-    if (isReadonly || isTerminal) {
-      console.warn('BLOCKED: isReadonly=' + isReadonly + ' isTerminal=' + isTerminal);
-      console.groupEnd();
-      return;
-    }
+    if (isReadonly || isTerminal) return;
     // When finished, the popup may be on the LAST stage while currentStageKey points to
     // the first stage (the record's stored value). Navigate relative to the popup's stage.
     const sourceKey = (isFinished && openPopupStageKey) ? openPopupStageKey : currentStageKey;
-    const sourceIdx = displayStages.findIndex(s => s.stage_key === sourceKey);
+    const sourceIdx = displayStages.findIndex((s) => s.stage_key === sourceKey);
     const navIdx = sourceIdx >= 0 ? sourceIdx : displayStages.length;
-    console.log('sourceKey:', sourceKey, '| sourceIdx:', sourceIdx, '| navIdx:', navIdx);
-    if (navIdx <= 0) {
-      console.warn('BLOCKED: navIdx <= 0, already at first stage');
-      console.groupEnd();
-      return;
-    }
+    if (navIdx <= 0) return;
     const prevStage = displayStages[navIdx - 1];
-    if (!prevStage) {
-      console.warn('BLOCKED: prevStage not found at index', navIdx - 1);
-      console.groupEnd();
-      return;
-    }
-    console.log('Navigating to prevStage:', prevStage.stage_key, prevStage.name);
-    console.groupEnd();
+    if (!prevStage) return;
+    // Move the active pointer back one stage. finished=false re-opens the flow so the
+    // later stages become "future" again instead of staying marked completed.
     commitStageChange(sourceKey, prevStage.stage_key, false);
     setOpenPopupStageKey(prevStage.stage_key);
   };
@@ -1124,12 +1139,14 @@ export default function ProcessStageBar({
           <div className="flex-1 relative flex items-center min-w-0">
             {/* Background track line */}
             <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] bg-[#e2e5ea] rounded-full" />
-            {/* Progress fill line */}
+            {/* Progress fill line — fills up to the active node. It stays BLUE while the
+                flow is in progress and only turns fully green (100%) once the BPF is
+                actually finished, so an in-progress flow never looks "all completed". */}
             {trackStages.length > 1 && (
               <div
                 className="absolute left-0 top-1/2 -translate-y-1/2 h-[2px] rounded-full transition-all duration-500"
                 style={{
-                  background: (enhancedStageStates || isFinished)
+                  background: isFinished
                     ? 'linear-gradient(90deg, #059669, #34d399)'
                     : 'linear-gradient(90deg, #1a64b6, #2d8cf0)',
                   width: isFinished ? '100%' : `${Math.max(0, Math.min(100, (currentIdx / (trackStages.length - 1)) * 100))}%`,
@@ -1148,19 +1165,18 @@ export default function ProcessStageBar({
                 const isCurrent = !isFinished && stage.stage_key === currentStageKey;
                 const isPopupOpen = openPopupStageKey === stage.stage_key;
 
-                // Completed = green (only completed stages get the checkmark).
-                // Active = blue highlight with the stage number (never a checkmark).
-                // Future = gray. enhancedStageStates renders completed-but-not-finished
-                // stages green too (matching the stage panel); the default keeps them blue.
-                const completedColor = enhancedStageStates || isFinished;
+                // One consistent scheme for every BPF (no per-entity special-casing):
+                //   Completed (a stage before the active one) = GREEN with a checkmark.
+                //   Active (the current stage) = BLUE with the stage number, never a check.
+                //   Future = GREY with the stage number.
                 const badgeColor = isPast
-                  ? (completedColor ? 'bg-emerald-500 text-white shadow-sm' : 'bg-[#1a64b6] text-white shadow-sm')
+                  ? 'bg-emerald-500 text-white shadow-sm'
                   : isCurrent
                   ? 'bg-[#1a64b6] text-white shadow-md ring-4 ring-blue-100'
                   : 'bg-[#f3f5f8] text-slate-400 border border-[#d0d5de]';
 
                 const labelColor = isPast
-                  ? (completedColor ? 'text-emerald-700 font-semibold' : 'text-[#1a64b6]')
+                  ? 'text-emerald-700 font-semibold'
                   : isCurrent
                   ? 'text-[#1a64b6] font-semibold'
                   : 'text-slate-400';
@@ -1285,7 +1301,7 @@ export default function ProcessStageBar({
             lookupLabels={lookupLabels}
             onFieldNavigate={onFieldNavigate}
             anchorRect={popupAnchorRect}
-            scopedDropdowns={enhancedStageStates}
+            scopedDropdowns
           />
         );
       })()}

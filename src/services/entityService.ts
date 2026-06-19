@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { EntityDefinition, EntityFormData } from '../types/entity';
+import { reloadPostgrestSchema } from './schemaService';
 
 export async function fetchEntities(): Promise<EntityDefinition[]> {
   const { data, error } = await supabase
@@ -42,6 +43,10 @@ export async function createEntityWithTable(form: EntityFormData): Promise<Entit
   const result = data as { ok: boolean; entity?: Record<string, unknown>; error?: string } | null;
   if (!result?.ok) throw new Error(result?.error ?? 'Failed to create entity');
 
+  // The physical table now exists but the Data API can't see it until PostgREST
+  // reloads — without this the new entity's list page errors on open. Await so the
+  // table is API-visible by the time the UI navigates to it.
+  await reloadPostgrestSchema();
   supabase.rpc('sync_system_admin_privileges').then(() => {}, () => {});
   return result.entity as unknown as EntityDefinition;
 }

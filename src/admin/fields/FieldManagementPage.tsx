@@ -11,6 +11,7 @@ import { setFieldSecured } from '../../services/columnSecurityService';
 import { createLookupRelationshipPair } from '../../services/relationshipService';
 import { checkColumnDependencies } from '../../services/dependencyService';
 import type { DependencyResult } from '../../services/dependencyService';
+import { invalidateAllMetadataCaches } from '../../app/services/metadata/cacheBus';
 import FieldGrid from './FieldGrid';
 import FieldEditorPanel from './FieldEditorPanel';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -122,6 +123,9 @@ export default function FieldManagementPage({ preselectedEntityId }: FieldManage
         }
       }
     }
+    // A field's physical column / mapping just changed — drop every runtime metadata
+    // cache so the next record save, list load, and bulk edit see the new column.
+    invalidateAllMetadataCaches();
     showSuccess('Field saved');
     setPanelOpen(false);
     setEditingField(undefined);

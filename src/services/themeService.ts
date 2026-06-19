@@ -11,7 +11,8 @@ export type ThemeKey =
   | 'rose-gold'
   | 'blossom'
   | 'lavender'
-  | 'pearl';
+  | 'pearl'
+  | 'white';
 
 /** Default theme, applied before any preference loads and on reset. */
 export const DEFAULT_THEME: ThemeKey = 'monty-light';
@@ -25,13 +26,16 @@ export interface ThemeOption {
   name: string;
   /** Preview dot color — surface for light themes, sidebar for dark ones. */
   swatch: string;
+  /** Optional swatch border override (e.g. a near-white swatch needs a visible edge). */
+  swatchBorder?: string;
   /** Whether this theme has a dark sidebar (so the picker dot needs no border). */
   dark: boolean;
 }
 
-/** The ten selectable themes, in menu order (light section first, then dark). */
+/** The selectable themes, in menu order (light section first, then dark). */
 export const THEMES: ThemeOption[] = [
   { key: 'monty-light', name: 'Monty Light', swatch: '#FFFFFF', dark: false },
+  { key: 'white',       name: 'White',       swatch: '#FFFFFF', swatchBorder: '#EAEAEA', dark: false },
   { key: 'pearl',       name: 'Pearl',       swatch: '#3B82F6', dark: false },
   { key: 'rose-gold',   name: 'Rose Gold',   swatch: '#B76E79', dark: false },
   { key: 'blossom',     name: 'Blossom',     swatch: '#D6336C', dark: false },

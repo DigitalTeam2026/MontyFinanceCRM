@@ -1,19 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Plus, Search, Loader2, LayoutDashboard, MoreHorizontal, Copy, Trash2,
-  Upload, Download, Eye, Pencil, CheckCircle2, CircleSlash, Star, StarOff,
+  Upload, Download, Eye, Pencil, CheckCircle2, CircleSlash, Star, StarOff, Share2, Globe,
 } from 'lucide-react';
 import {
   fetchDashboards, softDeleteDashboard, duplicateDashboardWithScope,
   publishDashboard, unpublishDashboard, exportDefinition, importDefinition,
-  setDefaultDashboard, clearDefaultDashboard,
+  setDefaultDashboard, clearDefaultDashboard, fetchShareSummaries,
 } from './services/dashboardService';
-import type { DuplicateScope } from './services/dashboardService';
+import type { DuplicateScope, DashboardShareSummary } from './services/dashboardService';
 import type { DashboardListRow } from './types/dashboard';
 import { DASHBOARD_TYPES } from './types/dashboard';
 import { useToast, toFriendlyError } from '../../app/context/ToastContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import DuplicateScopeModal from './DuplicateScopeModal';
+import ShareDashboardDialog from './ShareDashboardDialog';
 import AnchoredPopover from '../../app/components/overlay/AnchoredPopover';
 
 interface Props {
@@ -26,17 +27,26 @@ const TYPE_LABEL = Object.fromEntries(DASHBOARD_TYPES.map((t) => [t.value, t.lab
 export default function DashboardListPage({ onNew, onOpen }: Props) {
   const { showSuccess, showError } = useToast();
   const [rows, setRows] = useState<DashboardListRow[]>([]);
+  const [shares, setShares] = useState<Record<string, DashboardShareSummary>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<DashboardListRow | null>(null);
   const [duplicateFor, setDuplicateFor] = useState<DashboardListRow | null>(null);
+  const [shareFor, setShareFor] = useState<DashboardListRow | null>(null);
   const [menuFor, setMenuFor] = useState<{ row: DashboardListRow; el: HTMLElement } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     setLoading(true);
-    try { setRows(await fetchDashboards()); }
+    try {
+      const [list, shareSummaries] = await Promise.all([
+        fetchDashboards(),
+        fetchShareSummaries().catch(() => ({})),
+      ]);
+      setRows(list);
+      setShares(shareSummaries);
+    }
     catch (e) { showError(toFriendlyError(e)); }
     setLoading(false);
   };
@@ -136,6 +146,16 @@ export default function DashboardListPage({ onNew, onOpen }: Props) {
                             <Star size={10} className="fill-blue-700" /> Default
                           </span>
                         )}
+                        {shares[r.dashboard_id]?.organization && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-violet-100 text-violet-700">
+                            <Globe size={10} /> Everyone
+                          </span>
+                        )}
+                        {!!shares[r.dashboard_id]?.count && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600">
+                            <Share2 size={10} /> Shared · {shares[r.dashboard_id].count}
+                          </span>
+                        )}
                       </span>
                       {r.description && <p className="text-slate-400 text-[11px] truncate max-w-xs">{r.description}</p>}
                     </td>
@@ -165,12 +185,17 @@ export default function DashboardListPage({ onNew, onOpen }: Props) {
       </div>
 
       {menuFor && (
-        <AnchoredPopover anchorEl={menuFor.el} open onClose={() => setMenuFor(null)} placement="bottom-end" width={180} role="menu">
+        <AnchoredPopover
+          anchorEl={menuFor.el} open onClose={() => setMenuFor(null)} placement="bottom-end" width={200} role="menu"
+          className="rounded-xl border border-slate-200 bg-white shadow-[0_10px_25px_rgba(15,23,42,0.12)]"
+        >
           <div className="py-1 text-[12px]">
             <MenuItem icon={<Eye size={13} />} label="Open" onClick={() => { onOpen(menuFor.row.dashboard_id); setMenuFor(null); }} />
             <MenuItem icon={<Pencil size={13} />} label="Edit" onClick={() => { onOpen(menuFor.row.dashboard_id); setMenuFor(null); }} />
             <MenuItem icon={<Copy size={13} />} label="Duplicate" disabled={busy}
               onClick={() => { setDuplicateFor(menuFor.row); setMenuFor(null); }} />
+            <MenuItem icon={<Share2 size={13} />} label="Share…"
+              onClick={() => { setShareFor(menuFor.row); setMenuFor(null); }} />
             {menuFor.row.status === 'published' ? (
               <MenuItem icon={<CircleSlash size={13} />} label="Unpublish" disabled={busy}
                 onClick={() => act(() => unpublishDashboard(menuFor.row.dashboard_id), 'Dashboard unpublished.')} />
@@ -212,6 +237,14 @@ export default function DashboardListPage({ onNew, onOpen }: Props) {
             act(() => duplicateDashboardWithScope(duplicateFor.dashboard_id, scope), 'Dashboard duplicated.').then(() => setDuplicateFor(null))}
         />
       )}
+
+      {shareFor && (
+        <ShareDashboardDialog
+          dashboardId={shareFor.dashboard_id}
+          dashboardName={shareFor.name}
+          onClose={() => { setShareFor(null); load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -221,7 +254,8 @@ function MenuItem({ icon, label, onClick, danger, disabled }: {
 }) {
   return (
     <button onClick={onClick} disabled={disabled}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50 disabled:opacity-50 ${danger ? 'text-red-600' : 'text-slate-700'}`}>
+      className={`w-full flex items-center gap-2 px-3 py-2 text-left disabled:opacity-50 ${
+        danger ? 'text-red-600 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-50'}`}>
       {icon} {label}
     </button>
   );

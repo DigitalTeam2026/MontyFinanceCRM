@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Loader2, CalendarOff, CalendarRange, X, CalendarCheck, AlertTriangle, Lock } from 'lucide-react';
+import { Loader2, CalendarOff, CalendarRange, X, CalendarCheck, AlertTriangle, Lock, ChevronDown, Calendar, Users } from 'lucide-react';
 import type {
   DashboardVisual, DashboardDefinition, ThemeConfig, VisualFilter, DateSlicerConfig,
   SlicerDateRange, DateFilterMode,
@@ -8,8 +8,16 @@ import { SLICER_DATE_RANGES } from '../types/dashboard';
 import { runAggregate } from '../services/queryEngine';
 import { computeDateRange, buildDateFilters, toDateInput, fromDateInput, type DateBounds } from './dateRanges';
 import { resolveDateBoundsSource, activeMappingsFor } from './semanticRuntime';
+import { fetchEntitiesCached, fetchFieldsCached } from '../services/relationshipService';
 import { isAuthError } from '../../../lib/supabase';
 import FilterSelect from '../../../app/components/FilterSelect';
+import { renderNavIcon } from '../../../app/utils/navIcons';
+
+/** Resolved display info for one active mapping — drives the card's entity + field-mapping rows. */
+interface MappingInfo { entityId: string; entityName: string; fieldLabel: string; icon?: string | null }
+
+/** Presets surfaced as quick pills on the timeline_card (matches the approved mockup). */
+const CARD_PRESETS: SlicerDateRange[] = ['today', 'tomorrow', 'this_week', 'this_month', 'custom'];
 
 interface Props {
   visual: DashboardVisual;
@@ -50,6 +58,7 @@ export default function DateSlicerVisual({ visual, theme, live = true, definitio
   );
   const mode: DateFilterMode = ds.filterMode ?? 'between';
   const style = ds.style ?? 'timeline';
+  const isCard = style === 'timeline_card';
   const orientation = ds.orientation ?? 'horizontal';
   const compact = !!ds.compact;
   const autoApply = ds.autoApply !== false;
@@ -66,6 +75,11 @@ export default function DateSlicerVisual({ visual, theme, live = true, definitio
   const [start, setStart] = useState<Date | null>(null);
   const [end, setEnd] = useState<Date | null>(null);
   const [pending, setPending] = useState<VisualFilter[] | null>(null);
+  // timeline_card: the currently selected preset (for pill highlight + active chip
+  // label) and the runtime entity narrowing (null = all mapped entities).
+  const [activePreset, setActivePreset] = useState<SlicerDateRange | null>(null);
+  const [selectedEntityIds, setSelectedEntityIds] = useState<string[] | null>(null);
+  const [mappingInfo, setMappingInfo] = useState<MappingInfo[]>([]);
   const reqId = useRef(0);
   const touched = useRef(false);
   const emitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,6 +110,9 @@ export default function DateSlicerVisual({ visual, theme, live = true, definitio
   // ── load min / max available date ─────────────────────────────────────────
   useEffect(() => {
     touched.current = false;
+    // The card has no slider domain — skip the MIN/MAX query entirely and stay
+    // usable (presets / entity narrowing) even before any mapping resolves.
+    if (isCard) { setState({ kind: 'ready', bounds: { min: null, max: null } }); return; }
     // Gate: direct mode needs a field; semantic mode needs ≥1 active mapping.
     if (semantic) {
       if (!activeMappings.length) { setState({ kind: 'no_mapping' }); return; }
@@ -126,7 +143,7 @@ export default function DateSlicerVisual({ visual, theme, live = true, definitio
       if (isAuthError(e)) { setState({ kind: 'denied' }); return; }
       setState({ kind: 'error', message: e instanceof Error ? e.message : 'Query failed' });
     });
-  }, [field, semantic, activeMappings.length, boundsSrc, live]);
+  }, [field, semantic, isCard, activeMappings.length, boundsSrc, live]);
 
   // ── seed the default range once bounds are known (until the user interacts) ──
   useEffect(() => {
@@ -147,8 +164,38 @@ export default function DateSlicerVisual({ visual, theme, live = true, definitio
     // display only (see RangeSlider); the filter must stay the real selection.
     setStart(s);
     setEnd(e);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    setActivePreset(preset === 'all_time' ? null : preset);
   }, [state.kind, ds.defaultRange, ds.startDate, ds.endDate]);
+
+  // ── resolve entity / date-field display names for the card's chip rows ───────
+  useEffect(() => {
+    if (!isCard || !activeMappings.length) { setMappingInfo([]); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const ents = await fetchEntitiesCached();
+        const out: MappingInfo[] = [];
+        for (const m of activeMappings) {
+          if (!m.target_entity_id) continue;
+          const ent = ents.find((e) => e.entity_definition_id === m.target_entity_id);
+          if (!ent) continue;
+          let fieldLabel = 'Date';
+          try {
+            const fields = await fetchFieldsCached(m.target_entity_id);
+            const f = fields.find((x) => x.field_definition_id === m.target_field_id);
+            if (f) fieldLabel = f.display_name || f.physical_column_name;
+          } catch { /* keep fallback label */ }
+          if (!out.some((o) => o.entityId === ent.entity_definition_id)) {
+            out.push({ entityId: ent.entity_definition_id, entityName: ent.display_name, fieldLabel, icon: ent.icon_name });
+          }
+        }
+        out.sort((a, b) => a.entityName.localeCompare(b.entityName));
+        if (alive) setMappingInfo(out);
+      } catch { if (alive) setMappingInfo([]); }
+    })();
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCard, mappingsKey]);
 
   // ── emit the active filters (auto-apply, debounced) ─────────────────────────
   // In semantic mode the leaf field is overwritten downstream per entity/path, so
@@ -159,19 +206,24 @@ export default function DateSlicerVisual({ visual, theme, live = true, definitio
     [emitField, mode, start, end, withTime],
   );
 
+  // Entity narrowing only applies in semantic card mode; non-card / non-semantic
+  // slicers always broadcast a null narrowing (every mapped entity is filtered).
+  const emitEntityIds = isCard ? selectedEntityIds : null;
   useEffect(() => {
     if (state.kind !== 'ready' || !onFilterChange) return;
     if (!autoApply && touched.current) { setPending(filters); return; }
     if (emitTimer.current) clearTimeout(emitTimer.current);
     const ms = Math.max(0, ds.debounceMs ?? 0);
-    emitTimer.current = setTimeout(() => onFilterChange(filters), ms);
+    emitTimer.current = setTimeout(() => onFilterChange(filters, { entityIds: emitEntityIds }), ms);
     return () => { if (emitTimer.current) clearTimeout(emitTimer.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, state.kind, autoApply]);
+  }, [filters, state.kind, autoApply, emitEntityIds]);
 
   const applyPreset = (preset: SlicerDateRange) => {
     touched.current = true;
+    setActivePreset(preset === 'all_time' ? null : preset);
     if (preset === 'all_time') { setStart(null); setEnd(null); return; }
+    if (preset === 'custom') return; // keep current start/end; reveal the inputs
     const r = computeDateRange(preset);
     // True selected range — unclamped (see seeding effect above for why).
     setStart(r.start);
@@ -180,11 +232,36 @@ export default function DateSlicerVisual({ visual, theme, live = true, definitio
   const clear = () => {
     touched.current = true;
     setStart(null); setEnd(null);
+    setActivePreset(null);
+    setSelectedEntityIds(null);
     setPending(null);
     onFilterChange?.([]);
   };
   const applyToday = () => applyPreset('today');
-  const applyPending = () => { if (pending) { onFilterChange?.(pending); setPending(null); } };
+  const applyPending = () => { if (pending) { onFilterChange?.(pending, { entityIds: emitEntityIds }); setPending(null); } };
+
+  // ── timeline_card entity narrowing helpers ──────────────────────────────────
+  const allEntityIds = useMemo(() => mappingInfo.map((m) => m.entityId), [mappingInfo]);
+  const effectiveEntityIds = selectedEntityIds ?? allEntityIds;
+  const isEntityOn = (id: string) => selectedEntityIds === null || selectedEntityIds.includes(id);
+  // Selecting every entity collapses back to "All" (null = no narrowing).
+  const normalizeSel = (next: string[]) =>
+    next.length === 0 || next.length === allEntityIds.length ? null : next;
+  const toggleEntity = (id: string) => {
+    touched.current = true;
+    const cur = selectedEntityIds ?? allEntityIds;
+    setSelectedEntityIds(normalizeSel(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  };
+  const removeEntity = (id: string) => {
+    touched.current = true;
+    const cur = selectedEntityIds ?? allEntityIds;
+    setSelectedEntityIds(normalizeSel(cur.filter((x) => x !== id)));
+  };
+  const selectAllEntities = () => { touched.current = true; setSelectedEntityIds(null); };
+
+  const presetLabel = (p: SlicerDateRange | null) =>
+    (p && SLICER_DATE_RANGES.find((r) => r.value === p)?.label) || 'Custom';
+  const hasDateFilter = !!(start || end);
 
   // ── status states ───────────────────────────────────────────────────────────
   if (state.kind === 'loading') return <Status icon={<Loader2 className="animate-spin" size={16} />} text="Loading…" theme={theme} />;
@@ -193,6 +270,137 @@ export default function DateSlicerVisual({ visual, theme, live = true, definitio
   if (state.kind === 'no_dates') return <Status icon={<CalendarOff size={18} />} text="No dated records found" theme={theme} />;
   if (state.kind === 'denied') return <Status icon={<Lock size={16} />} text="Permission denied" theme={theme} />;
   if (state.kind === 'error') return <Status icon={<AlertTriangle size={16} />} text={state.message} theme={theme} tone="error" />;
+
+  // ── timeline_card: the combined "Timeline / Date Filter" card (approved mockup) ──
+  if (isCard) {
+    const showEnt = ds.showEntitySelector !== false && mappingInfo.length > 0;
+    const showMap = ds.showFieldMapping !== false && mappingInfo.length > 0;
+    const showChips = ds.showActiveChips !== false;
+    const applyNow = () => onFilterChange?.(filters, { entityIds: emitEntityIds });
+    const title = ds.cardTitle || visual.title || 'Timeline / Date Filter';
+    const label = (t: string) => (
+      <span className="text-[11px] font-medium mb-1.5 block" style={{ color: theme.secondaryText }}>{t}</span>
+    );
+    // Segmented-control cell styling (active = blue outline + accent text, like the mockup).
+    const cell = (active: boolean): React.CSSProperties => active
+      ? { background: theme.surfaceBackground, color: accent, boxShadow: `inset 0 0 0 1.5px ${accent}`, position: 'relative', zIndex: 1 }
+      : { background: 'transparent', color: presetText };
+
+    return (
+      <div className="h-full w-full overflow-auto p-3.5 flex flex-col gap-3" style={{ color: theme.primaryText }}>
+        {visual.format_config?.showHeader !== false && (
+          <h3 className="text-[14px] font-semibold" style={{ color: theme.primaryText }}>{title}</h3>
+        )}
+
+        {/* Date range + Entities — side by side, wrap on narrow cards */}
+        <div className="flex flex-wrap gap-x-8 gap-y-3 items-start">
+          {/* Date range */}
+          <div className="min-w-0">
+            {label('Date range')}
+            <div className="flex flex-wrap items-center gap-2">
+              <FilterSelect
+                value={activePreset ?? 'all_time'}
+                onChange={(e) => applyPreset(e.target.value as SlicerDateRange)}
+                className="px-2.5 py-1.5 text-[12px] rounded-lg border"
+                style={{ borderColor: theme.borderColor, color: theme.primaryText, background: theme.surfaceBackground }}>
+                {SLICER_DATE_RANGES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </FilterSelect>
+              <div className="inline-flex rounded-lg border overflow-hidden" style={{ borderColor: theme.borderColor }}>
+                {CARD_PRESETS.map((p, i) => (
+                  <button key={p} onClick={() => applyPreset(p)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors"
+                    style={{ ...cell(p === activePreset), borderLeft: i ? `1px solid ${theme.borderColor}` : undefined }}>
+                    {p === 'custom' && <Calendar size={12} />}
+                    {SLICER_DATE_RANGES.find((r) => r.value === p)?.label ?? p}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {activePreset === 'custom' && (
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                <input type={withTime ? 'datetime-local' : 'date'} value={toDateInput(start)}
+                  onChange={(e) => { touched.current = true; setStart(fromDateInput(e.target.value)); setActivePreset('custom'); }}
+                  className="px-2 py-1.5 text-[12px] rounded-lg border bg-transparent" style={{ borderColor: theme.borderColor, color: theme.primaryText }} />
+                <span className="text-[12px]" style={{ color: theme.secondaryText }}>→</span>
+                <input type={withTime ? 'datetime-local' : 'date'} value={toDateInput(end)}
+                  onChange={(e) => { touched.current = true; setEnd(fromDateInput(e.target.value)); setActivePreset('custom'); }}
+                  className="px-2 py-1.5 text-[12px] rounded-lg border bg-transparent" style={{ borderColor: theme.borderColor, color: theme.primaryText }} />
+              </div>
+            )}
+          </div>
+
+          {/* Entities — interactive runtime narrowing */}
+          {showEnt && (
+            <div className="min-w-0 ml-auto">
+              {label('Entities')}
+              <div className="inline-flex rounded-lg border overflow-hidden" style={{ borderColor: theme.borderColor }}>
+                {mappingInfo.map((m, i) => {
+                  const on = isEntityOn(m.entityId);
+                  return (
+                    <button key={m.entityId} onClick={() => toggleEntity(m.entityId)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors"
+                      style={{ ...cell(on), borderLeft: i ? `1px solid ${theme.borderColor}` : undefined }}>
+                      {renderNavIcon(m.icon, 13)}{m.entityName}
+                    </button>
+                  );
+                })}
+                <button onClick={selectAllEntities}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors"
+                  style={{ ...cell(selectedEntityIds === null), borderLeft: `1px solid ${theme.borderColor}` }}>
+                  <Users size={13} />All
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Field mapping (read-only) + Clear / Apply */}
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+            {showMap && (
+              <div className="min-w-0">
+                {label('Field mapping')}
+                <div className="flex flex-wrap items-center gap-2">
+                  {mappingInfo.filter((m) => isEntityOn(m.entityId)).map((m) => (
+                    <span key={m.entityId} title="Configured in Global filters"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[12px]"
+                      style={{ background: theme.surfaceBackground, borderColor: theme.borderColor }}>
+                      <span style={{ color: accent }}>{renderNavIcon(m.icon, 13)}</span>
+                      <span style={{ color: theme.primaryText }}>{m.entityName}</span>
+                      <span style={{ color: theme.secondaryText }}>→ {m.fieldLabel}</span>
+                      <ChevronDown size={13} style={{ color: theme.secondaryText }} />
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-2 ml-auto">
+              {ds.showClearButton !== false && (
+                <button onClick={clear} className="px-3.5 py-1.5 rounded-lg text-[12px] font-medium border"
+                  style={{ borderColor: theme.borderColor, color: theme.secondaryText, background: theme.surfaceBackground }}>
+                  Clear
+                </button>
+              )}
+              <button onClick={pending ? applyPending : applyNow}
+                className="px-4 py-1.5 rounded-lg text-[12px] font-semibold" style={{ background: activeBg, color: activeText }}>
+                Apply
+              </button>
+            </div>
+        </div>
+
+        {/* Active filter chips */}
+        {showChips && hasDateFilter && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Chip label={presetLabel(activePreset)} onClear={clear} accent={accent} theme={theme} icon={<CalendarCheck size={11} />} />
+            {effectiveEntityIds.map((id) => {
+              const m = mappingInfo.find((x) => x.entityId === id);
+              if (!m) return null;
+              return <Chip key={id} label={`${m.entityName}.${m.fieldLabel}`} onClear={() => removeEntity(id)} accent={accent} theme={theme} icon={renderNavIcon(m.icon, 11)} />;
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const vertical = orientation === 'vertical';
   const showPresets = ds.showPresetRanges !== false && style !== 'dropdown_preset';
@@ -360,6 +568,18 @@ function RangeSlider({ min, max, start, end, accent, track, handle, ds, theme, o
         </div>
       )}
     </div>
+  );
+}
+
+// Active-filter chip for the timeline_card. The × clears the date filter (preset
+// chip) or removes one entity from the runtime narrowing (per-entity chip).
+function Chip({ label, onClear, accent, theme, icon }: { label: string; onClear: () => void; accent: string; theme: ThemeConfig; icon?: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium"
+      style={{ background: theme.surfaceBackground, color: accent, border: `1px solid ${accent}` }}>
+      {icon}{label}
+      <button onClick={onClear} className="hover:opacity-60" aria-label={`Remove ${label}`}><X size={11} /></button>
+    </span>
   );
 }
 

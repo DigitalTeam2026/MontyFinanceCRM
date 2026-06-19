@@ -104,6 +104,15 @@
   --warn-bg:#FEF3C7; --warn-text:#92400E; --row-hover:#F6F7F9;
   --shadow:0 6px 18px -12px rgba(17,24,39,.12);
 }
+[data-theme="white"]{
+  --app-bg:#FFFFFF; --sidebar-bg:#FFFFFF; --sidebar-text:#6B7280;
+  --sidebar-active:#EEF2FF; --sidebar-strong:#1A1A1A; --topbar-bg:#FFFFFF;
+  --surface:#FFFFFF; --surface-2:#FAFAFA; --border:#EAEAEA; --text:#1A1A1A;
+  --muted:#6B7280; --primary:#2563EB; --primary-text:#FFFFFF; --link:#2563EB;
+  --input-bg:#FAFAFA; --danger:#DC2626; --success:#16A34A;
+  --warn-bg:#FEF3C7; --warn-text:#92400E; --row-hover:#FAFAFA;
+  --shadow:0 6px 18px -12px rgba(0,0,0,.10);
+}
 
 /* ── Legacy-variable aliases + global tokens (theme-independent) ────────────────
    The codebase still references the older variable names below. Aliasing them
@@ -148,6 +157,17 @@
    set above. */
 [data-theme="monty-light"] {
   --topbar-bg: var(--sidebar-bg);
+  --header-fg: var(--text);
+  --header-fg-muted: var(--muted);
+  --header-sep: var(--border);
+  --header-border: var(--border);
+  --header-input-bg: var(--surface-2);
+  --header-input-border: var(--border);
+  --header-hover-bg: var(--row-hover);
+}
+
+/* White also has a light top bar, so its controls flip to dark-on-light too. */
+[data-theme="white"] {
   --header-fg: var(--text);
   --header-fg-muted: var(--muted);
   --header-sep: var(--border);

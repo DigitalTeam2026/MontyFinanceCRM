@@ -4,6 +4,7 @@ import { Save, AlertCircle, Lock, Info, GitBranch, CheckCircle2, Circle, Loader2
 import type { EntityDefinition, EntityFormData, OwnershipType } from '../../types/entity';
 import { createEntityWithTable, updateEntity } from '../../services/entityService';
 import { bootstrapEntity } from '../../services/bootstrapEntityService';
+import { invalidateAllMetadataCaches } from '../../app/services/metadata/cacheBus';
 import { fetchProcessFlowsForEntity, setEntityDefaultFlow } from '../../services/processFlowService';
 import type { ProcessFlow } from '../../types/processFlow';
 import { supabase } from '../../lib/supabase';
@@ -148,6 +149,10 @@ export default function EntityDesignerPage({ entity, onSaved, onCancel }: Entity
       await bootstrapEntity(result).catch(() => {});
       updateStep(2, 'done');
       updateStep(3, 'done');
+
+      // A new entity (table + default forms/views) now exists — drop runtime metadata
+      // caches so navigation, list pages, and saves resolve it without a page reload.
+      invalidateAllMetadataCaches();
 
       // Brief pause so the user sees all steps green before navigation
       await new Promise((r) => setTimeout(r, 600));

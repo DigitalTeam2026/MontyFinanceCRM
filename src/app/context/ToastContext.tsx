@@ -129,6 +129,9 @@ export function toFriendlyError(e: unknown, fallback = 'Something went wrong. Pl
   if (msg.includes('required') || msg.includes('null value') || msg.includes('not-null')) {
     return 'Please fill in all required fields.';
   }
+  if (msg.includes('check constraint') || msg.includes('23514')) {
+    return 'One of the values is not allowed for that field. Please choose a valid option.';
+  }
   if (msg.includes('foreign key') || msg.includes('violates')) {
     return 'This record is linked to other data and cannot be changed right now.';
   }

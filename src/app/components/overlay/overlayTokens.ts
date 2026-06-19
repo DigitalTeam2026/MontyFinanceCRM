@@ -5,6 +5,8 @@
  *
  *   base content      0–10   (in-flow cards, charts, tables)
  *   sticky headers    20     (sticky table head / frozen columns)
+ *   panels            900    (anchored flyout panels — e.g. BPF stage popup — that
+ *                             host their own dropdowns, so they sit BELOW the popover band)
  *   popovers          1000   (dropdowns, anchored menus, column filters, view pickers)
  *   dialogs           1100   (modal dialogs that should sit above popovers)
  *   toasts            1200   (transient notifications — always on top)
@@ -16,6 +18,7 @@
  */
 export const OVERLAY_Z = {
   stickyHeader: 20,
+  panel: 900,
   popover: 1000,
   dialog: 1100,
   toast: 1200,

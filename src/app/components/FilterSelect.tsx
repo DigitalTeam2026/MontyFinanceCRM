@@ -42,6 +42,10 @@ interface FilterSelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>
   forceDown?: boolean;
   /** Constrain the menu to exactly the trigger's width (drops the min-width floor). */
   matchTriggerWidth?: boolean;
+  /** Always show the search box, even when there are few options (overrides the
+   *  SEARCH_THRESHOLD floor). Use for pickers whose lists grow over time (users,
+   *  teams, …) so search is available from the first item. */
+  forceSearch?: boolean;
 }
 
 /** Flatten an arbitrary ReactNode tree of <option>/<optgroup> into a flat list. */
@@ -121,6 +125,7 @@ export default function FilterSelect({
   name,
   forceDown = false,
   matchTriggerWidth = false,
+  forceSearch = false,
   ...rest
 }: FilterSelectProps) {
   const [open, setOpen] = useState(false);
@@ -205,7 +210,7 @@ export default function FilterSelect({
     setOpen(false);
   };
 
-  const showSearch = options.length > SEARCH_THRESHOLD;
+  const showSearch = forceSearch || options.length > SEARCH_THRESHOLD;
   const filtered = search.trim()
     ? options.filter((o) => optionMatchesSearch(o.text, search))
     : options;

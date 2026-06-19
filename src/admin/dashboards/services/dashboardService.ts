@@ -511,6 +511,73 @@ export async function deletePermission(permissionId: string): Promise<void> {
   if (error) throw error;
 }
 
+// Per-dashboard sharing summary for the list view (one query, grouped client-side).
+export interface DashboardShareSummary { count: number; organization: boolean }
+export async function fetchShareSummaries(): Promise<Record<string, DashboardShareSummary>> {
+  const { data, error } = await supabase
+    .from('dashboard_permission').select('dashboard_id, principal_type');
+  if (error) throw error;
+  const out: Record<string, DashboardShareSummary> = {};
+  for (const row of data ?? []) {
+    const r = row as { dashboard_id: string; principal_type: string };
+    const s = out[r.dashboard_id] ?? (out[r.dashboard_id] = { count: 0, organization: false });
+    if (r.principal_type === 'organization') s.organization = true;
+    else s.count += 1;
+  }
+  return out;
+}
+
+// ── Principal pickers (Share dialog) ─────────────────────────────────────────
+// The principals an admin can grant access to. RLS lets admins read these source
+// tables; the Share dialog is admin-only (Admin Studio) so reads succeed.
+export type PrincipalKind = 'user' | 'team' | 'role' | 'business_unit';
+export interface PrincipalOption { id: string; label: string; sublabel?: string }
+
+const PRINCIPAL_SOURCES: Record<PrincipalKind, { table: string; pk: string; label: string; extra?: string }> = {
+  user: { table: 'crm_user', pk: 'user_id', label: 'full_name', extra: 'email' },
+  team: { table: 'team', pk: 'team_id', label: 'name' },
+  role: { table: 'security_role', pk: 'role_id', label: 'name' },
+  business_unit: { table: 'business_unit', pk: 'business_unit_id', label: 'name' },
+};
+
+export async function fetchPrincipalOptions(kind: PrincipalKind): Promise<PrincipalOption[]> {
+  const src = PRINCIPAL_SOURCES[kind];
+  const cols = src.extra ? `${src.pk}, ${src.label}, ${src.extra}` : `${src.pk}, ${src.label}`;
+  const { data, error } = await supabase.from(src.table).select(cols).order(src.label);
+  if (error) throw error;
+  return (data ?? []).map((row) => {
+    const r = row as unknown as Record<string, string | null>;
+    return {
+      id: r[src.pk] as string,
+      label: (r[src.label] as string) || '(unnamed)',
+      sublabel: src.extra ? (r[src.extra] as string) ?? undefined : undefined,
+    };
+  });
+}
+
+// ── Runtime: dashboards the current user may open ────────────────────────────
+// Returns the published dashboards the signed-in user can read (RLS-filtered by
+// security.dashboard_can(id,'read')) plus the org-wide default. Powers the
+// runtime dashboard switcher. Drafts are hidden from end users.
+export interface AccessibleDashboard {
+  dashboard_id: string;
+  name: string;
+  is_default: boolean;
+  status: Dashboard['status'];
+}
+
+export async function fetchAccessibleDashboards(): Promise<AccessibleDashboard[]> {
+  const { data, error } = await supabase
+    .from('dashboard')
+    .select('dashboard_id, name, is_default, status')
+    .is('deleted_at', null)
+    .or('status.eq.published,is_default.eq.true')
+    .order('is_default', { ascending: false })
+    .order('name', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as AccessibleDashboard[];
+}
+
 // ── Per-user runtime state ──────────────────────────────────────────────────────
 export async function loadUserState(dashboardId: string) {
   const { data } = await supabase

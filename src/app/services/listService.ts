@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase';
 import { type AppEntity, ENTITY_DEFINITION_ID } from '../types';
-import { getTableColumns } from './recordService';
+import { getTableColumns, translateKeysToPhysical, clearTableColumnsCache, filterToExistingColumns } from './recordService';
+import { reloadPostgrestSchema, isSchemaCacheError } from '../../services/schemaService';
 import { getTable } from './metadata/metadataStore';
 import type { AccessLevel, UserAccessContext } from './permissionService';
 
@@ -752,6 +753,16 @@ async function fetchUniversal(entity: AppEntity, opts: ListOptions): Promise<Lis
   let result = await buildQuery(filters);
   if (result.error && filters.length > 0) result = await buildQuery([]);
   if (result.error) result = await buildQuery([], pk);
+  if (result.error && isSchemaCacheError(result.error)) {
+    // The table/columns may have just been created via DDL but PostgREST has not
+    // re-introspected yet (new entity just added). Reload the API schema cache,
+    // drop the stale column set, and retry once before giving up.
+    await reloadPostgrestSchema();
+    clearTableColumnsCache(table);
+    await new Promise((r) => setTimeout(r, 400));
+    result = await buildQuery(filters);
+    if (result.error) result = await buildQuery([], pk);
+  }
   if (result.error) throw result.error;
 
   const data: Record<string, unknown>[] = result.data ?? [];
@@ -886,8 +897,20 @@ export async function updateRowFields(
   userId: string
 ): Promise<void> {
   const { table, pk } = await resolveEntityMeta(entity);
-  const tableCols = await getTableColumns(table);
-  const payload: Record<string, unknown> = { ...fields };
+  const physical = await translateKeysToPhysical(entity, fields);
+  const intended = Object.keys(physical);
+  let tableCols = await getTableColumns(table);
+  if (tableCols.size > 0 && intended.some((k) => !tableCols.has(k))) {
+    tableCols = await getTableColumns(table, { force: true });
+  }
+  const dropped = tableCols.size > 0 ? intended.filter((k) => !tableCols.has(k)) : [];
+  if (dropped.length > 0) {
+    throw new Error(
+      `Cannot save field(s) ${dropped.join(', ')}: no matching database column. ` +
+      `Reload the schema cache in Admin Studio → System Health and try again.`,
+    );
+  }
+  const payload: Record<string, unknown> = filterToExistingColumns(physical, tableCols);
   if (tableCols.has('modified_at')) payload.modified_at = new Date().toISOString();
   if (tableCols.has('modified_by')) payload.modified_by = userId;
   const { error } = await supabase
@@ -963,11 +986,35 @@ export async function bulkUpdateRows(
   userId: string
 ): Promise<{ updated: number; errors: number; message?: string }> {
   const { table, pk } = await resolveEntityMeta(entity);
-  const tableCols = await getTableColumns(table);
   let updated = 0;
   let errors = 0;
   let firstError: string | undefined;
-  const payload: Record<string, unknown> = { ...fields };
+
+  // Translate logical field names → physical columns (lookups become <field>_id),
+  // while passing system columns (is_deleted/state_code/owner_id) through unchanged.
+  const physical = await translateKeysToPhysical(entity, fields);
+  const intended = Object.keys(physical);
+
+  // Self-heal: a column added moments ago (ALTER TABLE) may not be in the cache yet.
+  let tableCols = await getTableColumns(table);
+  if (tableCols.size > 0 && intended.some((k) => !tableCols.has(k))) {
+    tableCols = await getTableColumns(table, { force: true });
+  }
+  const dropped = tableCols.size > 0 ? intended.filter((k) => !tableCols.has(k)) : [];
+  const payload: Record<string, unknown> = filterToExistingColumns(physical, tableCols);
+
+  // Every requested field maps to a missing column → nothing can be written. Surface
+  // it loudly instead of silently reporting success.
+  if (intended.length > 0 && Object.keys(payload).length === 0) {
+    return {
+      updated: 0,
+      errors: ids.length,
+      message: `No records updated — no database column for: ${dropped.join(', ')}. ` +
+        `Reload the schema cache in Admin Studio → System Health and try again.`,
+    };
+  }
+  if (dropped.length > 0) firstError = `Some fields were skipped (no database column): ${dropped.join(', ')}`;
+
   if (tableCols.has('modified_at')) payload.modified_at = new Date().toISOString();
   if (tableCols.has('modified_by')) payload.modified_by = userId;
   const CHUNK = 50;
@@ -992,7 +1039,7 @@ export async function bulkUpdateRows(
       }
     }
   }
-  return { updated, errors, message: errors > 0 ? firstError : undefined };
+  return { updated, errors, message: errors > 0 || dropped.length > 0 ? firstError : undefined };
 }
 
 export async function bulkDeleteRows(

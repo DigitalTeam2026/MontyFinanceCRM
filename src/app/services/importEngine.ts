@@ -142,7 +142,9 @@ export async function resolveImportColumns(
       meta.lookupLabelField = col.lookup_label_field;
       meta.lookupEntityId = fd.lookup_entity_id ?? undefined;
       if (meta.lookupTable) {
-        meta.lookupPk = PK_OVERRIDES[meta.lookupTable] ?? `${meta.lookupTable}_id`;
+        // The `crm_` prefix is dropped for PK columns (crm_leadsource → leadsource_id),
+        // so the naive `${table}_id` guess 400s for prefixed tables.
+        meta.lookupPk = PK_OVERRIDES[meta.lookupTable] ?? `${meta.lookupTable.replace(/^crm_/, '')}_id`;
       }
     }
 
@@ -209,7 +211,7 @@ export async function fetchReferenceData(
   const lookupPromises = lookupCols.map(async (col) => {
     const table = col.lookupTable!;
     const labelField = col.lookupLabelField!;
-    const pk = col.lookupPk ?? `${table}_id`;
+    const pk = col.lookupPk ?? `${table.replace(/^crm_/, '')}_id`;
     let qb = supabase.from(table).select(`${pk}, ${labelField}`).limit(2000);
     if (table === 'crm_user') qb = (qb as any).eq('is_active', true);
     const { data } = await qb;

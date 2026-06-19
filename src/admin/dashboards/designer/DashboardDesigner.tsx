@@ -85,9 +85,9 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
   const [showGlobals, setShowGlobals] = useState(false);
 
   // Route a slicer broadcast to the semantic bus when it drives a global filter.
-  const onSlicerChange = useCallback((v: DashboardVisual, filters: import('../types/dashboard').VisualFilter[]) => {
+  const onSlicerChange = useCallback((v: DashboardVisual, filters: import('../types/dashboard').VisualFilter[], opts?: import('../types/dashboard').SlicerBroadcastOpts) => {
     const semId = v.data_config.dateSlicer?.semanticFilterId ?? v.data_config.valueSlicer?.semanticFilterId;
-    if (semId) sem.setSelection(semId, filters, v.dashboard_page_id);
+    if (semId) sem.setSelection(semId, filters, v.dashboard_page_id, opts?.entityIds);
     else setEmit(buildSlicerEmit(v, filters));
   }, [sem, setEmit]);
 
@@ -394,7 +394,7 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
                     isInteractionSource={editInteractions && isSource}
                     interactionMode={curMode}
                     onCycleInteraction={() => selectedId && cycleInteraction(selectedId, v.dashboard_visual_id, curMode)}
-                    onFilterChange={(filters) => onSlicerChange(v, filters)}
+                    onFilterChange={(filters, opts) => onSlicerChange(v, filters, opts)}
                     onSelect={() => setSelectedId(v.dashboard_visual_id)}
                     onResize={(w, h) => resize(v.dashboard_visual_id, w, h)}
                     onDelete={() => removeVisual(v.dashboard_visual_id)}
@@ -485,7 +485,7 @@ function CanvasVisual({ visual, theme, colWidth, definition, semanticSelections,
   getHighlight?: (entity: string, fieldId: string | undefined) => Set<string>;
   editInteractions?: boolean; isInteractionSource?: boolean;
   interactionMode?: InteractionMode; onCycleInteraction?: () => void;
-  onFilterChange?: (filters: import('../types/dashboard').VisualFilter[]) => void;
+  onFilterChange?: (filters: import('../types/dashboard').VisualFilter[], opts?: import('../types/dashboard').SlicerBroadcastOpts) => void;
   onSelect: () => void; onResize: (w: number, h: number) => void; onDelete: () => void;
   onDuplicate: () => void; onToggleLock: () => void; onToggleHide: () => void;
 }) {

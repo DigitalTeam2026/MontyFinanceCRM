@@ -53,7 +53,7 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-const LIGHT_THEME_KEYS: ThemeKey[] = ['monty-light', 'pearl', 'rose-gold', 'blossom', 'lavender', 'graphite', 'ocean'];
+const LIGHT_THEME_KEYS: ThemeKey[] = ['monty-light', 'white', 'pearl', 'rose-gold', 'blossom', 'lavender', 'graphite', 'ocean'];
 const DARK_THEME_KEYS: ThemeKey[] = ['monty-dark', 'slate-dark', 'forest'];
 
 function SidebarThemePicker({ currentTheme, onChange }: { currentTheme: ThemeKey; onChange: (k: ThemeKey) => void }) {
@@ -86,7 +86,7 @@ function SidebarThemePicker({ currentTheme, onChange }: { currentTheme: ThemeKey
       >
         <span
           className="w-5 h-5 rounded-md border shrink-0"
-          style={{ background: t.swatch, borderColor: 'rgba(0,0,0,0.12)' }}
+          style={{ background: t.swatch, borderColor: t.swatchBorder ?? 'rgba(0,0,0,0.12)' }}
         />
         <span className="flex-1 text-left text-[12px] font-medium" style={{ color: 'var(--text)' }}>{t.name}</span>
         {selected && <Check size={13} className="shrink-0" style={{ color: 'var(--primary)' }} />}
@@ -104,8 +104,8 @@ function SidebarThemePicker({ currentTheme, onChange }: { currentTheme: ThemeKey
         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--sidebar-text)'; }}
       >
         <span
-          className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
-          style={{ background: active?.swatch ?? '#FFFFFF' }}
+          className="w-3.5 h-3.5 rounded-full border shrink-0"
+          style={{ background: active?.swatch ?? '#FFFFFF', borderColor: active?.swatchBorder ?? 'rgba(0,0,0,0.10)' }}
         />
         <span className="flex-1 text-left font-medium">Theme</span>
         <span className="text-[10px] shrink-0" style={{ color: 'var(--sidebar-text)', opacity: 0.7 }}>{active?.name ?? 'Custom'}</span>

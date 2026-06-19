@@ -17,7 +17,17 @@ import type {
 } from '../types/dashboard';
 import { fetchEntitiesCached, fetchFieldsCached } from '../services/relationshipService';
 
-interface Selection { filters: VisualFilter[]; pageId: string }
+interface Selection {
+  filters: VisualFilter[];
+  pageId: string;
+  /**
+   * Runtime entity narrowing (timeline_card "Entities" chips). When set to a
+   * non-empty list of entity_definition_ids, the selection only filters visuals
+   * whose base entity is in the list. null / undefined / [] = apply to every
+   * mapped entity (no narrowing).
+   */
+  entityIds?: string[] | null;
+}
 
 export interface ResolvedSemantics {
   runtimeFilters: VisualFilter[];        // merge into runtimeFilters
@@ -118,7 +128,10 @@ export function useDashboardSemanticFilters(def: DashboardDefinition | null) {
   }, [def?.dashboard?.dashboard_id, mappingsKey]);
 
   /** A slicer broadcasts (or clears) the selection for one semantic filter. */
-  const setSelection = useCallback((semanticFilterId: string, filters: VisualFilter[], pageId: string) => {
+  const setSelection = useCallback((
+    semanticFilterId: string, filters: VisualFilter[], pageId: string, entityIds?: string[] | null,
+  ) => {
+    const norm = entityIds && entityIds.length ? entityIds : null;
     setSelections((prev) => {
       const cur = prev[semanticFilterId];
       if (!filters.length) {
@@ -126,8 +139,10 @@ export function useDashboardSemanticFilters(def: DashboardDefinition | null) {
         const { [semanticFilterId]: _drop, ...rest } = prev; void _drop;
         return rest;
       }
-      if (cur && cur.pageId === pageId && JSON.stringify(cur.filters) === JSON.stringify(filters)) return prev;
-      return { ...prev, [semanticFilterId]: { filters, pageId } };
+      if (cur && cur.pageId === pageId
+        && JSON.stringify(cur.filters) === JSON.stringify(filters)
+        && JSON.stringify(cur.entityIds ?? null) === JSON.stringify(norm)) return prev;
+      return { ...prev, [semanticFilterId]: { filters, pageId, entityIds: norm } };
     });
   }, []);
 
@@ -153,6 +168,12 @@ export function useDashboardSemanticFilters(def: DashboardDefinition | null) {
       if (sf.scope === 'page' && sel.pageId && visual.dashboard_page_id !== sel.pageId) continue;
       if (sf.scope === 'selected' && !binding) continue;
       if (!entityId) { notAffectedBy.push(sfId); continue; }
+      // Runtime entity narrowing (timeline_card "Entities" chips): the viewer has
+      // restricted this selection to a subset of mapped entities — visuals on any
+      // other entity are left unfiltered.
+      if (sel.entityIds && sel.entityIds.length && !sel.entityIds.includes(entityId)) {
+        notAffectedBy.push(sfId); continue;
+      }
 
       const override = binding?.relationship_path_override;
       const mapping = mappingForEntity(def, sfId, entityId);

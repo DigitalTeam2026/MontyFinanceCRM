@@ -28,6 +28,10 @@ const LABEL_FALLBACKS: Record<string, string[]> = {
   contact: ['email', 'business_phone'],
 };
 
+// Fast-path PKs for well-known tables. Any table NOT listed here is resolved from the
+// database via get_table_pk_column so the real primary key is always used — never the
+// naive `${table}_id` guess, which breaks whenever the physical table has a prefix the
+// PK drops (e.g. crm_leadsource → leadsource_id, not crm_leadsource_id).
 const PK_OVERRIDES: Record<string, string> = {
   product_family: 'family_id',
   line_of_business: 'lob_id',
@@ -36,6 +40,25 @@ const PK_OVERRIDES: Record<string, string> = {
   crm_source: 'source_id',
   marketing_email: 'email_id',
 };
+
+const lookupPkCache = new Map<string, string>();
+
+/** Resolve a lookup table's real primary-key column (cached). Falls back to the
+ *  naive `${table}_id` only if the DB lookup is unavailable. */
+async function resolveLookupPk(table: string): Promise<string> {
+  const cached = lookupPkCache.get(table);
+  if (cached) return cached;
+  let pk = PK_OVERRIDES[table];
+  if (!pk) {
+    try {
+      const { data } = await supabase.rpc('get_table_pk_column', { p_table: table });
+      if (typeof data === 'string' && data) pk = data;
+    } catch { /* fall through to the conventional guess */ }
+  }
+  pk = pk ?? `${table}_id`;
+  lookupPkCache.set(table, pk);
+  return pk;
+}
 
 export function buildLookupSpecs(columns: ColumnState[]): LookupSpec[] {
   const specs: LookupSpec[] = [];
@@ -91,6 +114,7 @@ let optionSetTableExists: boolean | null = null;
 /** Drop the grid option-set cache after a publish (see metadata/cacheBus.ts). */
 export function resetGridOptionSetCache(): void {
   optionSetCache.clear();
+  lookupPkCache.clear();
 }
 
 async function resolveOptionSetLabels(optionSetId: string): Promise<Record<string, string>> {
@@ -151,7 +175,7 @@ async function batchResolveLookup(
     return map;
   }
 
-  const pk = PK_OVERRIDES[spec.lookupTable] ?? `${spec.lookupTable}_id`;
+  const pk = await resolveLookupPk(spec.lookupTable);
   const selectFields = new Set([pk, spec.lookupLabelField, ...(spec.fallbackFields ?? [])]);
   const selectExpr = [...selectFields].join(', ');
 

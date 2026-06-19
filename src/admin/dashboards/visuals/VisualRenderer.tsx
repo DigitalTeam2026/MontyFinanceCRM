@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Component, type ReactNode } from 'react';
 import ReactECharts from 'echarts-for-react';
 import DOMPurify from 'dompurify';
 import { Loader2, AlertTriangle, Inbox, Lock, Check } from 'lucide-react';
-import type { DashboardVisual, DashboardDefinition, ThemeConfig, VisualFilter, RelatedFilter, SemanticQueryFilter, ButtonAction, OrderBySpec } from '../types/dashboard';
+import type { DashboardVisual, DashboardDefinition, ThemeConfig, VisualFilter, RelatedFilter, SemanticQueryFilter, ButtonAction, OrderBySpec, SlicerBroadcastOpts } from '../types/dashboard';
 import { VISUAL_REGISTRY } from './registry';
 import TableVisual from './TableVisual';
 import { buildEChartsOption } from './echartsOptions';
@@ -40,7 +40,7 @@ interface Props {
   /** Button action handler. */
   onAction?: (action: ButtonAction | undefined) => void;
   /** Date-slicer broadcast — the timeline visual emits its range filters here. */
-  onFilterChange?: (filters: VisualFilter[]) => void;
+  onFilterChange?: (filters: VisualFilter[], opts?: SlicerBroadcastOpts) => void;
   /** Full dashboard definition — a GLOBAL date slicer resolves its mappings/bounds from it. */
   definition?: DashboardDefinition;
   /** Current semantic selections — a lookup slicer uses them to stay contextual (§7). */
@@ -142,7 +142,7 @@ function VisualBody({ visual, theme, rows, total, onSelect, highlight, getHighli
   getHighlight?: (entity: string, fieldId: string | undefined) => Set<string>;
   crossFilterForEntity?: (entity: string) => { filters: VisualFilter[]; semanticFilters: SemanticQueryFilter[] };
   onAction?: (action: ButtonAction | undefined) => void;
-  onFilterChange?: (filters: VisualFilter[]) => void;
+  onFilterChange?: (filters: VisualFilter[], opts?: SlicerBroadcastOpts) => void;
   definition?: DashboardDefinition;
   semanticSelections?: Record<string, SlicerSelection>;
   live?: boolean; runtimeFilters?: VisualFilter[];

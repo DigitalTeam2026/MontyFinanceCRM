@@ -84,19 +84,36 @@ export async function getEntityPK(entity: AppEntity): Promise<string> {
   return pk;
 }
 
-const tableColumnsCache = new Map<string, Set<string>>();
+// Physical column sets are cached with a short TTL so that a column added from
+// Admin Studio (ALTER TABLE) becomes visible to saves without a full page reload.
+// Callers that just performed/observed DDL can force a fresh read.
+const tableColumnsCache = new Map<string, { cols: Set<string>; ts: number }>();
+const TABLE_COLUMNS_TTL = 60_000;
 
-export async function getTableColumns(table: string): Promise<Set<string>> {
+/** Drop the cached physical-column set for one table, or all tables. */
+export function clearTableColumnsCache(table?: string): void {
+  if (table) tableColumnsCache.delete(table);
+  else tableColumnsCache.clear();
+}
+
+export async function getTableColumns(
+  table: string,
+  opts: { force?: boolean } = {},
+): Promise<Set<string>> {
   const cached = tableColumnsCache.get(table);
-  if (cached) return cached;
+  if (!opts.force && cached && Date.now() - cached.ts < TABLE_COLUMNS_TTL) return cached.cols;
   const { data } = await supabase.rpc('get_table_columns', { p_table: table });
   if (data && Array.isArray((data as { cols: string[] }).cols)) {
     const cols = new Set<string>((data as { cols: string[] }).cols);
-    tableColumnsCache.set(table, cols);
+    tableColumnsCache.set(table, { cols, ts: Date.now() });
     return cols;
   }
-  tableColumnsCache.set(table, new Set());
-  return tableColumnsCache.get(table)!;
+  // Keep a stale-but-usable set rather than caching an empty one on a transient RPC
+  // failure (an empty set disables the column filter, which is the safer fallback).
+  if (cached) return cached.cols;
+  const empty = new Set<string>();
+  tableColumnsCache.set(table, { cols: empty, ts: Date.now() });
+  return empty;
 }
 
 export function filterToExistingColumns(
@@ -149,7 +166,8 @@ interface FieldMapping {
   physicalToLogical: Record<string, string>;
 }
 
-const fieldMappingCache: Partial<Record<AppEntity, FieldMapping>> = {};
+const fieldMappingCache: Partial<Record<AppEntity, { mapping: FieldMapping; ts: number }>> = {};
+const FIELD_MAPPING_TTL = 60_000;
 
 export function clearFieldMappingCache(entity?: AppEntity) {
   if (entity) delete fieldMappingCache[entity];
@@ -170,8 +188,9 @@ export function resetMetadataCaches(): void {
   entityRulesCache.clear();
 }
 
-async function getFieldMapping(entity: AppEntity): Promise<FieldMapping> {
-  if (fieldMappingCache[entity]) return fieldMappingCache[entity]!;
+async function getFieldMapping(entity: AppEntity, opts: { force?: boolean } = {}): Promise<FieldMapping> {
+  const cached = fieldMappingCache[entity];
+  if (!opts.force && cached && Date.now() - cached.ts < FIELD_MAPPING_TTL) return cached.mapping;
 
   const entityLogical = ENTITY_FORM_LOGICAL[entity] ?? entity;
 
@@ -201,8 +220,68 @@ async function getFieldMapping(entity: AppEntity): Promise<FieldMapping> {
   }
 
   const mapping = { logicalToPhysical, physicalToLogical };
-  fieldMappingCache[entity] = mapping;
+  fieldMappingCache[entity] = { mapping, ts: Date.now() };
   return mapping;
+}
+
+/**
+ * Translate UI/logical values into a physical-column write payload for an entity,
+ * dropping anything that isn't a real, writable column. This is the single shared
+ * builder used by record save, bulk edit, and inline grid edit so they all agree on
+ * what is writable and self-heal against a stale column cache.
+ *
+ * `missingColumns` lists metadata fields that map to a physical column the table does
+ * not actually have (genuine metadata/DB drift) — callers should surface these loudly
+ * instead of silently dropping the value. The column cache is force-refreshed once
+ * before deciding, so a column added moments ago (ALTER TABLE) is picked up rather
+ * than reported as missing.
+ */
+export async function toWritablePhysicalPayload(
+  entity: AppEntity,
+  values: RecordData,
+): Promise<{ payload: RecordData; missingColumns: string[] }> {
+  const { table } = await resolveEntityMeta(entity);
+  const mapping = await getFieldMapping(entity);
+  const physical = translateToPhysical(values, mapping, table);
+  const intended = Object.keys(physical);
+
+  let cols = await getTableColumns(table);
+  // Self-heal: an intended column missing from the cache may have just been added.
+  if (cols.size > 0 && intended.some((k) => !cols.has(k))) {
+    cols = await getTableColumns(table, { force: true });
+  }
+  const missingColumns = cols.size > 0 ? intended.filter((k) => !cols.has(k)) : [];
+  const payload = filterToExistingColumns(physical, cols);
+  return { payload, missingColumns };
+}
+
+/**
+ * Translate the KEYS of a value object from logical names to physical column names,
+ * passing through any key that has no mapping (so direct system-column writes like
+ * `is_deleted`, `state_code`, `owner_id` survive). Unlike {@link toWritablePhysicalPayload}
+ * this does NOT drop unmapped keys — it is for bulk/system writes where the caller
+ * supplies physical columns directly. Values are not type-converted.
+ */
+export async function translateKeysToPhysical(
+  entity: AppEntity,
+  values: RecordData,
+): Promise<RecordData> {
+  const mapping = await getFieldMapping(entity);
+  const out: RecordData = {};
+  for (const [k, v] of Object.entries(values)) {
+    const phys = mapping.logicalToPhysical[k] ?? k;
+    if (!(phys in out)) out[phys] = v;
+  }
+  return out;
+}
+
+/** Message shown when a save/bulk-edit maps fields to columns the table lacks. */
+export function missingColumnsError(entity: string, missing: string[]): Error {
+  return new Error(
+    `Cannot save ${entity}: no database column exists for field(s) ${missing.join(', ')}. ` +
+    `The database schema is out of sync with the metadata — open Admin Studio → System Health ` +
+    `and click "Reload schema cache", then try again.`,
+  );
 }
 
 function translateToLogical(record: RecordData, mapping: FieldMapping): RecordData {
@@ -399,7 +478,11 @@ export async function saveRecord(
   const { table, pk } = await resolveEntityMeta(entity);
   const entitySlug = table;
   const mapping = await getFieldMapping(entity);
-  const physicalValues = translateToPhysical(values, mapping, table);
+  // Build the writable payload through the shared helper so a just-added column is
+  // picked up (self-heal) and genuine metadata/DB drift is surfaced loudly instead
+  // of silently dropping the user's value.
+  const { payload: physicalValues, missingColumns } = await toWritablePhysicalPayload(entity, values);
+  if (missingColumns.length > 0) throw missingColumnsError(String(entity), missingColumns);
   const tableCols = await getTableColumns(table);
 
   // Custom entities (not in static ENTITY_TABLE) always have created_by/owner_id/modified_by
@@ -557,7 +640,9 @@ function getRecordLabel(entity: AppEntity, record: RecordData): string {
   if (entity === 'leads')         return (`${record.firstname ?? record.first_name ?? ''} ${record.lastname ?? record.last_name ?? ''}`.trim()) || ((record.companyname ?? record.company_name) as string ?? '');
   if (entity === 'opportunities') return (record.name ?? record.topic) as string ?? '';
   if (entity === 'tickets')       return (record.title as string) ?? '';
-  return '';
+  // Generic fallback for custom entities: use the common primary-name columns so
+  // assignment notifications etc. show a meaningful label instead of being blank.
+  return (record.name ?? record.full_name ?? record.title ?? record.topic ?? '') as string;
 }
 
 const entityDefIdCache = new Map<string, { id: string; ts: number }>();

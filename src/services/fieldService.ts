@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import type {
   FieldDefinition, FieldFormData, FieldType, ChoiceOption, CalculationConfig, CalcResultType,
 } from '../types/field';
+import { reloadPostgrestSchema } from './schemaService';
 
 // A calculated column's physical type is driven by the chosen result type.
 const CALC_RESULT_SQL_TYPE: Record<CalcResultType, string> = {
@@ -169,6 +170,10 @@ async function addPhysicalColumn(
   if (error) throw new Error(`Failed to create database column: ${error.message}`);
   const result = data as { ok: boolean; error?: string } | null;
   if (result && !result.ok) throw new Error(result.error ?? 'Failed to create database column');
+  // The column now exists in Postgres but the Data API (PostgREST) won't see it until
+  // its schema cache reloads — without this, writes to the new column are silently
+  // dropped / rejected. Best-effort; the runtime also self-heals on a stale-cache error.
+  await reloadPostgrestSchema();
 }
 
 /** Best-effort rollback of a physical column created during a failed createField(). */

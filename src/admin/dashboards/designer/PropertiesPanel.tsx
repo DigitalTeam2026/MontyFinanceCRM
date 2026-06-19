@@ -621,6 +621,15 @@ function DateSlicerFormat({ fmt, ds, theme, setFmt, setSlicer }: {
         </FilterSelect>
       </Row>
 
+      {ds.style === 'timeline_card' && (
+        <div className="border-t border-slate-700/60 pt-2 space-y-1.5">
+          <p className="text-[10px] text-slate-400">Combined Timeline / Date Filter card. Map a global date filter to the dashboard's entities under <span className="font-medium">Global filters</span>; those entities appear here as chips.</p>
+          <Toggle label="Show entity selector" checked={ds.showEntitySelector !== false} onChange={(v) => setSlicer({ showEntitySelector: v })} />
+          <Toggle label="Show field mapping row" checked={ds.showFieldMapping !== false} onChange={(v) => setSlicer({ showFieldMapping: v })} />
+          <Toggle label="Show active filter chips" checked={ds.showActiveChips !== false} onChange={(v) => setSlicer({ showActiveChips: v })} />
+        </div>
+      )}
+
       <div className="border-t border-slate-700/60 pt-2 space-y-1.5">
         <Toggle label="Show start date input" checked={ds.showStartInput !== false} onChange={(v) => setSlicer({ showStartInput: v })} />
         <Toggle label="Show end date input" checked={ds.showEndInput !== false} onChange={(v) => setSlicer({ showEndInput: v })} />

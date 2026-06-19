@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { Loader2, LayoutDashboard } from 'lucide-react';
-import type { DashboardDefinition, ThemeConfig, DashboardVisual, VisualFilter } from '../../../admin/dashboards/types/dashboard';
-import { fetchDefaultDashboardDefinition, fetchThemes } from '../../../admin/dashboards/services/dashboardService';
+import type { DashboardDefinition, ThemeConfig, DashboardVisual, VisualFilter, SlicerBroadcastOpts } from '../../../admin/dashboards/types/dashboard';
+import { fetchAccessibleDashboards, fetchDefinition, fetchThemes } from '../../../admin/dashboards/services/dashboardService';
+import type { AccessibleDashboard } from '../../../admin/dashboards/services/dashboardService';
+import FilterSelect from '../FilterSelect';
 import VisualRenderer, { VisualErrorBoundary } from '../../../admin/dashboards/visuals/VisualRenderer';
 import { useSlicerFilters, buildSlicerEmit } from '../../../admin/dashboards/visuals/useSlicerFilters';
 import { useCrossFilter } from '../../../admin/dashboards/visuals/useCrossFilter';
@@ -36,6 +38,10 @@ export default function DashboardViewer() {
   const [theme, setTheme] = useState<ThemeConfig>(FALLBACK_THEME);
   const [pageId, setPageId] = useState<string>('');
   const [state, setState] = useState<'loading' | 'empty' | 'error' | 'ready'>('loading');
+  // Dashboards the signed-in user may open (default + anything shared with them),
+  // and which one is currently selected in the switcher.
+  const [dashboards, setDashboards] = useState<AccessibleDashboard[]>([]);
+  const [selectedId, setSelectedId] = useState<string>('');
   const canvasRef = useRef<HTMLDivElement>(null);
   const [colWidth, setColWidth] = useState(MAX_W / COLS);
   const { filtersFor, setEmit } = useSlicerFilters();
@@ -48,16 +54,36 @@ export default function DashboardViewer() {
   // A slicer routes its broadcast to the semantic bus when it drives a semantic
   // filter (date slicer → dateSlicer.semanticFilterId; value slicer →
   // valueSlicer.semanticFilterId), else to the legacy single-entity slicer bus.
-  const onSlicerChange = (v: DashboardVisual, filters: VisualFilter[]) => {
+  const onSlicerChange = (v: DashboardVisual, filters: VisualFilter[], opts?: SlicerBroadcastOpts) => {
     const semId = v.data_config.dateSlicer?.semanticFilterId ?? v.data_config.valueSlicer?.semanticFilterId;
-    if (semId) sem.setSelection(semId, filters, v.dashboard_page_id);
+    if (semId) sem.setSelection(semId, filters, v.dashboard_page_id, opts?.entityIds);
     else setEmit(buildSlicerEmit(v, filters));
   };
 
+  // Stage 1: discover the dashboards this user can open and pick an initial one
+  // (the org default if present, else the first accessible dashboard).
   useEffect(() => {
     let alive = true;
     setState('loading');
-    Promise.all([fetchDefaultDashboardDefinition(), fetchThemes().catch(() => [])])
+    fetchAccessibleDashboards()
+      .then((list) => {
+        if (!alive) return;
+        setDashboards(list);
+        if (!list.length) { setState('empty'); return; }
+        const initial = list.find((d) => d.is_default) ?? list[0];
+        setSelectedId(initial.dashboard_id);
+      })
+      .catch(() => { if (alive) setState('error'); });
+    return () => { alive = false; };
+  }, []);
+
+  // Stage 2: load the full definition (+ theme) for the selected dashboard.
+  // Re-runs whenever the user switches dashboards.
+  useEffect(() => {
+    if (!selectedId) return;
+    let alive = true;
+    setState('loading');
+    Promise.all([fetchDefinition(selectedId), fetchThemes().catch(() => [])])
       .then(([d, themes]) => {
         if (!alive) return;
         if (!d) { setState('empty'); return; }
@@ -70,7 +96,7 @@ export default function DashboardViewer() {
       })
       .catch(() => { if (alive) setState('error'); });
     return () => { alive = false; };
-  }, []);
+  }, [selectedId]);
 
   // Keep grid column width in sync with the rendered canvas width.
   useEffect(() => {
@@ -80,7 +106,9 @@ export default function DashboardViewer() {
     return () => window.removeEventListener('resize', measure);
   }, [def, pageId, state]);
 
-  if (state === 'loading') {
+  // Full-screen spinner only on the very first load. When switching dashboards we
+  // keep the current one on screen (def is already set) until the next is ready.
+  if (state === 'loading' && !def) {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--app-bg)' }}>
         <Loader2 className="animate-spin text-slate-400" size={22} />
@@ -121,6 +149,25 @@ export default function DashboardViewer() {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col" style={{ background: theme.pageBackground, fontFamily: theme.fontFamily }}>
+      {dashboards.length > 1 && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b shrink-0"
+          style={{ borderColor: theme.borderColor, background: theme.surfaceBackground }}>
+          <span className="text-[11px] font-medium" style={{ color: theme.secondaryText }}>Dashboard</span>
+          <FilterSelect
+            value={selectedId}
+            onChange={(e) => setSelectedId(e.target.value)}
+            matchTriggerWidth
+            className="min-w-[200px] max-w-[320px] px-2.5 py-1 text-[12px] rounded border bg-transparent"
+            style={{ color: theme.primaryText, borderColor: theme.borderColor }}
+          >
+            {dashboards.map((d) => (
+              <option key={d.dashboard_id} value={d.dashboard_id}>
+                {d.name}{d.is_default ? ' (Default)' : ''}
+              </option>
+            ))}
+          </FilterSelect>
+        </div>
+      )}
       <div className="flex-1 overflow-auto p-4">
         <div
           ref={canvasRef}
@@ -166,7 +213,7 @@ export default function DashboardViewer() {
                           onSelect={cf.apply}
                           highlight={cf.highlightFor(v)}
                           getHighlight={(e, f) => cf.highlightForField(e, f, v.dashboard_visual_id)}
-                          onFilterChange={(filters) => onSlicerChange(v, filters)}
+                          onFilterChange={(filters, opts) => onSlicerChange(v, filters, opts)}
                         />
                       </VisualErrorBoundary>
                     );

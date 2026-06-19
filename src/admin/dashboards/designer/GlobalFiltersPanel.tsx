@@ -7,8 +7,9 @@ import type {
   SemanticDataType, SemanticScope, RelationshipPath, SemanticDiscoveryConfig, PathCandidate,
 } from '../types/dashboard';
 import type { EntityDefinition } from '../../../types/entity';
+import type { FieldDefinition } from '../../../types/field';
 import {
-  suggestDateField, discoverPaths,
+  suggestDateField, discoverPaths, fetchFieldsCached,
 } from '../services/relationshipService';
 import {
   computeMappingStates, discoveryOf, STATUS_META, type EntityMappingState,
@@ -25,6 +26,9 @@ const uuid = () => crypto.randomUUID();
 const hasSteps = (p: unknown): p is RelationshipPath =>
   !!p && Array.isArray((p as RelationshipPath).steps) && (p as RelationshipPath).steps.length > 0;
 
+const DATE_TYPES = new Set(['date', 'datetime']);
+const isDateField = (f: FieldDefinition) => DATE_TYPES.has(f.field_type?.name ?? '');
+
 const TONE_CLS: Record<string, string> = {
   emerald: 'bg-emerald-50 text-emerald-700',
   blue: 'bg-blue-50 text-blue-700',
@@ -36,11 +40,15 @@ const TONE_CLS: Record<string, string> = {
 
 export default function GlobalFiltersPanel({ def, entities, onChange, onClose }: Props) {
   const filters = def.semanticFilters ?? [];
-  const mappings = def.filterMappings ?? [];
+  const mappings = useMemo(() => def.filterMappings ?? [], [def.filterMappings]);
   const [selectedId, setSelectedId] = useState<string | null>(filters[0]?.dashboard_semantic_filter_id ?? null);
   const [busy, setBusy] = useState(false);
   const [states, setStates] = useState<Record<string, EntityMappingState>>({});
   const [openPicker, setOpenPicker] = useState<string | null>(null);
+  // Date filters: manual entity selection — per-entity date-field dropdowns + an
+  // "Add entity" picker so the admin chooses exactly which entities are filtered.
+  const [dateFields, setDateFields] = useState<Record<string, FieldDefinition[]>>({});
+  const [extraEntityIds, setExtraEntityIds] = useState<string[]>([]);
 
   // Entities actually used by this dashboard's visuals (resolved to definitions).
   const dashboardEntities = useMemo(() => {
@@ -200,6 +208,71 @@ export default function GlobalFiltersPanel({ def, entities, onChange, onClose }:
   const isDate = selected?.data_type === 'date';
   const canScan = !!selected && (isDate || !!selected.config?.targetEntityId);
 
+  // ── date filter: the entities shown for manual mapping ──────────────────────
+  // Union of (entities the dashboard's visuals use) + (entities already mapped) +
+  // (entities the admin added by hand). Lets you map ANY entity, not just the
+  // auto-discovered ones.
+  const dateEntities = useMemo<EntityDefinition[]>(() => {
+    if (!selected || !isDate) return [];
+    const ids = new Set<string>();
+    dashboardEntities.forEach((e) => ids.add(e.entity_definition_id));
+    mappings.forEach((m) => { if (m.semantic_filter_id === selected.dashboard_semantic_filter_id && m.target_entity_id) ids.add(m.target_entity_id); });
+    extraEntityIds.forEach((id) => ids.add(id));
+    const out: EntityDefinition[] = [];
+    ids.forEach((id) => { const e = entities.find((x) => x.entity_definition_id === id); if (e) out.push(e); });
+    return out.sort((a, b) => a.display_name.localeCompare(b.display_name));
+  }, [selected, isDate, dashboardEntities, mappings, extraEntityIds, entities]);
+
+  const dateEntitiesKey = dateEntities.map((e) => e.entity_definition_id).join(',');
+  // Load each entity's date/datetime fields for the dropdowns (cached, on demand).
+  useEffect(() => {
+    if (!isDate) return;
+    let alive = true;
+    (async () => {
+      const next: Record<string, FieldDefinition[]> = {};
+      for (const e of dateEntities) {
+        if (dateFields[e.entity_definition_id]) continue;
+        try { next[e.entity_definition_id] = (await fetchFieldsCached(e.entity_definition_id)).filter(isDateField); }
+        catch { next[e.entity_definition_id] = []; }
+      }
+      if (alive && Object.keys(next).length) setDateFields((prev) => ({ ...prev, ...next }));
+    })();
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDate, dateEntitiesKey]);
+
+  // Hand-added entities are per-filter — drop them when switching filters.
+  useEffect(() => { setExtraEntityIds([]); }, [selectedId]);
+
+  const dateMappingFor = (entityId: string) =>
+    mappings.find((m) => m.semantic_filter_id === selected?.dashboard_semantic_filter_id && m.target_entity_id === entityId) ?? null;
+
+  // Pick (or clear) the date field for one entity — '' removes the mapping.
+  const setDateField = (entityId: string, fieldId: string) => {
+    if (!selected) return;
+    const sfId = selected.dashboard_semantic_filter_id;
+    const others = mappings.filter((m) => !(m.semantic_filter_id === sfId && m.target_entity_id === entityId));
+    const nextMappings = fieldId
+      ? [...others, makeMapping(sfId, def.dashboard.dashboard_id, entityId, fieldId, null)]
+      : others;
+    const nextOrigin = { ...(disc.origin ?? {}) };
+    if (fieldId) nextOrigin[entityId] = 'manual'; else delete nextOrigin[entityId];
+    onChange({
+      ...def,
+      filterMappings: nextMappings,
+      semanticFilters: filters.map((f) => f.dashboard_semantic_filter_id === sfId
+        ? { ...f, config: { ...f.config, discovery: { ...disc, origin: nextOrigin } } } : f),
+    });
+  };
+  const addDateEntity = (entityId: string) => { if (entityId) setExtraEntityIds((p) => (p.includes(entityId) ? p : [...p, entityId])); };
+  const removeDateEntity = (entityId: string) => {
+    setDateField(entityId, '');
+    setExtraEntityIds((p) => p.filter((x) => x !== entityId));
+  };
+  const addableEntities = entities
+    .filter((e) => !dateEntities.some((d) => d.entity_definition_id === e.entity_definition_id))
+    .sort((a, b) => a.display_name.localeCompare(b.display_name));
+
   return (
     <Modal
       title="Global filters"
@@ -294,14 +367,59 @@ export default function GlobalFiltersPanel({ def, entities, onChange, onClose }:
               <div className="border-t border-slate-100 pt-2">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[11px] font-medium text-slate-600">
-                    Mapped dashboard entities ({dashboardEntities.length})
+                    {isDate ? `Mapped entities (${dateEntities.filter((e) => dateMappingFor(e.entity_definition_id)).length})` : `Mapped dashboard entities (${dashboardEntities.length})`}
                     {ambiguousCount > 0 && <span className="ml-1 text-amber-600">· {ambiguousCount} ambiguous</span>}
                   </span>
                   <button onClick={scan} disabled={busy || !canScan}
+                    title={isDate ? 'Auto-suggest a date field for the dashboard entities (your manual picks are kept)' : 'Re-discover relationship paths'}
                     className="flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40">
-                    {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Re-scan
+                    {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} {isDate ? 'Auto-suggest' : 'Re-scan'}
                   </button>
                 </div>
+                {isDate ? (
+                  /* ── Date filter: manual per-entity date-field mapping ── */
+                  <div className="space-y-0.5">
+                    {dateEntities.map((e) => {
+                      const id = e.entity_definition_id;
+                      const mapping = dateMappingFor(id);
+                      const fields = dateFields[id];
+                      const noFields = fields !== undefined && fields.length === 0;
+                      return (
+                        <div key={id} className="flex items-center gap-2 py-1 border-b border-slate-50 text-[12px]">
+                          <span className="w-28 shrink-0 truncate text-slate-700">{e.display_name}</span>
+                          <FilterSelect
+                            value={mapping?.target_field_id ?? ''}
+                            disabled={noFields}
+                            onChange={(ev) => setDateField(id, ev.target.value)}
+                            className="flex-1 min-w-0 px-2 py-1 text-[12px] rounded border border-slate-300 text-slate-800">
+                            <option value="">{noFields ? 'No date fields available' : '— Not mapped —'}</option>
+                            {(fields ?? []).map((f) => (
+                              <option key={f.field_definition_id} value={f.field_definition_id}>{f.display_name}</option>
+                            ))}
+                          </FilterSelect>
+                          {mapping && (
+                            <input type="checkbox" title="Active" checked={mapping.is_active}
+                              onChange={() => patchMappings(mappings.map((x) => x.dashboard_filter_mapping_id === mapping.dashboard_filter_mapping_id ? { ...x, is_active: !x.is_active } : x))} />
+                          )}
+                          <Trash2 size={13} title="Remove entity" className="shrink-0 text-slate-400 hover:text-red-500 cursor-pointer"
+                            onClick={() => removeDateEntity(id)} />
+                        </div>
+                      );
+                    })}
+                    {!dateEntities.length && (
+                      <p className="text-[11px] text-slate-400 py-1">No entities yet — add one below to map a date field.</p>
+                    )}
+                    {/* Add any entity (not just the auto-discovered ones). */}
+                    <div className="pt-2">
+                      <FilterSelect value="" onChange={(ev) => { addDateEntity(ev.target.value); }}
+                        className="w-full px-2 py-1.5 text-[12px] rounded border border-dashed border-slate-300 text-slate-600">
+                        <option value="">+ Add entity…</option>
+                        {addableEntities.map((en) => <option key={en.entity_definition_id} value={en.entity_definition_id}>{en.display_name}</option>)}
+                      </FilterSelect>
+                    </div>
+                  </div>
+                ) : (
+                <>
                 {!dashboardEntities.length && (
                   <p className="text-[11px] text-amber-600 flex items-center gap-1"><AlertTriangle size={12} /> Add visuals first — mappings target the entities your visuals use.</p>
                 )}
@@ -355,7 +473,15 @@ export default function GlobalFiltersPanel({ def, entities, onChange, onClose }:
                     );
                   })}
                 </div>
+                </>
+                )}
               </div>
+
+              {isDate && (
+                <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                  <Wand2 size={11} /> Pick a date field per entity, or “Add entity” to map any entity. “Auto-suggest” fills empty ones but never overrides your picks.
+                </p>
+              )}
 
               {disc.mode === 'manual' && !isDate && (
                 <p className="text-[10px] text-slate-400 flex items-center gap-1">

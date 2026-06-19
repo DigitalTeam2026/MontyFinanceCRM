@@ -265,7 +265,11 @@ export async function fetchViewColumnsForSubgrid(viewId: string): Promise<ViewDr
       const table = lookupEntity.physical_table_name as string;
       col.lookupTable = table;
       col.lookupLabelField = lookupEntity.primary_field_name as string ?? 'name';
-      col.lookupPk = LOOKUP_PK_OVERRIDES[table] ?? `${table}_id`;
+      // Use the real PK from metadata (the `crm_` prefix is dropped for PK columns,
+      // so `${table}_id` is wrong for prefixed tables like crm_leadsource → 400).
+      col.lookupPk = (lookupEntity.primary_key_column as string | null)
+        ?? LOOKUP_PK_OVERRIDES[table]
+        ?? `${table.replace(/^crm_/, '')}_id`;
     }
 
     return col;

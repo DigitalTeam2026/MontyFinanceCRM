@@ -1876,14 +1876,7 @@ export default function RecordFormPage({
 
   const handleStageChangeAsync = useCallback(async (fromStage: string, toStage: string, finished = false) => {
     const currentRecordId = resolvedRecordIdRef.current;
-    console.group('[BPF] handleStageChangeAsync');
-    console.log('fromStage:', fromStage, '→ toStage:', toStage, '| finished:', finished);
-    console.log('currentRecordId:', currentRecordId, '| formReadonly:', formReadonly);
-    if (!currentRecordId || formReadonly) {
-      console.warn('BLOCKED: no recordId or formReadonly');
-      console.groupEnd();
-      return;
-    }
+    if (!currentRecordId || formReadonly) return;
     setStageGateErrors(null);
     // Optimistically apply finished flag immediately so the bar updates instantly
     setValues((prev) => ({ ...prev, bpf_is_finished: finished }));
@@ -1899,17 +1892,13 @@ export default function RecordFormPage({
         ...(stageField ? { [stageField]: toStage } : {}),
         bpf_is_finished: finished,
       };
-      console.log('doSave payload bpf_is_finished:', savePayload['bpf_is_finished']);
       await doSave(savePayload);
-      console.log('doSave complete');
 
       if (currentPf) {
         const newStage = currentPf.stageByKey.get(toStage);
-        console.log('newStage found:', newStage?.stage_key, newStage?.name);
         if (newStage) {
           const table = await getEntityTable(entity);
           const pk = await getEntityPK(entity);
-          console.log('updateRecordActiveStage:', table, pk, currentRecordId, newStage.process_stage_id, finished);
           await updateRecordActiveStage(table, pk, currentRecordId, newStage.process_stage_id, finished);
           // Directly write the stage key column — the RPC only sets active_process_stage_id,
           // so we must also persist the stage_field value or refreshFullRecord will revert the bar.
@@ -1917,7 +1906,6 @@ export default function RecordFormPage({
             await updateRowFields(entity, currentRecordId, { [stageField]: toStage }, userId);
           }
           setValues((prev) => ({ ...prev, active_process_stage_id: newStage.process_stage_id, bpf_is_finished: finished, ...(stageField ? { [stageField]: toStage } : {}) }));
-          console.log('Stage updated in DB and local state');
         }
       }
       if (!finished) {
@@ -1926,15 +1914,12 @@ export default function RecordFormPage({
           setValues((prev) => ({ ...prev, ...result.fieldPatches }));
         }
       }
-      console.log('refreshFullRecord start');
       await refreshFullRecord();
-      console.log('refreshFullRecord done');
     } catch (err) {
       console.error('handleStageChangeAsync ERROR:', err);
       // Revert optimistic update on error
       setValues((prev) => ({ ...prev, bpf_is_finished: !finished }));
     }
-    console.groupEnd();
   }, [entity, formReadonly, refreshFullRecord]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSwitchFlow = useCallback(async (targetFlowId: string) => {
@@ -3759,7 +3744,6 @@ function RecordFormInner({
           onFieldNavigate={onFieldNavigate}
           fieldTypeMap={fieldTypeMap}
           lookupLabels={lookupLabels}
-          enhancedStageStates={entity === 'opportunities'}
         />
       )}
 
