@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { Loader2, LayoutDashboard } from 'lucide-react';
-import type { DashboardDefinition, ThemeConfig, DashboardVisual, VisualFilter, SlicerBroadcastOpts } from '../../../admin/dashboards/types/dashboard';
-import { fetchAccessibleDashboards, fetchDefinition, fetchThemes } from '../../../admin/dashboards/services/dashboardService';
+import type { DashboardDefinition, DashboardVisual, VisualFilter, SlicerBroadcastOpts } from '../../../admin/dashboards/types/dashboard';
+import { fetchAccessibleDashboards, fetchDefinition } from '../../../admin/dashboards/services/dashboardService';
 import type { AccessibleDashboard } from '../../../admin/dashboards/services/dashboardService';
 import FilterSelect from '../FilterSelect';
 import VisualRenderer, { VisualErrorBoundary } from '../../../admin/dashboards/visuals/VisualRenderer';
 import { useSlicerFilters, buildSlicerEmit } from '../../../admin/dashboards/visuals/useSlicerFilters';
 import { useCrossFilter } from '../../../admin/dashboards/visuals/useCrossFilter';
 import { useDashboardSemanticFilters } from '../../../admin/dashboards/visuals/semanticRuntime';
+import { useAppThemeConfig } from '../../../admin/dashboards/visuals/useAppThemeConfig';
 import FilterSummaryBar from './FilterSummaryBar';
 
 // Grid geometry — must match the designer canvas (DashboardDesigner.tsx) so a
@@ -19,14 +20,6 @@ const MAX_W = 1280;
 // CANVAS_MIN_H) so a published dashboard matches its builder layout.
 const CANVAS_MIN_H = 600;
 
-const FALLBACK_THEME: ThemeConfig = {
-  pageBackground: '#0b1220', surfaceBackground: '#111a2e', cardBackground: '#16213e',
-  primaryText: '#e7ecf5', secondaryText: '#8b97b0', borderColor: '#243049', gridLineColor: '#243049',
-  primaryAccent: '#4f8cff', secondaryAccent: '#7c5cff', success: '#22c55e', warning: '#f59e0b', error: '#ef4444',
-  chartPalette: ['#4f8cff', '#7c5cff', '#22c55e', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899', '#eab308'],
-  fontFamily: 'Inter, system-ui, sans-serif', borderRadius: 12, shadow: '0 1px 3px rgba(0,0,0,0.4)',
-};
-
 /**
  * Read-only runtime renderer for the org-wide default dashboard ("for all users").
  * Surfaces whatever dashboard is flagged is_default = true. RLS grants every
@@ -35,7 +28,10 @@ const FALLBACK_THEME: ThemeConfig = {
  */
 export default function DashboardViewer() {
   const [def, setDef] = useState<DashboardDefinition | null>(null);
-  const [theme, setTheme] = useState<ThemeConfig>(FALLBACK_THEME);
+  // Dashboard visuals recolour with the active app theme (forms/views parity):
+  // derive a ThemeConfig from the live CSS tokens instead of a saved per-dashboard
+  // theme, so switching the sidebar theme recolours the dashboard in lockstep.
+  const theme = useAppThemeConfig();
   const [pageId, setPageId] = useState<string>('');
   const [state, setState] = useState<'loading' | 'empty' | 'error' | 'ready'>('loading');
   // Dashboards the signed-in user may open (default + anything shared with them),
@@ -77,21 +73,20 @@ export default function DashboardViewer() {
     return () => { alive = false; };
   }, []);
 
-  // Stage 2: load the full definition (+ theme) for the selected dashboard.
-  // Re-runs whenever the user switches dashboards.
+  // Stage 2: load the full definition for the selected dashboard. Re-runs
+  // whenever the user switches dashboards. Theme is no longer loaded here — it is
+  // derived live from the active app theme (see useAppThemeConfig above).
   useEffect(() => {
     if (!selectedId) return;
     let alive = true;
     setState('loading');
-    Promise.all([fetchDefinition(selectedId), fetchThemes().catch(() => [])])
-      .then(([d, themes]) => {
+    fetchDefinition(selectedId)
+      .then((d) => {
         if (!alive) return;
         if (!d) { setState('empty'); return; }
         setDef(d);
         const p = d.pages.find((x) => x.is_default) ?? d.pages[0];
         setPageId(p?.dashboard_page_id ?? '');
-        const th = themes.find((t) => t.theme_id === d.dashboard.theme_id);
-        setTheme(th ? th.theme_config : FALLBACK_THEME);
         setState('ready');
       })
       .catch(() => { if (alive) setState('error'); });
@@ -210,6 +205,7 @@ export default function DashboardViewer() {
                           runtimeFilters={[...filtersFor(v), ...cf.filtersFor(v), ...resolved.runtimeFilters]}
                           runtimeSemanticFilters={[...resolved.semanticFilters, ...cf.semanticFiltersFor(v)]}
                           crossFilterForEntity={(entity) => cf.crossFilterForEntity(entity, v.dashboard_visual_id)}
+                          semanticForEntity={(entity) => sem.resolveForVisual(v, entity)}
                           onSelect={cf.apply}
                           highlight={cf.highlightFor(v)}
                           getHighlight={(e, f) => cf.highlightForField(e, f, v.dashboard_visual_id)}

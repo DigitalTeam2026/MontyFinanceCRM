@@ -28,6 +28,10 @@ interface Props {
    *  selection anywhere on the dashboard filters each stage by its own entity
    *  (the card's own query_config.entity is null, so this is the only path in). */
   crossFilterForEntity?: (entity: string) => { filters: VisualFilter[]; semanticFilters: SemanticQueryFilter[] };
+  /** GLOBAL slicer filters (e.g. the timeline date slicer) resolved PER STAGE against
+   *  each stage's own entity. The card's base entity is null, so dashboard-wide
+   *  semantic filters can only reach a stage through this per-entity resolution. */
+  semanticForEntity?: (entity: string) => { runtimeFilters: VisualFilter[]; semanticFilters: SemanticQueryFilter[] };
 }
 
 interface StageResult { total: number | null; breakdown: BreakdownItem[]; error?: boolean }
@@ -73,7 +77,7 @@ function hasBreakdownMode(s: FunnelStage): boolean {
   return (s.displayMode === 'breakdown' || s.displayMode === 'breakdown_only') && !!s.breakdownField;
 }
 
-export default function FunnelStageVisual({ visual, theme, runtimeFilters, runtimeRelatedFilters, runtimeSemanticFilters, crossFilterForEntity, live = true, onSelect, getHighlight }: Props) {
+export default function FunnelStageVisual({ visual, theme, runtimeFilters, runtimeRelatedFilters, runtimeSemanticFilters, crossFilterForEntity, semanticForEntity, live = true, onSelect, getHighlight }: Props) {
   const fmt = visual.format_config;
   const stages = visual.data_config.stages ?? [];
   const [state, setState] = useState<State>({ kind: 'loading' });
@@ -90,7 +94,11 @@ export default function FunnelStageVisual({ visual, theme, runtimeFilters, runti
   // anywhere (Product, a Lead status, another card) filters every stage it relates
   // to, in both directions (same-entity direct + cross-entity semantic path).
   const crossByStage = stages.map((s) => (s.entity ? crossFilterForEntity?.(s.entity) : undefined));
-  const depKey = JSON.stringify([stages, runtime, related, semantic, baseEntity, crossByStage, live]);
+  // Dashboard-wide global filters (the date slicer) resolved against each stage's
+  // OWN entity — the only way a global filter reaches a stage, since the card has
+  // no single base entity to resolve against centrally.
+  const globalByStage = stages.map((s) => (s.entity ? semanticForEntity?.(s.entity) : undefined));
+  const depKey = JSON.stringify([stages, runtime, related, semantic, baseEntity, crossByStage, globalByStage, live]);
 
   useEffect(() => {
     if (!live) {
@@ -120,11 +128,17 @@ export default function FunnelStageVisual({ visual, theme, runtimeFilters, runti
         // Per-stage interactive cross-filters: same-entity selections become direct
         // filters; cross-entity selections become server-side semantic paths.
         const cross = crossByStage[i];
-        const filters = [...filtersForStage(s, runtime, cols), ...(cross?.filters ?? [])];
+        // Dashboard-wide global filters (date slicer) resolved for THIS stage's entity:
+        // direct mappings → runtime column filters, path mappings → semantic EXISTS.
+        const global = globalByStage[i];
+        const filters = [
+          ...filtersForStage(s, [...runtime, ...(global?.runtimeFilters ?? [])], cols),
+          ...(cross?.filters ?? []),
+        ];
         // Global path/related filters only apply where the stage entity matches
         // the base entity they were resolved against.
         const sameEntity = baseEntity && s.entity === baseEntity;
-        const stageSemantic = [...(sameEntity ? semantic : []), ...(cross?.semanticFilters ?? [])];
+        const stageSemantic = [...(sameEntity ? semantic : []), ...(global?.semanticFilters ?? []), ...(cross?.semanticFilters ?? [])];
         const data = await fetchBreakdown({
           entity: s.entity, agg, field: s.field,
           baseFilters: filters,

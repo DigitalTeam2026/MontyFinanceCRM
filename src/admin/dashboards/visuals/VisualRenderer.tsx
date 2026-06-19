@@ -37,6 +37,10 @@ interface Props {
   /** Per-stage cross-filters for a multi-entity visual (funnel stage card): given a
    *  stage's entity, returns the same-entity + cross-entity filters to apply. */
   crossFilterForEntity?: (entity: string) => { filters: VisualFilter[]; semanticFilters: SemanticQueryFilter[] };
+  /** Per-stage GLOBAL semantic filters for a multi-entity visual (funnel stage card):
+   *  resolves active slicer selections against an arbitrary stage entity (the card's
+   *  own base entity is null, so this is the only way global filters reach a stage). */
+  semanticForEntity?: (entity: string) => { runtimeFilters: VisualFilter[]; semanticFilters: SemanticQueryFilter[] };
   /** Button action handler. */
   onAction?: (action: ButtonAction | undefined) => void;
   /** Date-slicer broadcast — the timeline visual emits its range filters here. */
@@ -59,7 +63,7 @@ type State =
 const rawOf = (r: Record<string, unknown>, key: string) =>
   (r.__raw as Record<string, unknown> | undefined)?.[key] ?? r[key];
 
-export default function VisualRenderer({ visual, theme, runtimeFilters, runtimeRelatedFilters, runtimeSemanticFilters, onSelect, highlight, getHighlight, crossFilterForEntity, onAction, onFilterChange, definition, semanticSelections, live = true }: Props) {
+export default function VisualRenderer({ visual, theme, runtimeFilters, runtimeRelatedFilters, runtimeSemanticFilters, onSelect, highlight, getHighlight, crossFilterForEntity, semanticForEntity, onAction, onFilterChange, definition, semanticSelections, live = true }: Props) {
   const meta = VISUAL_REGISTRY[visual.visual_type];
   const [state, setState] = useState<State>({ kind: 'loading' });
   const reqId = useRef(0);
@@ -131,16 +135,17 @@ export default function VisualRenderer({ visual, theme, runtimeFilters, runtimeR
   const rows = state.kind === 'ready' ? state.rows : [];
   const total = state.kind === 'ready' ? state.total : undefined;
 
-  return <VisualBody visual={visual} theme={theme} rows={rows} total={total} onSelect={onSelect} highlight={highlight} getHighlight={getHighlight} crossFilterForEntity={crossFilterForEntity} onAction={onAction} onFilterChange={onFilterChange} definition={definition} semanticSelections={semanticSelections} live={live} runtimeFilters={runtimeFilters} runtimeRelatedFilters={runtimeRelatedFilters} runtimeSemanticFilters={runtimeSemanticFilters}
+  return <VisualBody visual={visual} theme={theme} rows={rows} total={total} onSelect={onSelect} highlight={highlight} getHighlight={getHighlight} crossFilterForEntity={crossFilterForEntity} semanticForEntity={semanticForEntity} onAction={onAction} onFilterChange={onFilterChange} definition={definition} semanticSelections={semanticSelections} live={live} runtimeFilters={runtimeFilters} runtimeRelatedFilters={runtimeRelatedFilters} runtimeSemanticFilters={runtimeSemanticFilters}
     tableFilters={tableFilters} onTableFiltersChange={setTableFilters} tableSort={tableSort} onTableSortChange={setTableSort} />;
 }
 
 // ── per-type body ──────────────────────────────────────────────────────────────
-function VisualBody({ visual, theme, rows, total, onSelect, highlight, getHighlight, crossFilterForEntity, onAction, onFilterChange, definition, semanticSelections, live, runtimeFilters, runtimeRelatedFilters, runtimeSemanticFilters, tableFilters, onTableFiltersChange, tableSort, onTableSortChange }: {
+function VisualBody({ visual, theme, rows, total, onSelect, highlight, getHighlight, crossFilterForEntity, semanticForEntity, onAction, onFilterChange, definition, semanticSelections, live, runtimeFilters, runtimeRelatedFilters, runtimeSemanticFilters, tableFilters, onTableFiltersChange, tableSort, onTableSortChange }: {
   visual: DashboardVisual; theme: ThemeConfig; rows: Record<string, unknown>[];
   total?: number; onSelect?: (emit: SelectionEmit) => void; highlight?: Set<string>;
   getHighlight?: (entity: string, fieldId: string | undefined) => Set<string>;
   crossFilterForEntity?: (entity: string) => { filters: VisualFilter[]; semanticFilters: SemanticQueryFilter[] };
+  semanticForEntity?: (entity: string) => { runtimeFilters: VisualFilter[]; semanticFilters: SemanticQueryFilter[] };
   onAction?: (action: ButtonAction | undefined) => void;
   onFilterChange?: (filters: VisualFilter[], opts?: SlicerBroadcastOpts) => void;
   definition?: DashboardDefinition;
@@ -189,7 +194,7 @@ function VisualBody({ visual, theme, rows, total, onSelect, highlight, getHighli
 
   switch (t) {
     case 'kpi': return <KpiVisual visual={visual} theme={theme} live={live} runtimeFilters={runtimeFilters} runtimeRelatedFilters={runtimeRelatedFilters} runtimeSemanticFilters={runtimeSemanticFilters} onSelect={onSelect} highlight={highlight} />;
-    case 'funnel_stage': return <FunnelStageVisual visual={visual} theme={theme} live={live} runtimeFilters={runtimeFilters} runtimeRelatedFilters={runtimeRelatedFilters} runtimeSemanticFilters={runtimeSemanticFilters} crossFilterForEntity={crossFilterForEntity} onSelect={onSelect} getHighlight={getHighlight} />;
+    case 'funnel_stage': return <FunnelStageVisual visual={visual} theme={theme} live={live} runtimeFilters={runtimeFilters} runtimeRelatedFilters={runtimeRelatedFilters} runtimeSemanticFilters={runtimeSemanticFilters} crossFilterForEntity={crossFilterForEntity} semanticForEntity={semanticForEntity} onSelect={onSelect} getHighlight={getHighlight} />;
     case 'donut_progress': return <DonutProgressVisual visual={visual} theme={theme} live={live} runtimeFilters={runtimeFilters} runtimeRelatedFilters={runtimeRelatedFilters} runtimeSemanticFilters={runtimeSemanticFilters} />;
     case 'table':
     case 'record_list':

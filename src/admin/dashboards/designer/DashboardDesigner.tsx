@@ -10,7 +10,7 @@ import type {
   DashboardDefinition, DashboardPage, DashboardVisual, VisualType, ThemeConfig, InteractionMode,
   DashboardSemanticFilter, DashboardFilterMapping,
 } from '../types/dashboard';
-import { fetchDefinition, saveDefinition, publishDashboard, fetchThemes } from '../services/dashboardService';
+import { fetchDefinition, saveDefinition, publishDashboard } from '../services/dashboardService';
 import { suggestDateField } from '../services/relationshipService';
 import { clearQueryCache } from '../services/queryEngine';
 import { clearLabelResolverCache } from '../visuals/labelResolver';
@@ -24,15 +24,8 @@ import { useDashboardSemanticFilters } from '../visuals/semanticRuntime';
 import GlobalFiltersPanel from './GlobalFiltersPanel';
 import FilterSummaryBar from '../../../app/components/dashboard/FilterSummaryBar';
 import PropertiesPanel from './PropertiesPanel';
+import { useAppThemeConfig } from '../visuals/useAppThemeConfig';
 import { useToast, toFriendlyError } from '../../../app/context/ToastContext';
-
-const FALLBACK_THEME: ThemeConfig = {
-  pageBackground: '#0b1220', surfaceBackground: '#111a2e', cardBackground: '#16213e',
-  primaryText: '#e7ecf5', secondaryText: '#8b97b0', borderColor: '#243049', gridLineColor: '#243049',
-  primaryAccent: '#4f8cff', secondaryAccent: '#7c5cff', success: '#22c55e', warning: '#f59e0b', error: '#ef4444',
-  chartPalette: ['#4f8cff', '#7c5cff', '#22c55e', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899', '#eab308'],
-  fontFamily: 'Inter, system-ui, sans-serif', borderRadius: 12, shadow: '0 1px 3px rgba(0,0,0,0.4)',
-};
 
 const COLS = 24;
 const ROW_H = 26;
@@ -63,7 +56,9 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
   const { showSuccess, showError } = useToast();
   const [def, setDef] = useState<DashboardDefinition | null>(null);
   const [entities, setEntities] = useState<EntityDefinition[]>([]);
-  const [theme, setTheme] = useState<ThemeConfig>(FALLBACK_THEME);
+  // Canvas + properties panels render against the live app theme so the builder
+  // previews the exact colours the runtime viewer will show (forms/views parity).
+  const theme = useAppThemeConfig();
   const [pageId, setPageId] = useState<string>('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [preview, setPreview] = useState(false);
@@ -146,15 +141,11 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
   // ── load ────────────────────────────────────────────────────────────────────
   useEffect(() => {
     fetchEntities().then(setEntities).catch(() => {});
-    fetchThemes().then((all) => {
-      fetchDefinition(dashboardId).then((d) => {
-        setDef(d);
-        const p = d.pages.find((x) => x.is_default) ?? d.pages[0];
-        setPageId(p?.dashboard_page_id ?? '');
-        const th = all.find((t) => t.theme_id === d.dashboard.theme_id);
-        if (th) setTheme(th.theme_config);
-      }).catch((e) => showError(toFriendlyError(e)));
-    }).catch(() => {});
+    fetchDefinition(dashboardId).then((d) => {
+      setDef(d);
+      const p = d.pages.find((x) => x.is_default) ?? d.pages[0];
+      setPageId(p?.dashboard_page_id ?? '');
+    }).catch((e) => showError(toFriendlyError(e)));
   }, [dashboardId, showError]);
 
   // measure canvas
@@ -387,6 +378,7 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
                     runtimeFilters={preview ? [...filtersFor(v), ...cf.filtersFor(v), ...resolved.runtimeFilters] : [...filtersFor(v), ...resolved.runtimeFilters]}
                     runtimeSemanticFilters={preview ? [...resolved.semanticFilters, ...cf.semanticFiltersFor(v)] : resolved.semanticFilters}
                     crossFilterForEntity={preview ? ((entity) => cf.crossFilterForEntity(entity, v.dashboard_visual_id)) : undefined}
+                    semanticForEntity={preview ? ((entity) => sem.resolveForVisual(v, entity)) : undefined}
                     crossSelect={preview ? cf.apply : undefined}
                     highlight={preview ? cf.highlightFor(v) : undefined}
                     getHighlight={preview ? ((e, f) => cf.highlightForField(e, f, v.dashboard_visual_id)) : undefined}
@@ -473,7 +465,7 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
 }
 
 // ── canvas visual (draggable + resizable) ──────────────────────────────────────
-function CanvasVisual({ visual, theme, colWidth, definition, semanticSelections, selected, preview, runtimeFilters, runtimeRelatedFilters, runtimeSemanticFilters, crossSelect, crossFilterForEntity, highlight, getHighlight, editInteractions, isInteractionSource, interactionMode, onCycleInteraction, onFilterChange, onSelect, onResize, onDelete, onDuplicate, onToggleLock, onToggleHide }: {
+function CanvasVisual({ visual, theme, colWidth, definition, semanticSelections, selected, preview, runtimeFilters, runtimeRelatedFilters, runtimeSemanticFilters, crossSelect, crossFilterForEntity, semanticForEntity, highlight, getHighlight, editInteractions, isInteractionSource, interactionMode, onCycleInteraction, onFilterChange, onSelect, onResize, onDelete, onDuplicate, onToggleLock, onToggleHide }: {
   visual: DashboardVisual; theme: ThemeConfig; colWidth: number; definition?: DashboardDefinition; selected: boolean; preview: boolean;
   semanticSelections?: Record<string, import('../visuals/slicerValues').SlicerSelection>;
   runtimeFilters?: import('../types/dashboard').VisualFilter[];
@@ -481,6 +473,7 @@ function CanvasVisual({ visual, theme, colWidth, definition, semanticSelections,
   runtimeSemanticFilters?: import('../types/dashboard').SemanticQueryFilter[];
   crossSelect?: (emit: import('../visuals/useCrossFilter').SelectionEmit) => void;
   crossFilterForEntity?: (entity: string) => { filters: import('../types/dashboard').VisualFilter[]; semanticFilters: import('../types/dashboard').SemanticQueryFilter[] };
+  semanticForEntity?: (entity: string) => { runtimeFilters: import('../types/dashboard').VisualFilter[]; semanticFilters: import('../types/dashboard').SemanticQueryFilter[] };
   highlight?: Set<string>;
   getHighlight?: (entity: string, fieldId: string | undefined) => Set<string>;
   editInteractions?: boolean; isInteractionSource?: boolean;
@@ -537,6 +530,7 @@ function CanvasVisual({ visual, theme, colWidth, definition, semanticSelections,
               semanticSelections={semanticSelections}
               runtimeFilters={runtimeFilters} runtimeRelatedFilters={runtimeRelatedFilters}
               runtimeSemanticFilters={runtimeSemanticFilters} crossFilterForEntity={crossFilterForEntity}
+              semanticForEntity={semanticForEntity}
               onSelect={crossSelect} highlight={highlight} getHighlight={getHighlight} onFilterChange={onFilterChange} />
           </VisualErrorBoundary>
 

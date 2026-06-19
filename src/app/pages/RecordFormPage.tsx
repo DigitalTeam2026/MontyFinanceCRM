@@ -1874,12 +1874,19 @@ export default function RecordFormPage({
     checkLeadHasRelatedOpp(currentId);
   }, [entity, lookupEntitySlugMap, crmUsers, checkLeadHasRelatedOpp]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleStageChangeAsync = useCallback(async (fromStage: string, toStage: string, finished = false) => {
+  const handleStageChangeAsync = useCallback(async (fromStage: string, toStage: string, finished = false, completedStageIds?: string[]) => {
     const currentRecordId = resolvedRecordIdRef.current;
     if (!currentRecordId || formReadonly) return;
     setStageGateErrors(null);
-    // Optimistically apply finished flag immediately so the bar updates instantly
-    setValues((prev) => ({ ...prev, bpf_is_finished: finished }));
+    // Capture the prior finished/completed state so a failed transition can be rolled back to
+    // exactly what it was. Never derive the rollback from `finished` — see catch below.
+    const prevFinished = Boolean(valuesRef.current['bpf_is_finished']);
+    const prevCompleted = valuesRef.current['completed_stage_ids'];
+    // completed_stage_ids is only patched when the caller passes a new set (forward advance /
+    // finish). Previous / auto-init / terminal pass nothing and must leave it untouched.
+    const completedPatch = completedStageIds ? { completed_stage_ids: completedStageIds } : {};
+    // Optimistically apply finished flag (and completed set) immediately so the bar updates instantly
+    setValues((prev) => ({ ...prev, bpf_is_finished: finished, ...completedPatch }));
     try {
       // Include the bpf_is_finished patch in the save payload so it persists correctly.
       // Also explicitly set the stage field to toStage: onChange(stageField, toStage) queues a
@@ -1891,6 +1898,7 @@ export default function RecordFormPage({
         ...valuesRef.current,
         ...(stageField ? { [stageField]: toStage } : {}),
         bpf_is_finished: finished,
+        ...completedPatch,
       };
       await doSave(savePayload);
 
@@ -1903,9 +1911,11 @@ export default function RecordFormPage({
           // Directly write the stage key column — the RPC only sets active_process_stage_id,
           // so we must also persist the stage_field value or refreshFullRecord will revert the bar.
           if (stageField) {
-            await updateRowFields(entity, currentRecordId, { [stageField]: toStage }, userId);
+            await updateRowFields(entity, currentRecordId, { [stageField]: toStage, ...completedPatch }, userId);
+          } else if (completedStageIds) {
+            await updateRowFields(entity, currentRecordId, { ...completedPatch }, userId);
           }
-          setValues((prev) => ({ ...prev, active_process_stage_id: newStage.process_stage_id, bpf_is_finished: finished, ...(stageField ? { [stageField]: toStage } : {}) }));
+          setValues((prev) => ({ ...prev, active_process_stage_id: newStage.process_stage_id, bpf_is_finished: finished, ...completedPatch, ...(stageField ? { [stageField]: toStage } : {}) }));
         }
       }
       if (!finished) {
@@ -1917,8 +1927,11 @@ export default function RecordFormPage({
       await refreshFullRecord();
     } catch (err) {
       console.error('handleStageChangeAsync ERROR:', err);
-      // Revert optimistic update on error
-      setValues((prev) => ({ ...prev, bpf_is_finished: !finished }));
+      // Revert optimistic update on error by RESTORING the previous value — not by
+      // negating `finished`. Negating it meant a failed non-finish change (finished=false)
+      // flipped bpf_is_finished to true and the bar falsely showed "Completed". A failed
+      // transition must never auto-complete the BPF; it must leave the state untouched.
+      setValues((prev) => ({ ...prev, bpf_is_finished: prevFinished, completed_stage_ids: prevCompleted }));
     }
   }, [entity, formReadonly, refreshFullRecord]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2694,6 +2707,7 @@ export default function RecordFormPage({
     <RecordFormInner
       entity={entity}
       recordId={resolvedRecordId}
+      recordLoaded={!loading && hasLoadedOnceRef.current}
       isRedesign={true}
       formReadonly={formReadonly}
       canCreate={canCreate}
@@ -2952,6 +2966,7 @@ export default function RecordFormPage({
 interface RecordFormInnerProps {
   entity: AppEntity;
   recordId: string | null;
+  recordLoaded: boolean;
   formReadonly: boolean;
   canCreate: boolean;
   canWrite: boolean;
@@ -3001,7 +3016,7 @@ interface RecordFormInnerProps {
   onSetShowAssignPopover: (v: boolean) => void;
   onChangeTab: (id: string) => void;
   onChange: (field: string, val: unknown) => void;
-  onStageChangeAsync: (fromStage: string, toStage: string, finished?: boolean) => Promise<void>;
+  onStageChangeAsync: (fromStage: string, toStage: string, finished?: boolean, completedStageIds?: string[]) => Promise<void>;
   onOpenRecord: (entity: AppEntity, id: string) => void;
   getRecordTitle: () => string;
   getTabErrorCount: (tab: DesignerTab) => number;
@@ -3130,7 +3145,7 @@ function DisqualifyReasonBanner({
 }
 
 function RecordFormInner({
-  entity, recordId, formReadonly, canCreate, canWrite, canDelete, canAssign, canShare, canCloseWon, canCloseLost, canQualify, canResolve,
+  entity, recordId, recordLoaded, formReadonly, canCreate, canWrite, canDelete, canAssign, canShare, canCloseWon, canCloseLost, canQualify, canResolve,
   values, saveStatus, isDirty,
   isPinned, crmUsers, showAssignPopover, assignBtnRef, formTabs,
   activeTabId, currentFormTab, isFormTab, isHistoryTab, showDocumentsTab, activeRelatedKey,
@@ -3729,6 +3744,7 @@ function RecordFormInner({
           processFlow={processFlow}
           entityDefId={entityDefId}
           values={values}
+          recordLoaded={recordLoaded}
           onChange={onChange}
           onStageChangeAsync={onStageChangeAsync}
           onQualifyLead={entity === 'leads' && canQualify && !!values['account_id'] && isLeadActive ? onQualifyFromStageBar : undefined}

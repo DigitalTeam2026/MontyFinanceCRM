@@ -95,7 +95,8 @@ export function toFriendlyError(e: unknown, fallback = 'Something went wrong. Pl
     ? e.message
     : (e && typeof e === 'object' && 'message' in e ? String((e as { message?: unknown }).message ?? '') : '');
   const hint = e && typeof e === 'object' && 'hint' in e ? String((e as { hint?: unknown }).hint ?? '') : '';
-  if (!raw && !hint) return fallback;
+  const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: unknown }).code ?? '') : '';
+  if (!raw && !hint && !code) return fallback;
   const msg = raw.toLowerCase();
 
   // Read-only converted record (BEFORE UPDATE trigger on crm_prospect).
@@ -109,6 +110,14 @@ export function toFriendlyError(e: unknown, fallback = 'Something went wrong. Pl
   if (msg.includes('jwt') || msg.includes('token') || msg.includes('unauthorized') || msg.includes('401')) {
     handleAuthError(e).catch(() => {});
     return 'Your session has expired. Please sign in again.';
+  }
+  // Row-level security denial (PostgREST returns code 42501 with a "violates
+  // row-level security policy" message) — this is a genuine lack of permission,
+  // NOT a session/foreign-key problem. Check it before the generic "violates"
+  // branch below so it isn't mislabeled as "linked to other data", and don't
+  // force a sign-out for what is simply an unauthorized action.
+  if (code === '42501' || msg.includes('row-level security') || msg.includes('row level security')) {
+    return "You don't have permission to do that.";
   }
   if (msg.includes('42501') || msg.includes('permission denied') || (msg.includes('403') && msg.includes('rls'))) {
     handleAuthError(e).catch(() => {});

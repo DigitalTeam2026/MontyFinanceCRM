@@ -148,13 +148,17 @@ export function useDashboardSemanticFilters(def: DashboardDefinition | null) {
 
   const clearAll = useCallback(() => setSelections({}), []);
 
-  const resolveForVisual = useCallback((visual: DashboardVisual): ResolvedSemantics => {
+  // `entityOverride` resolves the selection against an entity OTHER than the
+  // visual's own query_config.entity — needed by multi-entity visuals (the
+  // funnel_stage card has a null base entity but a distinct entity per stage),
+  // so each stage can be filtered through its own mapped date column / path.
+  const resolveForVisual = useCallback((visual: DashboardVisual, entityOverride?: string): ResolvedSemantics => {
     if (!def || !Object.keys(selections).length) return EMPTY;
     const runtimeFilters: VisualFilter[] = [];
     const semanticFilters: SemanticQueryFilter[] = [];
     const affectedBy: string[] = [];
     const notAffectedBy: string[] = [];
-    const entityId = entityIdByName[visual.query_config.entity ?? ''];
+    const entityId = entityIdByName[(entityOverride ?? visual.query_config.entity) ?? ''];
 
     for (const [sfId, sel] of Object.entries(selections)) {
       const sf = def.semanticFilters?.find((s) => s.dashboard_semantic_filter_id === sfId);

@@ -20,7 +20,7 @@ if (!TOKEN) {
         .filter((l) => l.includes('='))
         .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()])
     );
-    TOKEN = env.Token;
+    TOKEN = env.Token || env.supabase_token || env.SUPABASE_ACCESS_TOKEN;
   } catch { /* no .env */ }
 }
 if (!TOKEN) throw new Error('Set SUPABASE_ACCESS_TOKEN in your environment');

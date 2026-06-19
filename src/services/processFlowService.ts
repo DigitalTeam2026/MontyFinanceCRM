@@ -145,8 +145,10 @@ export async function publishProcessFlowDraft(flowId: string, snapshot: ProcessF
     body: JSON.stringify({ action: 'publish', flow_id: flowId, snapshot }),
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `Publish failed: ${res.status}`);
+    const raw = await res.text();
+    let body: { error?: string } = {};
+    try { body = JSON.parse(raw); } catch { /* non-JSON body */ }
+    throw new Error(body.error ?? `Publish failed: ${res.status} ${raw}`);
   }
 }
 

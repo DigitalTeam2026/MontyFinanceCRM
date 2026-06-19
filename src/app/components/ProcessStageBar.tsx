@@ -633,8 +633,12 @@ interface ProcessStageBarProps {
   processFlow: LoadedProcessFlow;
   entityDefId?: string | null;
   values: RecordData;
+  // True only once the record's data has finished loading. Auto-initialization must wait for
+  // this — otherwise it runs against empty `values` during the load race and overwrites the
+  // saved stage with the first stage. Defaults to true for any caller that doesn't track it.
+  recordLoaded?: boolean;
   onChange: (field: string, value: string) => void;
-  onStageChangeAsync?: (fromStage: string, toStage: string, finished?: boolean) => Promise<void>;
+  onStageChangeAsync?: (fromStage: string, toStage: string, finished?: boolean, completedStageIds?: string[]) => Promise<void>;
   onQualifyLead?: () => void;
   onDisqualifyLead?: (reason: string, statusReasonValue?: string) => void;
   isReadonly?: boolean;
@@ -657,6 +661,7 @@ export type { CrossEntitySwitchInfo };
 export default function ProcessStageBar({
   processFlow: processFlowRaw,
   entityDefId,
+  recordLoaded = true,
   values,
   onChange,
   onStageChangeAsync,
@@ -711,13 +716,22 @@ export default function ProcessStageBar({
   const stageInView = processFlow.stageByKey.has(resolvedStageKey) || !resolvedStageKey;
   const currentStageKey = (stageInView ? resolvedStageKey : firstActiveStageKey) || firstActiveStageKey;
 
-  // Auto-initialize: write first stage if nothing is set, or if current stage is from another entity
+  // Auto-initialize: persist the stage_field column when it's empty (or points at a
+  // stage from another entity). Sync it to currentStageKey — the RESOLVED stage, which
+  // already accounts for the active_process_stage_id fallback — NOT firstActiveStageKey.
+  // Using firstActiveStageKey would reset a record that is mid-flow (e.g. on stage 3, with
+  // an empty stage_field column) all the way back to stage 1. currentStageKey === firstActiveStageKey
+  // only when nothing is set, so brand-new records still initialize to the first stage.
   useEffect(() => {
-    if (firstActiveStageKey && !isReadonly && (!rawStageKey || !stageInView)) {
-      onChange(stageField, firstActiveStageKey);
-      onStageChangeAsync?.(currentStageKey, firstActiveStageKey);
+    // Gate on recordLoaded: during the initial load there is a window where processFlow is
+    // already resolved (so firstActiveStageKey fires this effect) but `values` is still empty.
+    // Running then would resolve currentStageKey to the FIRST stage and persist it, reverting
+    // a record that was saved on a later stage. Waiting for the record avoids that overwrite.
+    if (recordLoaded && currentStageKey && !isReadonly && (!rawStageKey || !stageInView)) {
+      onChange(stageField, currentStageKey);
+      onStageChangeAsync?.(currentStageKey, currentStageKey);
     }
-  }, [firstActiveStageKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [firstActiveStageKey, recordLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // resolvedPath: condition nodes are evaluated and only the winning branch is shown.
   // This is the single source of truth for both display AND navigation — exactly like Dynamics 365:
@@ -745,6 +759,28 @@ export default function ProcessStageBar({
 
   const bpfRaw = values['bpf_is_finished'];
   const isFinished = bpfRaw === true || bpfRaw === 'true' || bpfRaw === 1;
+
+  // Completed stages are tracked EXPLICITLY per record in completed_stage_ids (a set of
+  // process_stage_id). Green comes only from this set; never from index inference. Before
+  // the record loads, values is empty → the set is empty → nothing is falsely green.
+  const completedStageIdSet = useMemo(() => {
+    const raw = values['completed_stage_ids'];
+    let arr: unknown[] = [];
+    if (Array.isArray(raw)) arr = raw;
+    else if (typeof raw === 'string' && raw.trim()) {
+      try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) arr = parsed; } catch { /* ignore */ }
+    }
+    return new Set(arr.map((x) => String(x)));
+  }, [values]);
+  const isStageCompleted = (stage: { process_stage_id?: string }) =>
+    !!stage.process_stage_id && completedStageIdSet.has(String(stage.process_stage_id));
+  // Build the next completed-set when advancing past `stageKey` (adds it, never removes).
+  const completedIdsWith = (stageKey: string): string[] => {
+    const id = (processFlow.stageByKey.get(stageKey) ?? processFlowRaw.stageByKey.get(stageKey))?.process_stage_id;
+    const next = new Set(completedStageIdSet);
+    if (id) next.add(String(id));
+    return Array.from(next);
+  };
 
   const currentIdx = displayStages.findIndex((s) => s.stage_key === currentStageKey);
   // runtimeIdx is the same as currentIdx since we use a single resolved path
@@ -852,9 +888,11 @@ export default function ProcessStageBar({
       });
   };
 
-  const commitStageChange = (fromKey: string, toKey: string, finished = false) => {
+  // completedIds, when passed, is the FULL new completed-set to persist alongside the
+  // active stage. Omit it (Previous / view / terminal) to leave completed stages untouched.
+  const commitStageChange = (fromKey: string, toKey: string, finished = false, completedIds?: string[]) => {
     onChange(stageField, toKey);
-    onStageChangeAsync?.(fromKey, toKey, finished);
+    onStageChangeAsync?.(fromKey, toKey, finished, completedIds);
   };
 
   const resolveAndAdvance = (fromKey: string, targetKey: string, targetLabel: string) => {
@@ -869,7 +907,8 @@ export default function ProcessStageBar({
       setCrossEntityPrompt({ fromStageKey: fromKey, toStageKey: finalKey, toStageName: finalLabel, targetEntityId: crossInfo.targetEntityId ?? '', targetEntityName: entityName, createLinkedRecord: crossInfo.createLinkedRecord, relationshipColumn: crossInfo.targetRelationshipName });
       return;
     }
-    commitStageChange(fromKey, finalKey);
+    // Advancing forward: the stage we leave (fromKey) becomes completed/green.
+    commitStageChange(fromKey, finalKey, false, completedIdsWith(fromKey));
   };
 
   // ─── Click handlers ───────────────────────────────────────────────────────
@@ -1016,7 +1055,10 @@ export default function ProcessStageBar({
     }
     setOpenPopupStageKey(null);
     setPopupAnchorRect(null);
-    // commitStageChange with finished=true → onStageChangeAsync sets bpf_is_finished via DB
+    // commitStageChange with finished=true → onStageChangeAsync sets bpf_is_finished via DB.
+    // While finished, isFinished greens every stage, and all earlier stages are already in
+    // the completed set from advancing — so we do NOT add the final stage here. That keeps it
+    // a "future" (grey) stage again if the user later steps back via Previous (un-finishes).
     commitStageChange(currentStageKey, currentStageKey, true);
   }, [isReadonly, processFlow, currentStageKey, values, layout, ruleState, onStageViolation, currentIdx, stageFields]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1157,12 +1199,12 @@ export default function ProcessStageBar({
             {/* Stage badges */}
             <div className="relative flex items-center justify-between w-full z-10">
               {trackStages.map((stage, idx) => {
-                const trackIdx = displayStages.findIndex((s) => s.stage_key === stage.stage_key);
-                // When finished, every stage is shown as completed/past
-                const isPast = isFinished
-                  ? true
-                  : (currentIdx > 0 && trackIdx >= 0 && trackIdx < currentIdx);
+                // GREEN comes ONLY from the explicit completed_stage_ids set (or a fully
+                // finished flow) — never from index position. BLUE is the active stage and
+                // takes precedence (a stage that is both active and previously completed
+                // shows blue). Everything else stays grey.
                 const isCurrent = !isFinished && stage.stage_key === currentStageKey;
+                const isPast = isFinished || (!isCurrent && isStageCompleted(stage));
                 const isPopupOpen = openPopupStageKey === stage.stage_key;
 
                 // One consistent scheme for every BPF (no per-entity special-casing):
@@ -1270,10 +1312,10 @@ export default function ProcessStageBar({
       {openPopupStageKey && (() => {
         const popupStage = processFlow.stageByKey.get(openPopupStageKey);
         if (!popupStage || popupStage.stage_type !== 'active') return null;
-        // Use displayStages index for correct past/current detection
+        // Past/current detection mirrors the badge logic: green from completed_stage_ids only.
         const popupIdx = displayStages.findIndex((s) => s.stage_key === openPopupStageKey);
         const popupIsCurrent = isFinished ? true : (openPopupStageKey === currentStageKey);
-        const popupIsPast = !isFinished && !popupIsCurrent && popupIdx >= 0 && popupIdx < currentIdx;
+        const popupIsPast = !isFinished && !popupIsCurrent && isStageCompleted(popupStage);
         const popupIsFirst = popupIdx === 0;
         const popupIsLast = popupIdx === displayStages.length - 1;
         // "Completed" badge: only on the last stage when flow is finished
@@ -1325,7 +1367,7 @@ export default function ProcessStageBar({
       {crossEntityPrompt && (
         <CrossEntityAdvanceModal
           info={crossEntityPrompt}
-          onConfirm={() => { const { fromStageKey, toStageKey } = crossEntityPrompt; setCrossEntityPrompt(null); commitStageChange(fromStageKey, toStageKey); onCrossEntityAdvance?.(crossEntityPrompt); }}
+          onConfirm={() => { const { fromStageKey, toStageKey } = crossEntityPrompt; setCrossEntityPrompt(null); commitStageChange(fromStageKey, toStageKey, false, completedIdsWith(fromStageKey)); onCrossEntityAdvance?.(crossEntityPrompt); }}
           onCancel={() => setCrossEntityPrompt(null)}
         />
       )}

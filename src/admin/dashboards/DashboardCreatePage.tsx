@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Loader2, LayoutDashboard } from 'lucide-react';
-import { createDashboard } from './services/dashboardService';
+import { createDashboard, savePermission, fetchPrincipalOptions } from './services/dashboardService';
 import { fetchThemes } from './services/dashboardService';
+import type { PrincipalOption } from './services/dashboardService';
 import { fetchEntities } from '../../services/entityService';
 import type { EntityDefinition } from '../../types/entity';
 import type { DashboardTheme, DashboardType, DefaultDateRange, RefreshInterval } from './types/dashboard';
@@ -18,18 +19,21 @@ export default function DashboardCreatePage({ onCreated, onCancel }: Props) {
   const { showSuccess, showError } = useToast();
   const [entities, setEntities] = useState<EntityDefinition[]>([]);
   const [themes, setThemes] = useState<DashboardTheme[]>([]);
+  const [businessUnits, setBusinessUnits] = useState<PrincipalOption[]>([]);
   const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<DashboardType>('system');
   const [entityId, setEntityId] = useState('');
+  const [businessUnitId, setBusinessUnitId] = useState('');
   const [dateRange, setDateRange] = useState<DefaultDateRange>('this_month');
   const [refresh, setRefresh] = useState<RefreshInterval>('manual');
   const [themeId, setThemeId] = useState('');
 
   useEffect(() => {
     fetchEntities().then(setEntities).catch(() => {});
+    fetchPrincipalOptions('business_unit').then(setBusinessUnits).catch(() => {});
     fetchThemes().then((t) => {
       setThemes(t);
       const dark = t.find((x) => x.name === 'CRM Dark');
@@ -46,11 +50,20 @@ export default function DashboardCreatePage({ onCreated, onCancel }: Props) {
         description: description.trim(),
         dashboard_type: type,
         primary_entity_id: entityId || null,
+        business_unit_id: businessUnitId || null,
         default_date_range: dateRange,
         refresh_interval: refresh,
         theme_id: themeId || null,
         status: 'draft',
       });
+      // Picking a business unit also grants that BU read access, so everyone in it
+      // can open the dashboard from their switcher. Fine-tune later via Share…
+      if (businessUnitId) {
+        await savePermission({
+          dashboard_id: dash.dashboard_id, principal_type: 'business_unit', principal_id: businessUnitId,
+          can_read: true, can_export: true, can_write: false, can_delete: false, can_publish: false, can_share: false,
+        }).catch(() => {});
+      }
       showSuccess('Dashboard created.');
       onCreated(dash.dashboard_id);
     } catch (e) {
@@ -99,6 +112,15 @@ export default function DashboardCreatePage({ onCreated, onCancel }: Props) {
               </FilterSelect>
             </Field>
           </div>
+
+          <Field label="Business Unit">
+            <FilterSelect value={businessUnitId} onChange={(e) => setBusinessUnitId(e.target.value)} forceSearch
+              className="w-full px-3 py-1.5 text-[13px] border border-slate-300 rounded">
+              <option value="">— None (private to you until shared) —</option>
+              {businessUnits.map((bu) => <option key={bu.id} value={bu.id}>{bu.label}</option>)}
+            </FilterSelect>
+            <p className="mt-1 text-[11px] text-slate-400">Everyone in the chosen unit can view it. You can change who has access anytime from the dashboard list → Share….</p>
+          </Field>
 
           <div className="grid grid-cols-3 gap-4">
             <Field label="Default Date Range">
