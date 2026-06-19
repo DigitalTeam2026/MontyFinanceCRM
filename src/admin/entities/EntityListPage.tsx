@@ -10,8 +10,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { EntityDefinition } from '../../types/entity';
-import { fetchEntities, softDeleteEntity } from '../../services/entityService';
+import { fetchEntities, dropEntity } from '../../services/entityService';
 import ConfirmDialog from '../components/ConfirmDialog';
+import AnchoredPopover from '../../app/components/overlay/AnchoredPopover';
 
 // Per-entity icon resolution — each entity gets its own icon by logical name,
 // with a deterministic fallback so unrecognized entities still differ visually.
@@ -78,7 +79,7 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<EntityDefinition | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ entity: EntityDefinition; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ entity: EntityDefinition; anchor: HTMLElement } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -89,13 +90,6 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
   };
 
   useEffect(() => { load(); }, []);
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [contextMenu]);
 
   const filtered = useMemo(() => {
     let list = entities.filter((e) => {
@@ -148,7 +142,7 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await softDeleteEntity(deleteTarget.entity_definition_id);
+      await dropEntity(deleteTarget.entity_definition_id);
       setEntities((prev) => prev.filter((e) => e.entity_definition_id !== deleteTarget.entity_definition_id));
       setSelected((prev) => { const n = new Set(prev); n.delete(deleteTarget.entity_definition_id); return n; });
       setDeleteTarget(null);
@@ -331,7 +325,12 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
                         className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setContextMenu({ entity, x: e.clientX, y: e.clientY });
+                          const anchor = e.currentTarget;
+                          setContextMenu((prev) =>
+                            prev?.entity.entity_definition_id === entity.entity_definition_id
+                              ? null
+                              : { entity, anchor }
+                          );
                         }}
                       >
                         <MoreHorizontal size={14} />
@@ -345,27 +344,35 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
         )}
       </div>
 
-      {/* Context Menu */}
-      {contextMenu && (
-        <div
-          className="fixed z-50 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[180px]"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-        >
-          <CtxItem onClick={() => { onEdit(contextMenu.entity); setContextMenu(null); }}>
-            Open table details
-          </CtxItem>
-          {contextMenu.entity.is_custom && (
-            <CtxItem danger onClick={() => { setDeleteTarget(contextMenu.entity); setContextMenu(null); }}>
-              Delete table
+      {/* Context Menu — anchored to the clicked three-dot button, right-aligned
+          (bottom-end) so it expands leftward and stays within the viewport. */}
+      <AnchoredPopover
+        anchorEl={contextMenu?.anchor ?? null}
+        open={!!contextMenu}
+        onClose={() => setContextMenu(null)}
+        placement="bottom-end"
+        minWidth={180}
+        role="menu"
+        className="bg-white rounded-lg shadow-xl border border-slate-200 py-1"
+      >
+        {contextMenu && (
+          <>
+            <CtxItem onClick={() => { onEdit(contextMenu.entity); setContextMenu(null); }}>
+              Open table details
             </CtxItem>
-          )}
-        </div>
-      )}
+            {contextMenu.entity.is_custom && (
+              <CtxItem danger onClick={() => { setDeleteTarget(contextMenu.entity); setContextMenu(null); }}>
+                Delete table
+              </CtxItem>
+            )}
+          </>
+        )}
+      </AnchoredPopover>
 
       {deleteTarget && (
         <ConfirmDialog
-          title="Delete Custom Table"
-          message={`Delete "${deleteTarget.display_name}"? All associated columns, forms, and views will also be removed. This cannot be undone.`}
+          title="Permanently Delete Custom Table"
+          message={`Permanently delete "${deleteTarget.display_name}"? This DROPs the database table and ALL its data, columns, forms, and views. This is irreversible — it cannot be restored from the recycle bin.`}
           confirmLabel={deleting ? 'Deleting...' : 'Delete'}
           onConfirm={handleDelete}
           onCancel={() => setDeleteTarget(null)}

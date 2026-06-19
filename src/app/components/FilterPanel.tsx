@@ -203,7 +203,10 @@ async function buildFilterableFields(entityDefId: string): Promise<FilterableFie
         crm_user: 'user_id',
         product_family: 'family_id',
       };
-      const pkCol = pkOverrides[table] ?? `${table}_id`;
+      // Prefer the real PK from metadata; the `${table}_id` guess breaks on
+      // crm_-prefixed tables (e.g. crm_leadsource → leadsource_id, not crm_leadsource_id).
+      const pkCol = f.lookup_entity.primary_key_column
+        ?? pkOverrides[table] ?? `${table.replace(/^crm_/, '')}_id`;
       fields.push({
         key: phys,
         label: f.display_name,

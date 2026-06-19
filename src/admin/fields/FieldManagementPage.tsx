@@ -250,17 +250,24 @@ export default function FieldManagementPage({ preselectedEntityId }: FieldManage
 
       {/* Filter Chips + Entity Selector + Search */}
       <div className="bg-white border-b border-slate-100 px-5 py-2 flex items-center gap-3 shrink-0">
-        <div className="relative">
-          <FilterSelect
-            value={selectedEntityId}
-            onChange={(e) => { setSelectedEntityId(e.target.value); setCategoryTab('all'); setSearch(''); }}
-            className="appearance-none pl-2.5 pr-7 py-1.5 text-[12px] font-medium border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 text-slate-700"
-          >
-            {entities.map((e) => <option key={e.entity_definition_id} value={e.entity_definition_id}>{e.display_name}</option>)}
-          </FilterSelect>
-          </div>
+        {/* Entity switcher — only shown when browsing columns generically. When the
+            page is opened for a specific table (preselectedEntityId), the table is
+            already chosen, so the switcher (and its divider) are redundant and hidden. */}
+        {!preselectedEntityId && (
+          <>
+            <div className="relative">
+              <FilterSelect
+                value={selectedEntityId}
+                onChange={(e) => { setSelectedEntityId(e.target.value); setCategoryTab('all'); setSearch(''); }}
+                className="appearance-none pl-2.5 pr-7 py-1.5 text-[12px] font-medium border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 text-slate-700"
+              >
+                {entities.map((e) => <option key={e.entity_definition_id} value={e.entity_definition_id}>{e.display_name}</option>)}
+              </FilterSelect>
+            </div>
 
-        <div className="w-px h-5 bg-slate-200" />
+            <div className="w-px h-5 bg-slate-200" />
+          </>
+        )}
 
         <div className="flex items-center gap-1">
           <Filter size={12} className="text-slate-400 mr-1" />

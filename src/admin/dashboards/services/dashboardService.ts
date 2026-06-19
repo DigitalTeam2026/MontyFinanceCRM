@@ -2,7 +2,14 @@ import { supabase } from '../../../lib/supabase';
 import type {
   Dashboard, DashboardDefinition, DashboardPage, DashboardVisual, DashboardFilter,
   DashboardMeasure, DashboardTheme, DashboardPermission, DashboardListRow,
+  DashboardSemanticFilter, DashboardFilterMapping, DashboardVisualFilterBinding,
 } from '../types/dashboard';
+
+// Until 20260617150000_dashboard_semantic_filters.sql is applied these relations
+// are absent; treat that one Postgres error as "feature not provisioned yet".
+const MISSING_RELATION = '42P01';
+const isMissingRelation = (e: unknown): boolean =>
+  !!e && typeof e === 'object' && (e as { code?: string }).code === MISSING_RELATION;
 
 async function currentUserId(): Promise<string | null> {
   const { data } = await supabase.auth.getUser();
@@ -40,12 +47,24 @@ export async function fetchDefinition(id: string): Promise<DashboardDefinition> 
     supabase.from('dashboard_measure').select('*').eq('dashboard_id', id).order('name'),
   ]);
   for (const r of [pages, visuals, filters, measures]) if (r.error) throw r.error;
+
+  // Global semantic filters — tolerate the tables not existing yet (pre-migration).
+  const [sem, maps, binds] = await Promise.all([
+    supabase.from('dashboard_semantic_filter').select('*').eq('dashboard_id', id),
+    supabase.from('dashboard_filter_mapping').select('*').eq('dashboard_id', id),
+    supabase.from('dashboard_visual_filter_binding').select('*').eq('dashboard_id', id),
+  ]);
+  for (const r of [sem, maps, binds]) if (r.error && !isMissingRelation(r.error)) throw r.error;
+
   return {
     dashboard: dash,
     pages: (pages.data ?? []) as DashboardPage[],
     visuals: (visuals.data ?? []) as DashboardVisual[],
     filters: (filters.data ?? []) as DashboardFilter[],
     measures: (measures.data ?? []) as DashboardMeasure[],
+    semanticFilters: (sem.data ?? []) as DashboardSemanticFilter[],
+    filterMappings: (maps.data ?? []) as DashboardFilterMapping[],
+    visualBindings: (binds.data ?? []) as DashboardVisualFilterBinding[],
   };
 }
 
@@ -162,6 +181,85 @@ export async function duplicateDashboard(id: string): Promise<Dashboard> {
   return clone;
 }
 
+// ── Sharing scope (used by Duplicate → "who is this for?") ───────────────────────
+// user            → personal, owner-only
+// business_unit   → my BU
+// child           → my BU + all descendant BUs
+// parent          → my BU + all ancestor BUs
+// organization    → everyone (single organization permission row)
+export type DuplicateScope = 'user' | 'business_unit' | 'child' | 'parent' | 'organization';
+
+const ORG_PRINCIPAL = '00000000-0000-0000-0000-000000000000';
+
+async function userBusinessUnitId(): Promise<string | null> {
+  const uid = await currentUserId();
+  if (!uid) return null;
+  const { data } = await supabase.from('crm_user').select('business_unit_id').eq('user_id', uid).maybeSingle();
+  return (data as { business_unit_id?: string } | null)?.business_unit_id ?? null;
+}
+
+async function businessUnitTree(): Promise<{ id: string; parent: string | null }[]> {
+  const { data } = await supabase.from('business_unit').select('business_unit_id, parent_business_unit_id');
+  return (data ?? []).map((b) => {
+    const r = b as { business_unit_id: string; parent_business_unit_id: string | null };
+    return { id: r.business_unit_id, parent: r.parent_business_unit_id ?? null };
+  });
+}
+
+function descendantBuIds(root: string, tree: { id: string; parent: string | null }[]): string[] {
+  const out = new Set([root]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const n of tree) if (n.parent && out.has(n.parent) && !out.has(n.id)) { out.add(n.id); changed = true; }
+  }
+  return [...out];
+}
+function ancestorBuIds(start: string, tree: { id: string; parent: string | null }[]): string[] {
+  const byId = new Map(tree.map((n) => [n.id, n]));
+  const out = new Set([start]);
+  let cur = byId.get(start);
+  while (cur?.parent && !out.has(cur.parent)) { out.add(cur.parent); cur = byId.get(cur.parent); }
+  return [...out];
+}
+
+/** Set a dashboard's type + share permissions for the chosen scope. */
+export async function applyDashboardScope(dashboardId: string, scope: DuplicateScope): Promise<void> {
+  const type: Dashboard['dashboard_type'] =
+    scope === 'user' ? 'personal' : scope === 'organization' ? 'system' : 'business_unit';
+  await updateDashboard(dashboardId, { dashboard_type: type });
+
+  if (scope === 'user') return; // owner-only — no extra permission rows
+
+  if (scope === 'organization') {
+    const { error } = await supabase.from('dashboard_permission').upsert(
+      { dashboard_id: dashboardId, principal_type: 'organization', principal_id: ORG_PRINCIPAL, can_read: true, can_export: true },
+      { onConflict: 'dashboard_id,principal_type,principal_id' },
+    );
+    if (error) throw error;
+    return;
+  }
+
+  const myBu = await userBusinessUnitId();
+  if (!myBu) throw new Error('Your account has no business unit, so it cannot be shared at a business-unit scope.');
+  const tree = await businessUnitTree();
+  const ids = scope === 'child' ? descendantBuIds(myBu, tree)
+    : scope === 'parent' ? ancestorBuIds(myBu, tree) : [myBu];
+  const rows = ids.map((id) => ({
+    dashboard_id: dashboardId, principal_type: 'business_unit', principal_id: id, can_read: true, can_export: true,
+  }));
+  if (rows.length) {
+    const { error } = await supabase.from('dashboard_permission').upsert(rows, { onConflict: 'dashboard_id,principal_type,principal_id' });
+    if (error) throw error;
+  }
+}
+
+export async function duplicateDashboardWithScope(id: string, scope: DuplicateScope): Promise<Dashboard> {
+  const clone = await duplicateDashboard(id);
+  await applyDashboardScope(clone.dashboard_id, scope);
+  return clone;
+}
+
 // ── Persist the whole definition (designer Save) ──────────────────────────────
 // Diff-based: upsert incoming rows, delete rows no longer present.
 export async function saveDefinition(def: DashboardDefinition): Promise<void> {
@@ -191,7 +289,27 @@ export async function saveDefinition(def: DashboardDefinition): Promise<void> {
   await reconcileRows('dashboard_measure', 'dashboard_measure_id', id,
     def.measures.map((m) => ({ ...m, dashboard_id: id })));
 
+  // Global semantic filters (best-effort: skip cleanly if tables not provisioned).
+  // Order matters: filters first (parent), then mappings + bindings (children).
+  await reconcileOptional('dashboard_semantic_filter', 'dashboard_semantic_filter_id', id,
+    (def.semanticFilters ?? []).map((s) => ({ ...s, dashboard_id: id })));
+  await reconcileOptional('dashboard_filter_mapping', 'dashboard_filter_mapping_id', id,
+    (def.filterMappings ?? []).map((m) => ({ ...m, dashboard_id: id })));
+  await reconcileOptional('dashboard_visual_filter_binding', 'dashboard_visual_filter_binding_id', id,
+    (def.visualBindings ?? []).map((b) => ({ ...b, dashboard_id: id })));
+
   void uid;
+}
+
+// Like reconcileRows but tolerates the table not existing yet (pre-migration).
+async function reconcileOptional(
+  table: string, pk: string, dashboardId: string, rows: Record<string, unknown>[],
+): Promise<void> {
+  try {
+    await reconcileRows(table, pk, dashboardId, rows);
+  } catch (e) {
+    if (!isMissingRelation(e)) throw e;
+  }
 }
 
 // Upsert provided rows and delete any existing row (for this dashboard) whose id

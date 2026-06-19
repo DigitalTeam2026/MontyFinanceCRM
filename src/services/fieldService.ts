@@ -38,7 +38,7 @@ export async function fetchFieldTypes(): Promise<FieldType[]> {
 export async function fetchFieldsForEntity(entityId: string): Promise<FieldDefinition[]> {
   const { data, error } = await supabase
     .from('field_definition')
-    .select('*, field_type(*), lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name)')
+    .select('*, field_type(*), lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name, primary_key_column)')
     .eq('entity_definition_id', entityId)
     .is('deleted_at', null)
     .order('sort_order', { ascending: true })

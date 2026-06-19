@@ -1,22 +1,50 @@
 import { useState, useEffect, useRef, Component, type ReactNode } from 'react';
 import ReactECharts from 'echarts-for-react';
 import DOMPurify from 'dompurify';
-import { Loader2, AlertTriangle, Inbox, Lock } from 'lucide-react';
-import type { DashboardVisual, ThemeConfig, VisualFilter } from '../types/dashboard';
+import { Loader2, AlertTriangle, Inbox, Lock, Check } from 'lucide-react';
+import type { DashboardVisual, DashboardDefinition, ThemeConfig, VisualFilter, RelatedFilter, SemanticQueryFilter, ButtonAction, OrderBySpec } from '../types/dashboard';
 import { VISUAL_REGISTRY } from './registry';
+import TableVisual from './TableVisual';
 import { buildEChartsOption } from './echartsOptions';
-import { formatNumber, formatLabel } from './formatValue';
+import { formatLabel } from './formatValue';
+import { pick } from './colorConfig';
 import { runAggregate, runRecordQuery } from '../services/queryEngine';
 import { resolveAggregateLabels, resolveRecordLabels } from './labelResolver';
+import type { SelectionEmit, RawValue } from './useCrossFilter';
+import KpiVisual from './KpiVisual';
+import FunnelStageVisual from './FunnelStageVisual';
+import DonutProgressVisual from './DonutProgressVisual';
+import DateSlicerVisual from './DateSlicerVisual';
+import ValueSlicerVisual from './ValueSlicerVisual';
+import type { SlicerSelection } from './slicerValues';
 import { isAuthError } from '../../../lib/supabase';
 
 interface Props {
   visual: DashboardVisual;
   theme: ThemeConfig;
-  /** Extra runtime filters merged into the visual query (cross-filter / global). */
+  /** Same-entity runtime filters merged into the visual query (cross-filter / slicer / global). */
   runtimeFilters?: VisualFilter[];
-  /** Click handler for cross-filtering / drill (runtime). */
-  onInteract?: (field: string, value: unknown) => void;
+  /** Cross-entity runtime filters reached through relationship paths (cross-filter). */
+  runtimeRelatedFilters?: RelatedFilter[];
+  /** Global semantic filters resolved to this visual (path mappings → server EXISTS). */
+  runtimeSemanticFilters?: SemanticQueryFilter[];
+  /** Interactive cross-filter selection (click / ctrl / shift). */
+  onSelect?: (emit: SelectionEmit) => void;
+  /** Raw values currently selected for THIS visual's field — emphasised, others dimmed. */
+  highlight?: Set<string>;
+  /** Per-(entity, field) selected raws — for multi-field visuals (funnel stage cards). */
+  getHighlight?: (entity: string, fieldId: string | undefined) => Set<string>;
+  /** Per-stage cross-filters for a multi-entity visual (funnel stage card): given a
+   *  stage's entity, returns the same-entity + cross-entity filters to apply. */
+  crossFilterForEntity?: (entity: string) => { filters: VisualFilter[]; semanticFilters: SemanticQueryFilter[] };
+  /** Button action handler. */
+  onAction?: (action: ButtonAction | undefined) => void;
+  /** Date-slicer broadcast — the timeline visual emits its range filters here. */
+  onFilterChange?: (filters: VisualFilter[]) => void;
+  /** Full dashboard definition — a GLOBAL date slicer resolves its mappings/bounds from it. */
+  definition?: DashboardDefinition;
+  /** Current semantic selections — a lookup slicer uses them to stay contextual (§7). */
+  semanticSelections?: Record<string, SlicerSelection>;
   /** When true the visual fetches live data; false keeps it inert (designer add). */
   live?: boolean;
 }
@@ -28,13 +56,28 @@ type State =
   | { kind: 'denied' }
   | { kind: 'ready'; rows: Record<string, unknown>[]; total?: number };
 
-export default function VisualRenderer({ visual, theme, runtimeFilters, onInteract, live = true }: Props) {
+const rawOf = (r: Record<string, unknown>, key: string) =>
+  (r.__raw as Record<string, unknown> | undefined)?.[key] ?? r[key];
+
+export default function VisualRenderer({ visual, theme, runtimeFilters, runtimeRelatedFilters, runtimeSemanticFilters, onSelect, highlight, getHighlight, crossFilterForEntity, onAction, onFilterChange, definition, semanticSelections, live = true }: Props) {
   const meta = VISUAL_REGISTRY[visual.visual_type];
   const [state, setState] = useState<State>({ kind: 'loading' });
   const reqId = useRef(0);
 
-  const needsData = meta?.dataMode !== 'none';
-  const cfgKey = JSON.stringify([visual.query_config, runtimeFilters]);
+  // KPI, funnel-stage, donut-progress, timeline + slicer manage their own
+  // fetching — skip the generic aggregate/record query.
+  const needsData = meta?.dataMode !== 'none'
+    && visual.visual_type !== 'kpi' && visual.visual_type !== 'funnel_stage'
+    && visual.visual_type !== 'donut_progress' && visual.visual_type !== 'slicer';
+
+  // Interactive table state — header filters + single-column sort. These re-query
+  // the server (merged into the query below), so pagination stays correct. Reset
+  // when the visual identity changes.
+  const [tableFilters, setTableFilters] = useState<VisualFilter[]>([]);
+  const [tableSort, setTableSort] = useState<OrderBySpec | undefined>(undefined);
+  useEffect(() => { setTableFilters([]); setTableSort(undefined); }, [visual.dashboard_visual_id]);
+
+  const cfgKey = JSON.stringify([visual.query_config, runtimeFilters, runtimeRelatedFilters, runtimeSemanticFilters, tableFilters, tableSort]);
 
   useEffect(() => {
     if (!needsData || !live) { setState({ kind: 'ready', rows: [] }); return; }
@@ -44,7 +87,10 @@ export default function VisualRenderer({ visual, theme, runtimeFilters, onIntera
     setState({ kind: 'loading' });
     const merged = {
       ...visual.query_config,
-      filters: [...(visual.query_config.filters ?? []), ...(runtimeFilters ?? [])],
+      filters: [...(visual.query_config.filters ?? []), ...(runtimeFilters ?? []), ...tableFilters],
+      relatedFilters: [...(visual.query_config.relatedFilters ?? []), ...(runtimeRelatedFilters ?? [])],
+      semanticFilters: [...(visual.query_config.semanticFilters ?? []), ...(runtimeSemanticFilters ?? [])],
+      orderBy: tableSort ? [tableSort] : visual.query_config.orderBy,
     };
     const run = meta.dataMode === 'record' ? runRecordQuery(merged) : runAggregate(merged);
     run.then(async (res) => {
@@ -70,127 +116,156 @@ export default function VisualRenderer({ visual, theme, runtimeFilters, onIntera
   const fmt = visual.format_config;
   const empty = fmt.emptyMessage ?? 'No data';
 
+  // A filtered table with zero matches must still render its header + filter chips
+  // so the user can clear the filter — don't collapse it to the empty state.
+  const isTable = visual.visual_type === 'table' || visual.visual_type === 'record_list';
+  const keepTableShell = isTable && (tableFilters.length > 0 || !!tableSort);
+
   // ── status states ───────────────────────────────────────────────────────────
   if (needsData && live) {
     if (state.kind === 'loading') return <Status icon={<Loader2 className="animate-spin" size={16} />} text="Loading…" theme={theme} />;
     if (state.kind === 'denied') return <Status icon={<Lock size={16} />} text="Permission denied" theme={theme} />;
     if (state.kind === 'error') return <Status icon={<AlertTriangle size={16} />} text={state.message} theme={theme} tone="error" />;
-    if (state.kind === 'empty') return <Status icon={<Inbox size={16} />} text={empty} theme={theme} />;
+    if (state.kind === 'empty' && !keepTableShell) return <Status icon={<Inbox size={16} />} text={empty} theme={theme} color={fmt.emptyStateColor} />;
   }
   const rows = state.kind === 'ready' ? state.rows : [];
   const total = state.kind === 'ready' ? state.total : undefined;
 
-  return <VisualBody visual={visual} theme={theme} rows={rows} total={total} onInteract={onInteract} />;
+  return <VisualBody visual={visual} theme={theme} rows={rows} total={total} onSelect={onSelect} highlight={highlight} getHighlight={getHighlight} crossFilterForEntity={crossFilterForEntity} onAction={onAction} onFilterChange={onFilterChange} definition={definition} semanticSelections={semanticSelections} live={live} runtimeFilters={runtimeFilters} runtimeRelatedFilters={runtimeRelatedFilters} runtimeSemanticFilters={runtimeSemanticFilters}
+    tableFilters={tableFilters} onTableFiltersChange={setTableFilters} tableSort={tableSort} onTableSortChange={setTableSort} />;
 }
 
 // ── per-type body ──────────────────────────────────────────────────────────────
-function VisualBody({ visual, theme, rows, total, onInteract }: {
+function VisualBody({ visual, theme, rows, total, onSelect, highlight, getHighlight, crossFilterForEntity, onAction, onFilterChange, definition, semanticSelections, live, runtimeFilters, runtimeRelatedFilters, runtimeSemanticFilters, tableFilters, onTableFiltersChange, tableSort, onTableSortChange }: {
   visual: DashboardVisual; theme: ThemeConfig; rows: Record<string, unknown>[];
-  total?: number; onInteract?: (field: string, value: unknown) => void;
+  total?: number; onSelect?: (emit: SelectionEmit) => void; highlight?: Set<string>;
+  getHighlight?: (entity: string, fieldId: string | undefined) => Set<string>;
+  crossFilterForEntity?: (entity: string) => { filters: VisualFilter[]; semanticFilters: SemanticQueryFilter[] };
+  onAction?: (action: ButtonAction | undefined) => void;
+  onFilterChange?: (filters: VisualFilter[]) => void;
+  definition?: DashboardDefinition;
+  semanticSelections?: Record<string, SlicerSelection>;
+  live?: boolean; runtimeFilters?: VisualFilter[];
+  runtimeRelatedFilters?: RelatedFilter[]; runtimeSemanticFilters?: SemanticQueryFilter[];
+  tableFilters?: VisualFilter[]; onTableFiltersChange?: (f: VisualFilter[]) => void;
+  tableSort?: OrderBySpec; onTableSortChange?: (s: OrderBySpec | undefined) => void;
 }) {
   const t = visual.visual_type;
   const fmt = visual.format_config;
+  const entity = visual.query_config.entity ?? '';
+
+  // Build a selection emit from a click on this visual (the cross-filter bus).
+  const emit = (fieldId: string | undefined, value: RawValue, native?: { ctrlKey?: boolean; shiftKey?: boolean; metaKey?: boolean }, ordered?: RawValue[]) => {
+    if (!onSelect || !fieldId) return;
+    onSelect({
+      sourceVisualId: visual.dashboard_visual_id, entity, fieldId, value,
+      modifiers: { ctrl: !!native?.ctrlKey, shift: !!native?.shiftKey, meta: !!native?.metaKey },
+      ordered,
+    });
+  };
 
   // ECharts-backed visuals
-  const option = buildEChartsOption(visual, rows, theme);
+  const option = buildEChartsOption(visual, rows, theme, highlight);
   if (option) {
-    const catKey = (visual.query_config.groupBy ?? [])[0]?.alias
-      ?? (visual.query_config.groupBy ?? [])[0]?.field;
+    const catField = (visual.query_config.groupBy ?? [])[0]?.field;
+    const catKey = (visual.query_config.groupBy ?? [])[0]?.alias ?? catField;
+    const ordered: RawValue[] | undefined = catKey
+      ? rows.map((r) => ({ raw: rawOf(r, catKey), label: formatLabel(r[catKey]) }))
+      : undefined;
     return (
       <ReactECharts
         option={option} style={{ height: '100%', width: '100%' }} notMerge lazyUpdate
-        onEvents={onInteract && catKey ? {
-          click: (p: { name?: string }) => { if (p?.name != null) onInteract(catKey, p.name); },
+        onEvents={onSelect && catKey && catField ? {
+          click: (p: { name?: string; dataIndex?: number; event?: { event?: MouseEvent } }) => {
+            const native = p?.event?.event;
+            const r = p?.dataIndex != null ? rows[p.dataIndex] : undefined;
+            const raw = r ? rawOf(r, catKey) : p?.name;
+            emit(catField, { raw, label: String(p?.name ?? raw ?? '') }, native, ordered);
+          },
         } : undefined}
       />
     );
   }
 
   switch (t) {
-    case 'kpi': return <KpiCard visual={visual} theme={theme} rows={rows} />;
-    case 'funnel_stage': return <FunnelStageCard visual={visual} theme={theme} />;
+    case 'kpi': return <KpiVisual visual={visual} theme={theme} live={live} runtimeFilters={runtimeFilters} runtimeRelatedFilters={runtimeRelatedFilters} runtimeSemanticFilters={runtimeSemanticFilters} onSelect={onSelect} highlight={highlight} />;
+    case 'funnel_stage': return <FunnelStageVisual visual={visual} theme={theme} live={live} runtimeFilters={runtimeFilters} runtimeRelatedFilters={runtimeRelatedFilters} runtimeSemanticFilters={runtimeSemanticFilters} crossFilterForEntity={crossFilterForEntity} onSelect={onSelect} getHighlight={getHighlight} />;
+    case 'donut_progress': return <DonutProgressVisual visual={visual} theme={theme} live={live} runtimeFilters={runtimeFilters} runtimeRelatedFilters={runtimeRelatedFilters} runtimeSemanticFilters={runtimeSemanticFilters} />;
     case 'table':
     case 'record_list':
-    case 'matrix': return <DataTable visual={visual} theme={theme} rows={rows} total={total} onInteract={onInteract} />;
+      return <TableVisual visual={visual} theme={theme} rows={rows} total={total} emit={emit} highlight={highlight}
+        columnFilters={tableFilters ?? []} onColumnFiltersChange={onTableFiltersChange ?? (() => {})}
+        sort={tableSort} onSortChange={onTableSortChange ?? (() => {})} />;
+    case 'matrix': return <DataTable visual={visual} theme={theme} rows={rows} total={total} emit={emit} highlight={highlight} />;
     case 'text': return <RichText content={fmt.content ?? ''} theme={theme} fmt={fmt} />;
     case 'html': return <SafeHtml content={fmt.content ?? ''} />;
     case 'image': return fmt.imageUrl
       ? <img src={fmt.imageUrl} alt={visual.title} className="w-full h-full object-contain" />
       : <Status icon={<Inbox size={16} />} text="No image" theme={theme} />;
     case 'shape': return <ShapeBox fmt={fmt} theme={theme} />;
-    case 'button': return <ButtonVisual visual={visual} theme={theme} onInteract={onInteract} />;
-    case 'slicer':
-    case 'timeline': return <SlicerStub visual={visual} theme={theme} rows={rows} onInteract={onInteract} />;
+    case 'button': return <ButtonVisual visual={visual} theme={theme} onAction={onAction} />;
+    case 'timeline': return <DateSlicerVisual visual={visual} theme={theme} live={live} definition={definition} onFilterChange={onFilterChange} />;
+    case 'slicer': return <ValueSlicerVisual visual={visual} theme={theme} live={live} definition={definition} semanticSelections={semanticSelections} onFilterChange={onFilterChange} />;
     default: return <Status icon={<AlertTriangle size={16} />} text={`Unsupported: ${t}`} theme={theme} />;
   }
 }
 
 // ── building blocks ─────────────────────────────────────────────────────────────
-function KpiCard({ visual, theme, rows }: { visual: DashboardVisual; theme: ThemeConfig; rows: Record<string, unknown>[] }) {
-  const valueKey = visual.query_config.aggregations?.[0]?.alias ?? Object.keys(rows[0] ?? {})[0];
-  const raw = rows[0]?.[valueKey];
-  const value = raw ?? (visual.query_config.aggregations?.[0] ? 0 : null);
-  const accent = visual.format_config.accentColor ?? theme.primaryAccent;
-  return (
-    <div className="h-full w-full flex flex-col justify-center px-4 py-3" style={{ borderTop: `3px solid ${accent}` }}>
-      <p className="text-[11px] font-medium uppercase tracking-wide" style={{ color: theme.secondaryText }}>{visual.title}</p>
-      <p className="text-[28px] font-semibold leading-tight mt-1" style={{ color: theme.primaryText }}>
-        {value == null ? (visual.format_config.emptyMessage ?? 'No data') : formatNumber(value, visual.format_config)}
-      </p>
-      {visual.format_config.subtitle && (
-        <p className="text-[11px] mt-0.5" style={{ color: theme.secondaryText }}>{visual.format_config.subtitle}</p>
-      )}
-    </div>
-  );
-}
-
-function FunnelStageCard({ visual, theme }: { visual: DashboardVisual; theme: ThemeConfig }) {
-  const stages = visual.data_config.stages ?? [];
-  if (!stages.length) return <Status icon={<Inbox size={16} />} text="Add stages in properties" theme={theme} />;
-  return (
-    <div className="h-full w-full flex items-center gap-1 px-2 overflow-x-auto">
-      {stages.map((s, i) => (
-        <div key={i} className="flex items-center">
-          <div className="px-3 py-2 rounded-lg min-w-[110px]" style={{ background: theme.surfaceBackground, border: `1px solid ${theme.borderColor}` }}>
-            <p className="text-[10px] uppercase tracking-wide" style={{ color: theme.secondaryText }}>{s.label}</p>
-            <p className="text-[18px] font-semibold" style={{ color: theme.primaryText }}>{formatNumber(s.value ?? 0, visual.format_config)}</p>
-          </div>
-          {i < stages.length - 1 && <span style={{ color: theme.secondaryText }} className="px-1">→</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function DataTable({ visual, theme, rows, total, onInteract }: {
-  visual: DashboardVisual; theme: ThemeConfig; rows: Record<string, unknown>[];
-  total?: number; onInteract?: (field: string, value: unknown) => void;
+function DataTable({ visual, theme, rows, total, emit, highlight }: {
+  visual: DashboardVisual; theme: ThemeConfig; rows: Record<string, unknown>[]; total?: number;
+  emit: (fieldId: string | undefined, value: RawValue, native?: { ctrlKey?: boolean; shiftKey?: boolean; metaKey?: boolean }, ordered?: RawValue[]) => void;
+  highlight?: Set<string>;
 }) {
-  if (!rows.length) return <Status icon={<Inbox size={16} />} text={visual.format_config.emptyMessage ?? 'No data'} theme={theme} />;
-  const cols = visual.query_config.columns?.length ? visual.query_config.columns : Object.keys(rows[0]);
+  const fmt = visual.format_config;
+  if (!rows.length) return <Status icon={<Inbox size={16} />} text={fmt.emptyMessage ?? 'No data'} theme={theme} color={fmt.emptyStateColor} />;
+  const cols = visual.query_config.columns?.length
+    ? visual.query_config.columns
+    : Object.keys(rows[0]).filter((k) => k !== '__raw');
+  const keyCol = cols[0];
+  // Header / row / cell colours fall back to the theme when unset.
+  const headerBg = pick(fmt.headerBg, theme.surfaceBackground);
+  const headerText = pick(fmt.headerTextColor, theme.secondaryText);
+  const rowBg = fmt.rowBg;                         // undefined → inherit card background
+  const altRowBg = fmt.altRowBg;
+  const cellText = pick(fmt.cellTextColor, theme.primaryText);
+  const totalBg = pick(fmt.totalRowBg, theme.surfaceBackground);
+  const totalText = pick(fmt.totalRowTextColor, theme.secondaryText);
+  const selBg = pick(fmt.selectedRowColor ?? fmt.selectedColor, theme.primaryAccent);
+  const accent = pick(fmt.selectedColor, theme.primaryAccent);
+  const ordered: RawValue[] = rows.map((r) => ({ raw: rawOf(r, keyCol), label: formatLabel(r[keyCol]) }));
   return (
     <div className="h-full w-full overflow-auto text-[12px]">
       <table className="w-full">
-        <thead className="sticky top-0" style={{ background: theme.surfaceBackground }}>
+        <thead className="sticky top-0" style={{ background: headerBg }}>
           <tr>{cols.map((c) => (
-            <th key={c} className="text-left font-medium px-3 py-1.5 whitespace-nowrap" style={{ color: theme.secondaryText, borderBottom: `1px solid ${theme.borderColor}` }}>{c}</th>
+            <th key={c} className="text-left font-medium px-3 py-1.5 whitespace-nowrap" style={{ color: headerText, borderBottom: `1px solid ${pick(fmt.borderColor, theme.borderColor)}` }}>{c}</th>
           ))}</tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="hover:bg-black/5 cursor-default"
-              onClick={() => onInteract?.(cols[0], r[cols[0]])}>
-              {cols.map((c) => (
-                <td key={c} className="px-3 py-1.5 whitespace-nowrap" style={{ color: theme.primaryText, borderBottom: `1px solid ${theme.gridLineColor}` }}>
-                  {formatLabel(r[c])}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((r, i) => {
+            const raw = rawOf(r, keyCol);
+            const selected = !!highlight?.has(String(raw));
+            const baseBg = i % 2 === 1 ? (altRowBg ?? rowBg) : rowBg;
+            const dim = highlight && highlight.size > 0 && !selected;
+            return (
+              <tr key={i} className="cursor-pointer transition-colors"
+                style={{ background: selected ? selBg : baseBg, opacity: dim ? 0.45 : 1, boxShadow: selected ? `inset 3px 0 0 ${accent}` : undefined }}
+                onMouseEnter={(e) => { if (!selected && fmt.hoverColor) e.currentTarget.style.background = fmt.hoverColor; }}
+                onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = baseBg ?? ''; }}
+                onClick={(e) => emit(keyCol, { raw, label: formatLabel(r[keyCol]) }, e, ordered)}>
+                {cols.map((c, ci) => (
+                  <td key={c} className="px-3 py-1.5 whitespace-nowrap" style={{ color: cellText, borderBottom: `1px solid ${pick(fmt.gridLineColor, theme.gridLineColor)}` }}>
+                    {ci === 0 && selected && <Check size={11} className="inline mr-1 -mt-0.5" />}
+                    {formatLabel(r[c])}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       {total != null && total > rows.length && (
-        <p className="px-3 py-1.5 text-[11px]" style={{ color: theme.secondaryText }}>{rows.length} of {total}</p>
+        <p className="px-3 py-1.5 text-[11px]" style={{ color: totalText, background: totalBg }}>{rows.length} of {total}</p>
       )}
     </div>
   );
@@ -215,56 +290,38 @@ function SafeHtml({ content }: { content: string }) {
 function ShapeBox({ fmt, theme }: { fmt: DashboardVisual['format_config']; theme: ThemeConfig }) {
   const shape = fmt.shape ?? 'rectangle';
   if (shape === 'line' || shape === 'divider') {
-    return <div className="w-full h-full flex items-center"><div className="w-full" style={{ height: 2, background: fmt.accentColor ?? theme.borderColor }} /></div>;
+    return <div className="w-full h-full flex items-center"><div className="w-full" style={{ height: 2, background: pick(fmt.lineColor ?? fmt.accentColor, theme.borderColor) }} /></div>;
   }
   return <div className="w-full h-full" style={{
-    background: fmt.background ?? theme.surfaceBackground,
-    border: `1px solid ${fmt.accentColor ?? theme.borderColor}`,
+    background: pick(fmt.fillColor ?? fmt.background, theme.surfaceBackground),
+    border: `${fmt.borderWidth ?? 1}px solid ${pick(fmt.borderColor ?? fmt.accentColor, theme.borderColor)}`,
     borderRadius: shape === 'rounded' ? 12 : 2,
   }} />;
 }
 
-function ButtonVisual({ visual, theme, onInteract }: { visual: DashboardVisual; theme: ThemeConfig; onInteract?: (f: string, v: unknown) => void }) {
-  const label = visual.format_config.content ?? 'Button';
+function ButtonVisual({ visual, theme, onAction }: { visual: DashboardVisual; theme: ThemeConfig; onAction?: (a: ButtonAction | undefined) => void }) {
+  const fmt = visual.format_config;
+  const label = fmt.content ?? 'Button';
+  const bg = pick(fmt.buttonBg ?? fmt.accentColor, theme.primaryAccent);
+  const text = pick(fmt.buttonTextColor, '#ffffff');
   return (
     <div className="h-full w-full flex items-center justify-center p-2">
       <button
-        onClick={() => onInteract?.('__action__', visual.format_config.buttonAction)}
-        className="px-4 py-1.5 rounded-lg text-[13px] font-medium"
-        style={{ background: visual.format_config.accentColor ?? theme.primaryAccent, color: '#fff' }}>
+        onClick={() => onAction?.(fmt.buttonAction)}
+        className="px-4 py-1.5 rounded-lg text-[13px] font-medium transition-colors inline-flex items-center gap-1.5"
+        style={{ background: bg, color: text }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = pick(fmt.buttonHoverBg, bg); e.currentTarget.style.color = pick(fmt.buttonHoverTextColor, text); }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = bg; e.currentTarget.style.color = text; }}>
         {label}
       </button>
     </div>
   );
 }
 
-function SlicerStub({ visual, theme, rows, onInteract }: {
-  visual: DashboardVisual; theme: ThemeConfig; rows: Record<string, unknown>[];
-  onInteract?: (f: string, v: unknown) => void;
-}) {
-  const field = visual.query_config.groupBy?.[0]?.field ?? '';
-  const catKey = visual.query_config.groupBy?.[0]?.alias ?? field;
-  return (
-    <div className="h-full w-full p-2 overflow-auto">
-      <p className="text-[11px] mb-1.5" style={{ color: theme.secondaryText }}>{visual.title || 'Filter'}</p>
-      <div className="flex flex-wrap gap-1.5">
-        {rows.slice(0, 30).map((r, i) => (
-          <button key={i} onClick={() => onInteract?.(field, r[catKey])}
-            className="px-2 py-1 rounded text-[11px]"
-            style={{ background: theme.surfaceBackground, border: `1px solid ${theme.borderColor}`, color: theme.primaryText }}>
-            {formatLabel(r[catKey])}
-          </button>
-        ))}
-        {!rows.length && <span className="text-[11px]" style={{ color: theme.secondaryText }}>No values</span>}
-      </div>
-    </div>
-  );
-}
-
-function Status({ icon, text, theme, tone }: { icon: ReactNode; text: string; theme: ThemeConfig; tone?: 'error' }) {
+function Status({ icon, text, theme, tone, color }: { icon: ReactNode; text: string; theme: ThemeConfig; tone?: 'error'; color?: string }) {
   return (
     <div className="h-full w-full flex flex-col items-center justify-center gap-1.5 text-center px-3"
-      style={{ color: tone === 'error' ? theme.error : theme.secondaryText }}>
+      style={{ color: tone === 'error' ? theme.error : (color || theme.secondaryText) }}>
       {icon}
       <span className="text-[11px] leading-snug">{text}</span>
     </div>

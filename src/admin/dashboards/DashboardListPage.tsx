@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Plus, Search, Loader2, LayoutDashboard, MoreHorizontal, Copy, Trash2,
-  Upload, Download, Eye, Pencil, CheckCircle2, CircleSlash,
+  Upload, Download, Eye, Pencil, CheckCircle2, CircleSlash, Star, StarOff,
 } from 'lucide-react';
 import {
-  fetchDashboards, softDeleteDashboard, duplicateDashboard,
+  fetchDashboards, softDeleteDashboard, duplicateDashboardWithScope,
   publishDashboard, unpublishDashboard, exportDefinition, importDefinition,
+  setDefaultDashboard, clearDefaultDashboard,
 } from './services/dashboardService';
+import type { DuplicateScope } from './services/dashboardService';
 import type { DashboardListRow } from './types/dashboard';
 import { DASHBOARD_TYPES } from './types/dashboard';
 import { useToast, toFriendlyError } from '../../app/context/ToastContext';
 import ConfirmDialog from '../components/ConfirmDialog';
+import DuplicateScopeModal from './DuplicateScopeModal';
 import AnchoredPopover from '../../app/components/overlay/AnchoredPopover';
 
 interface Props {
@@ -27,6 +30,7 @@ export default function DashboardListPage({ onNew, onOpen }: Props) {
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<DashboardListRow | null>(null);
+  const [duplicateFor, setDuplicateFor] = useState<DashboardListRow | null>(null);
   const [menuFor, setMenuFor] = useState<{ row: DashboardListRow; el: HTMLElement } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -123,9 +127,16 @@ export default function DashboardListPage({ onNew, onOpen }: Props) {
                 {filtered.map((r) => (
                   <tr key={r.dashboard_id} className="border-b border-slate-100 hover:bg-slate-50/60">
                     <td className="px-4 py-2.5">
-                      <button onClick={() => onOpen(r.dashboard_id)} className="font-medium text-slate-800 hover:text-blue-600 text-left">
-                        {r.name}
-                      </button>
+                      <span className="flex items-center gap-1.5">
+                        <button onClick={() => onOpen(r.dashboard_id)} className="font-medium text-slate-800 hover:text-blue-600 text-left">
+                          {r.name}
+                        </button>
+                        {r.is_default && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700">
+                            <Star size={10} className="fill-blue-700" /> Default
+                          </span>
+                        )}
+                      </span>
                       {r.description && <p className="text-slate-400 text-[11px] truncate max-w-xs">{r.description}</p>}
                     </td>
                     <td className="px-4 py-2.5 text-slate-600">{TYPE_LABEL[r.dashboard_type] ?? r.dashboard_type}</td>
@@ -159,13 +170,20 @@ export default function DashboardListPage({ onNew, onOpen }: Props) {
             <MenuItem icon={<Eye size={13} />} label="Open" onClick={() => { onOpen(menuFor.row.dashboard_id); setMenuFor(null); }} />
             <MenuItem icon={<Pencil size={13} />} label="Edit" onClick={() => { onOpen(menuFor.row.dashboard_id); setMenuFor(null); }} />
             <MenuItem icon={<Copy size={13} />} label="Duplicate" disabled={busy}
-              onClick={() => act(() => duplicateDashboard(menuFor.row.dashboard_id), 'Dashboard duplicated.')} />
+              onClick={() => { setDuplicateFor(menuFor.row); setMenuFor(null); }} />
             {menuFor.row.status === 'published' ? (
               <MenuItem icon={<CircleSlash size={13} />} label="Unpublish" disabled={busy}
                 onClick={() => act(() => unpublishDashboard(menuFor.row.dashboard_id), 'Dashboard unpublished.')} />
             ) : (
               <MenuItem icon={<CheckCircle2 size={13} />} label="Publish" disabled={busy}
                 onClick={() => act(() => publishDashboard(menuFor.row.dashboard_id), 'Dashboard published.')} />
+            )}
+            {menuFor.row.is_default ? (
+              <MenuItem icon={<StarOff size={13} />} label="Remove as Default" disabled={busy}
+                onClick={() => act(() => clearDefaultDashboard(menuFor.row.dashboard_id), 'Default dashboard cleared.')} />
+            ) : (
+              <MenuItem icon={<Star size={13} />} label="Set as Default (all users)" disabled={busy}
+                onClick={() => act(() => setDefaultDashboard(menuFor.row.dashboard_id), 'Default dashboard set.')} />
             )}
             <MenuItem icon={<Download size={13} />} label="Export Definition" onClick={() => handleExport(menuFor.row)} />
             <div className="my-1 border-t border-slate-100" />
@@ -182,6 +200,16 @@ export default function DashboardListPage({ onNew, onOpen }: Props) {
           confirmLabel="Delete" destructive loading={busy}
           onCancel={() => setConfirmDelete(null)}
           onConfirm={() => act(() => softDeleteDashboard(confirmDelete.dashboard_id), 'Dashboard deleted.').then(() => setConfirmDelete(null))}
+        />
+      )}
+
+      {duplicateFor && (
+        <DuplicateScopeModal
+          dashboardName={duplicateFor.name}
+          loading={busy}
+          onCancel={() => setDuplicateFor(null)}
+          onConfirm={(scope: DuplicateScope) =>
+            act(() => duplicateDashboardWithScope(duplicateFor.dashboard_id, scope), 'Dashboard duplicated.').then(() => setDuplicateFor(null))}
         />
       )}
     </div>

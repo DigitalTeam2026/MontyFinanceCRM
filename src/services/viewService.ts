@@ -168,7 +168,8 @@ export async function fetchViewColumns(viewId: string): Promise<ViewColumn[]> {
         config_json,
         lookup_entity:entity_definition!lookup_entity_id(
           physical_table_name,
-          primary_field_name
+          primary_field_name,
+          primary_key_column
         )
       ),
       relationship_definition(

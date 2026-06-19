@@ -4,6 +4,14 @@ import { supabase } from '../../../lib/supabase';
 import { fetchViewColumns, fetchViewsForEntityLogical } from '../../../services/viewService';
 import type { ViewColumn, ViewDefinition } from '../../../types/view';
 import type { LookupConfig } from '../../../types/form';
+import {
+  type SoftDeleteMode,
+  applySoftDeleteFilter,
+  candidateSoftDeleteModes,
+  isMissingColumnError,
+  rememberSoftDeleteMode,
+  resolveSoftDeleteMode,
+} from '../lookupSoftDelete';
 
 interface LookupRecord {
   id: string;
@@ -135,12 +143,6 @@ const ENTITY_CFG: Record<string, EntityCfg> = {
   },
 };
 
-const DELETED_AT_TABLES = new Set([
-  'business_unit', 'country', 'crm_user', 'industry', 'line_of_business',
-  'product', 'product_family', 'security_role', 'team',
-]);
-const NO_SOFT_DELETE_TABLES = new Set(['currency', 'organization']);
-
 const LOGICAL_TO_PHYSICAL: Record<string, string> = {
   statecode: 'state_code',
   statusreason: 'status_reason',
@@ -182,11 +184,7 @@ export default function LookupDialog({
     [entityLogicalName, entityTable, pkColumn, labelColumn, label]
   );
 
-  const softDeleteMode: 'is_deleted' | 'deleted_at' | 'is_active' = useMemo(() => {
-    if (DELETED_AT_TABLES.has(cfg.table)) return 'deleted_at';
-    if (NO_SOFT_DELETE_TABLES.has(cfg.table)) return 'is_active';
-    return 'is_deleted';
-  }, [cfg.table]);
+  const softDeleteMode: SoftDeleteMode = useMemo(() => resolveSoftDeleteMode(cfg.table), [cfg.table]);
 
   // ── Load the configured view (or default) ──────────────────────────────────
 
@@ -269,20 +267,12 @@ export default function LookupDialog({
       const physicalCols = [...new Set([cfg.pk, ...cols.map((c) => c.key)])];
       const selectStr = physicalCols.join(', ');
 
-      const buildQueries = (applyViewFilters: boolean) => {
-        let cQ = supabase.from(cfg.table).select(cfg.pk, { count: 'exact', head: true });
-        let dQ = supabase.from(cfg.table).select(selectStr);
-
-        if (softDeleteMode === 'is_deleted') {
-          cQ = (cQ as any).eq('is_deleted', false);
-          dQ = (dQ as any).eq('is_deleted', false);
-        } else if (softDeleteMode === 'deleted_at') {
-          cQ = (cQ as any).is('deleted_at', null);
-          dQ = (dQ as any).is('deleted_at', null);
-        } else {
-          cQ = (cQ as any).eq('is_active', true);
-          dQ = (dQ as any).eq('is_active', true);
-        }
+      const buildQueries = (applyViewFilters: boolean, mode: SoftDeleteMode) => {
+        let cQ = applySoftDeleteFilter(
+          supabase.from(cfg.table).select(cfg.pk, { count: 'exact', head: true }),
+          mode,
+        );
+        let dQ = applySoftDeleteFilter(supabase.from(cfg.table).select(selectStr), mode);
 
         if (q.trim()) {
           const filter = cfg.searchCols.map((col) => `${col}.ilike.%${q.trim()}%`).join(',');
@@ -327,13 +317,40 @@ export default function LookupDialog({
         return { countQ: cQ, dataQ: dQ };
       };
 
-      let { countQ, dataQ } = buildQueries(true);
-      let [countRes, dataRes] = await Promise.all([countQ, dataQ]);
+      // Try the resolved soft-delete mode first, then fall back through the others
+      // (ending with 'none'). For each mode we also retry without the view filters,
+      // which is what an unknown view-filter column would trip on. The first mode
+      // whose query succeeds is cached so this table never 400s on the next open.
+      const candidateModes: SoftDeleteMode[] = candidateSoftDeleteModes(cfg.table);
 
-      if (dataRes.error && av?.filter_json) {
-        ({ countQ, dataQ } = buildQueries(false));
-        [countRes, dataRes] = await Promise.all([countQ, dataQ]);
+      let countRes: any = null;
+      let dataRes: any = null;
+      let usedMode: SoftDeleteMode = softDeleteMode;
+
+      for (const mode of candidateModes) {
+        let { countQ, dataQ } = buildQueries(true, mode);
+        let [c, d] = await Promise.all([countQ, dataQ]);
+
+        // A view-filter column may not exist on this table → retry without them,
+        // keeping the same soft-delete predicate.
+        if (d.error && av?.filter_json) {
+          ({ countQ, dataQ } = buildQueries(false, mode));
+          [c, d] = await Promise.all([countQ, dataQ]);
+        }
+
+        countRes = c;
+        dataRes = d;
+        usedMode = mode;
+
+        // Success, or a failure unrelated to a missing column (auth, network, …):
+        // stop here rather than uselessly cycling soft-delete predicates.
+        if (!d.error || !isMissingColumnError(d.error)) break;
       }
+
+      // Remember what worked (or that none applies) so future opens skip the probing.
+      if (dataRes && !dataRes.error) rememberSoftDeleteMode(cfg.table, usedMode);
+
+      if (!countRes || !dataRes) { setRecords([]); setTotal(0); return; }
 
       setTotal(countRes.count ?? 0);
       const rows = ((dataRes.data ?? []) as unknown as Record<string, unknown>[]).map((row: Record<string, unknown>) => ({

@@ -70,12 +70,6 @@ const ENTITY_PK: Record<string, string> = {
   product: "product_id",
 };
 
-const DELETED_AT_TABLES = new Set([
-  "business_unit", "country", "crm_user", "industry",
-  "product", "product_family", "security_role", "team",
-]);
-const NO_SOFT_DELETE_TABLES = new Set(["currency", "organization"]);
-
 const dynamicMetaCache = new Map<string, { table: string; pk: string }>();
 
 async function resolveEntityMeta(
@@ -105,19 +99,22 @@ async function resolveEntityMeta(
   return { table: entity, pk: `${entity}_id` };
 }
 
+// Soft-delete via the soft_delete_records RPC, which detects the real PK and
+// whichever soft-delete/audit columns the table actually has (deleted_at,
+// is_deleted, …) at runtime. This avoids hardcoding per-table conventions, which
+// drift whenever the schema changes (e.g. the deleted_at standardisation).
 function applySoftDelete(
   client: ReturnType<typeof createClient>,
   table: string,
-  pk: string,
   recordIds: string[],
+  actorId: string | null,
 ) {
-  if (NO_SOFT_DELETE_TABLES.has(table)) {
-    return client.from(table).delete().in(pk, recordIds);
-  }
-  if (DELETED_AT_TABLES.has(table)) {
-    return client.from(table).update({ deleted_at: new Date().toISOString() }).in(pk, recordIds);
-  }
-  return client.from(table).update({ is_deleted: true }).in(pk, recordIds);
+  return client.rpc("soft_delete_records", {
+    p_table: table,
+    p_ids: recordIds,
+    p_actor: actorId,
+    p_match_col: null,
+  });
 }
 
 const PLURAL_TO_LOGICAL: Record<string, string> = {
@@ -268,7 +265,7 @@ Deno.serve(async (req: Request) => {
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      const { error } = await applySoftDelete(adminClient, table, pk, record_ids);
+      const { error } = await applySoftDelete(adminClient, table, record_ids, user.id);
       if (error) throw new Error(`Delete failed: ${error.message}`);
       return new Response(
         JSON.stringify({ success: true, deleted: record_ids.length, errors: 0, actions_executed: [] }),
@@ -425,7 +422,7 @@ Deno.serve(async (req: Request) => {
     for (const pa of pendingActions) {
       const { ruleId, ruleName, recordId, action } = pa;
       try {
-        await executeAction(adminClient, action, table, pk, recordId, entityLogical);
+        await executeAction(adminClient, action, table, pk, recordId, entityLogical, user.id);
         const desc = `${action.action_type}: ${action.target_entity ?? entity} ${action.target_field ?? ""}`.trim();
         actionsExecuted.push(desc);
         logs.push({
@@ -468,7 +465,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Now perform the actual soft delete on the primary records
-    const { error: deleteError } = await applySoftDelete(adminClient, table, pk, record_ids);
+    const { error: deleteError } = await applySoftDelete(adminClient, table, record_ids, user.id);
 
     if (deleteError) {
       logs.push({
@@ -576,7 +573,8 @@ async function executeAction(
   sourceTable: string,
   sourcePk: string,
   recordId: string,
-  _entityLogical: string
+  _entityLogical: string,
+  actorId: string | null
 ): Promise<void> {
   // Fetch the record to get linked IDs
   const { data: record } = await client
@@ -638,11 +636,12 @@ async function executeAction(
       if (!action.target_entity || !action.target_field) return;
       const drMeta = await resolveEntityMeta(client, action.target_entity);
       const sourceVal = record[action.source_field ?? sourcePk] ?? recordId;
-      const { error } = await client
-        .from(drMeta.table)
-        .update({ is_deleted: true })
-        .eq(action.target_field, sourceVal)
-        .eq("is_deleted", false);
+      const { error } = await client.rpc("soft_delete_records", {
+        p_table: drMeta.table,
+        p_ids: [String(sourceVal)],
+        p_actor: actorId,
+        p_match_col: action.target_field,
+      });
       if (error) throw new Error(`delete_related: ${error.message}`);
       break;
     }
@@ -651,11 +650,12 @@ async function executeAction(
       if (!action.target_entity || !action.target_field) return;
       const cdMeta = await resolveEntityMeta(client, action.target_entity);
       const sourceVal = record[action.source_field ?? sourcePk] ?? recordId;
-      const { error } = await client
-        .from(cdMeta.table)
-        .update({ is_deleted: true })
-        .eq(action.target_field, sourceVal)
-        .eq("is_deleted", false);
+      const { error } = await client.rpc("soft_delete_records", {
+        p_table: cdMeta.table,
+        p_ids: [String(sourceVal)],
+        p_actor: actorId,
+        p_match_col: action.target_field,
+      });
       if (error) throw new Error(`cascade_delete: ${error.message}`);
       break;
     }

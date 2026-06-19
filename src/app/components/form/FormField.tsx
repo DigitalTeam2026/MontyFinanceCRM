@@ -48,13 +48,21 @@ async function resolveDynamicEntityConfig(entitySlug: string): Promise<{ table: 
   const logicalName = entitySlug.replace(/s$/, ''); // rough singularize
   const { data } = await supabase
     .from('entity_definition')
-    .select('physical_table_name, primary_field_name, logical_name')
+    .select('physical_table_name, primary_field_name, logical_name, primary_key_column')
     .or(`logical_name.eq.${entitySlug},logical_name.eq.${logicalName}`)
     .maybeSingle();
   if (!data) { dynamicEntityConfigCache[entitySlug] = null; return null; }
   const table = data.physical_table_name;
   const labelField = data.primary_field_name ?? 'name';
-  const pk = PK_OVERRIDES[table] ?? `${table}_id`;
+  // Resolve the real primary key authoritatively rather than guessing `${table}_id`,
+  // which breaks for prefixed/irregular tables (e.g. crm_leadsource → leadsource_id,
+  // product_family → family_id). Order: stored value → static override → live catalog
+  // lookup (covers entities created before the backfill) → convention as last resort.
+  let pk = data.primary_key_column ?? PK_OVERRIDES[table];
+  if (!pk) {
+    const { data: rpcPk } = await supabase.rpc('get_entity_primary_key', { p_table: table });
+    pk = (typeof rpcPk === 'string' && rpcPk) ? rpcPk : `${table}_id`;
+  }
   const noIsDeleted = table === 'crm_user' || DELETED_AT_TABLES.has(table);
   const cfg = { table, pk, labelField, noIsDeleted };
   dynamicEntityConfigCache[entitySlug] = cfg;

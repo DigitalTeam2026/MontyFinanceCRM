@@ -67,7 +67,7 @@ export interface CrmRoute {
   search?: string; // keyword search (list only)
 }
 
-export type StudioEntityView = 'list' | 'new' | 'edit' | 'detail' | 'data';
+export type StudioEntityView = 'list' | 'new' | 'edit' | 'detail' | 'data' | 'recycle';
 
 export type StudioDashboardView = 'list' | 'create' | 'designer' | 'themes' | 'permissions';
 

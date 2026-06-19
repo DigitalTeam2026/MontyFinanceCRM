@@ -67,6 +67,8 @@ interface StagePopupProps {
   lookupLabels?: Record<string, string>;
   onFieldNavigate?: (field: string) => void;
   anchorRect: DOMRect | null;
+  /** Opportunity BPF: anchor dropdowns below the field, width-matched, never over the command bar. */
+  scopedDropdowns?: boolean;
 }
 
 function StagePopup({
@@ -89,6 +91,7 @@ function StagePopup({
   lookupLabels = {},
   onFieldNavigate,
   anchorRect,
+  scopedDropdowns = false,
 }: StagePopupProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const [validationErrors, setValidationErrors] = useState<Set<string>>(new Set());
@@ -146,6 +149,8 @@ function StagePopup({
         <FilterSelect
           value={boolStr}
           disabled={fieldReadonly}
+          forceDown={scopedDropdowns}
+          matchTriggerWidth={scopedDropdowns}
           onChange={(e) => {
             onChange(sf.field_logical_name, e.target.value);
             setValidationErrors((prev) => { const s = new Set(prev); s.delete(sf.field_logical_name); return s; });
@@ -186,7 +191,7 @@ function StagePopup({
     if (typeName === 'choice' || typeName === 'optionset') {
       const choices = (sf.config_json as { choices?: { value: string; label: string }[] } | null)?.choices ?? [];
       return (
-        <FilterSelect value={strVal} disabled={fieldReadonly} className={`${inputBase} appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px] bg-[right_8px_center] bg-no-repeat pr-8`}
+        <FilterSelect value={strVal} disabled={fieldReadonly} forceDown={scopedDropdowns} matchTriggerWidth={scopedDropdowns} className={`${inputBase} appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px] bg-[right_8px_center] bg-no-repeat pr-8`}
           onChange={(e) => { onChange(sf.field_logical_name, e.target.value); setValidationErrors((prev) => { const s = new Set(prev); s.delete(sf.field_logical_name); return s; }); }}
         >
           <option value="">-- Select --</option>
@@ -624,6 +629,15 @@ interface ProcessStageBarProps {
   lookupLabels?: Record<string, string>;
   onCrossEntityAdvance?: (info: CrossEntitySwitchInfo) => void;
   entityNameMap?: Record<string, string>;
+  /**
+   * Opportunity BPF enhancements (opt-in). When true:
+   *  - completed stages render green with a checkmark (active stays blue, future gray),
+   *  - the final stage only turns completed after Finish (cleared on returning to a prior stage),
+   *  - stage-panel dropdowns open below the field, width-matched, and never over the command bar.
+   * Driven by the real BPF state: activeStageId (currentStageKey), the completed set
+   * (stages before the active one), and isFinished.
+   */
+  enhancedStageStates?: boolean;
 }
 
 export type { CrossEntitySwitchInfo };
@@ -649,6 +663,7 @@ export default function ProcessStageBar({
   lookupLabels = {},
   onCrossEntityAdvance,
   entityNameMap = {},
+  enhancedStageStates = false,
 }: ProcessStageBarProps) {
   const processFlow = useMemo(
     () => filterLoadedFlowForEntity(processFlowRaw, entityDefId ?? null),
@@ -1114,7 +1129,7 @@ export default function ProcessStageBar({
               <div
                 className="absolute left-0 top-1/2 -translate-y-1/2 h-[2px] rounded-full transition-all duration-500"
                 style={{
-                  background: isFinished
+                  background: (enhancedStageStates || isFinished)
                     ? 'linear-gradient(90deg, #059669, #34d399)'
                     : 'linear-gradient(90deg, #1a64b6, #2d8cf0)',
                   width: isFinished ? '100%' : `${Math.max(0, Math.min(100, (currentIdx / (trackStages.length - 1)) * 100))}%`,
@@ -1133,18 +1148,19 @@ export default function ProcessStageBar({
                 const isCurrent = !isFinished && stage.stage_key === currentStageKey;
                 const isPopupOpen = openPopupStageKey === stage.stage_key;
 
-                const badgeColor = isFinished
-                  ? 'bg-emerald-500 text-white shadow-sm'
-                  : isPast
-                  ? 'bg-[#1a64b6] text-white shadow-sm'
+                // Completed = green (only completed stages get the checkmark).
+                // Active = blue highlight with the stage number (never a checkmark).
+                // Future = gray. enhancedStageStates renders completed-but-not-finished
+                // stages green too (matching the stage panel); the default keeps them blue.
+                const completedColor = enhancedStageStates || isFinished;
+                const badgeColor = isPast
+                  ? (completedColor ? 'bg-emerald-500 text-white shadow-sm' : 'bg-[#1a64b6] text-white shadow-sm')
                   : isCurrent
                   ? 'bg-[#1a64b6] text-white shadow-md ring-4 ring-blue-100'
                   : 'bg-[#f3f5f8] text-slate-400 border border-[#d0d5de]';
 
-                const labelColor = isFinished
-                  ? 'text-emerald-700 font-semibold'
-                  : isPast
-                  ? 'text-[#1a64b6]'
+                const labelColor = isPast
+                  ? (completedColor ? 'text-emerald-700 font-semibold' : 'text-[#1a64b6]')
                   : isCurrent
                   ? 'text-[#1a64b6] font-semibold'
                   : 'text-slate-400';
@@ -1269,6 +1285,7 @@ export default function ProcessStageBar({
             lookupLabels={lookupLabels}
             onFieldNavigate={onFieldNavigate}
             anchorRect={popupAnchorRect}
+            scopedDropdowns={enhancedStageStates}
           />
         );
       })()}

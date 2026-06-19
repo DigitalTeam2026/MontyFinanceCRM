@@ -25,6 +25,16 @@ export interface ColumnMeta {
 }
 
 const USER_COLUMNS = new Set(['owner_id', 'created_by', 'modified_by', 'assigned_to']);
+const CHOICE_TYPES = new Set(['choice', 'multi_choice', 'option_set', 'multi_option_set', 'picklist', 'select']);
+
+// A column is resolvable to a label if it carries any label-bearing metadata,
+// regardless of how its field_type is named — covers lookup, every choice
+// flavour, status/state, and boolean.
+function isResolvable(m: ColumnMeta): boolean {
+  return !!m.lookupTable || !!m.inlineChoices || !!m.optionSetName
+    || m.fieldType === 'boolean' || m.fieldType === 'statusreason' || m.fieldType === 'statecode'
+    || CHOICE_TYPES.has(m.fieldType);
+}
 
 // ── entity → fields cache ──────────────────────────────────────────────────────
 const fieldCache = new Map<string, { entityId: string; byColumn: Map<string, ColumnMeta>; fields: FieldDefinition[] }>();
@@ -100,12 +110,14 @@ async function resolveColumnValueMap(meta: ColumnMeta, raws: unknown[]): Promise
   const strs = [...new Set(raws.filter((v) => v != null && v !== '').map(String))];
   if (!strs.length) return out;
 
-  if (meta.isUser || (meta.fieldType === 'lookup' && meta.lookupTable === 'crm_user')) {
+  // Users (owner/created_by/… or any lookup → crm_user)
+  if (meta.isUser || meta.lookupTable === 'crm_user') {
     const m = await resolveUserNames(strs);
     for (const [k, v] of Object.entries(m)) out.set(k, v);
     return out;
   }
-  if (meta.fieldType === 'lookup' && meta.lookupTable) {
+  // Any field that points at another entity — resolve to that record's name.
+  if (meta.lookupTable) {
     const m = await batchResolveLookupLabels(meta.lookupTable, strs);
     for (const [k, v] of Object.entries(m)) out.set(k, v);
     return out;
@@ -114,22 +126,23 @@ async function resolveColumnValueMap(meta: ColumnMeta, raws: unknown[]): Promise
     for (const s of strs) out.set(s, formatBoolean(s));
     return out;
   }
-  if (meta.fieldType === 'choice' || meta.fieldType === 'multi_choice') {
-    // Inline choices (config_json.choices) are the common case in this DB.
-    if (meta.inlineChoices) {
-      const m = new Map(meta.inlineChoices.map((c) => [String(c.value), c.label]));
-      for (const s of strs) { const l = m.get(s); if (l) out.set(s, l); }
-    } else if (meta.optionSetName) {
-      for (const s of strs) { try { const l = await resolveOptionSetLabel(meta.optionSetName, s); if (l) out.set(s, l); } catch { /* option_set table absent */ } }
-    }
-    return out;
-  }
+  // Status reason / state code resolve from their definition tables (authoritative).
   if (meta.fieldType === 'statusreason') {
     for (const s of strs) { const l = await resolveStatusReasonLabel(meta.entityDefinitionId, s); if (l) out.set(s, l); }
     return out;
   }
   if (meta.fieldType === 'statecode') {
     for (const s of strs) { const l = await resolveStateCodeLabel(meta.entityDefinitionId, s); if (l) out.set(s, l); }
+    return out;
+  }
+  // Any choice flavour — inline choices (the common case here) first, then option set.
+  if (meta.inlineChoices || meta.optionSetName || CHOICE_TYPES.has(meta.fieldType)) {
+    if (meta.inlineChoices) {
+      const m = new Map(meta.inlineChoices.map((c) => [String(c.value), c.label]));
+      for (const s of strs) { const l = m.get(s); if (l) out.set(s, l); }
+    } else if (meta.optionSetName) {
+      for (const s of strs) { try { const l = await resolveOptionSetLabel(meta.optionSetName, s); if (l) out.set(s, l); } catch { /* option_set table absent */ } }
+    }
     return out;
   }
   return out;
@@ -161,10 +174,14 @@ export async function resolveAggregateLabels(
 
   return rows.map((r) => {
     const next = { ...r };
+    // Preserve the original physical values so cross-filtering can build filters
+    // from the raw id/code rather than the human label.
+    const raws = { ...(r.__raw as Record<string, unknown> | undefined) };
     for (const { key, map } of maps) {
       const raw = r[key];
-      if (raw != null && map.has(String(raw))) next[key] = map.get(String(raw));
+      if (raw != null && map.has(String(raw))) { raws[key] = raw; next[key] = map.get(String(raw)); }
     }
+    next.__raw = raws;
     return next;
   });
 }
@@ -181,8 +198,7 @@ export async function resolveRecordLabels(
   const maps: { key: string; map: Map<string, string> }[] = [];
   for (const col of cols) {
     const cm = meta.byColumn.get(col);
-    if (!cm) continue;
-    if (!['lookup', 'choice', 'multi_choice', 'boolean', 'statusreason', 'statecode'].includes(cm.fieldType)) continue;
+    if (!cm || !isResolvable(cm)) continue;
     const map = await resolveColumnValueMap(cm, rows.map((r) => r[col]));
     if (map.size) maps.push({ key: col, map });
   }
@@ -190,10 +206,12 @@ export async function resolveRecordLabels(
 
   return rows.map((r) => {
     const next = { ...r };
+    const raws = { ...(r.__raw as Record<string, unknown> | undefined) };
     for (const { key, map } of maps) {
       const raw = r[key];
-      if (raw != null && map.has(String(raw))) next[key] = map.get(String(raw));
+      if (raw != null && map.has(String(raw))) { raws[key] = raw; next[key] = map.get(String(raw)); }
     }
+    next.__raw = raws;
     return next;
   });
 }
@@ -211,18 +229,7 @@ export async function getFilterFieldInfo(entityName: string, physicalColumn: str
     return { kind: 'boolean', options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }] };
   }
 
-  const field = fieldCache.get(entityName)?.fields.find((f) => f.physical_column_name === physicalColumn);
-
-  if (cm.fieldType === 'choice' || cm.fieldType === 'multi_choice') {
-    const inline = (field?.config_json as { choices?: FilterValueOption[] } | null)?.choices;
-    if (inline?.length) return { kind: 'choice', options: inline };
-    if (cm.optionSetName) {
-      const { data } = await supabase.from('option_set_value')
-        .select('value, display_label').eq('option_set_id', cm.optionSetName).eq('is_active', true).order('display_order');
-      return { kind: 'choice', options: (data ?? []).map((r: { value: string; display_label: string }) => ({ value: String(r.value), label: r.display_label })) };
-    }
-    return { kind: 'choice', options: [] };
-  }
+  // Status / state first (authoritative definition tables).
   if (cm.fieldType === 'statusreason') {
     const { data } = await supabase.from('status_reason_definition')
       .select('reason_value, display_label').eq('entity_definition_id', cm.entityDefinitionId).eq('is_active', true);
@@ -233,7 +240,19 @@ export async function getFilterFieldInfo(entityName: string, physicalColumn: str
       .select('state_value, display_label').eq('entity_definition_id', cm.entityDefinitionId);
     return { kind: 'choice', options: (data ?? []).map((r: { state_value: number; display_label: string }) => ({ value: String(r.state_value), label: r.display_label })) };
   }
-  if (cm.fieldType === 'lookup' && cm.lookupTable) {
+  // Inline choices (the common case in this DB).
+  if (cm.inlineChoices?.length) {
+    return { kind: 'choice', options: cm.inlineChoices.map((c) => ({ value: String(c.value), label: c.label })) };
+  }
+  // Option-set-backed choices (guarded — option_set_value may not exist).
+  if ((CHOICE_TYPES.has(cm.fieldType) || cm.optionSetName) && cm.optionSetName) {
+    try {
+      const { data } = await supabase.from('option_set_value')
+        .select('value, display_label').eq('option_set_id', cm.optionSetName).eq('is_active', true).order('display_order');
+      return { kind: 'choice', options: (data ?? []).map((r: { value: string; display_label: string }) => ({ value: String(r.value), label: r.display_label })) };
+    } catch { return { kind: 'choice', options: [] }; }
+  }
+  if (cm.lookupTable) {
     if (cm.isUser || cm.lookupTable === 'crm_user') {
       const { data } = await supabase.rpc('list_active_crm_users');
       return { kind: 'lookup', options: (data ?? []).map((u: { user_id: string; display_name?: string; full_name?: string; email?: string }) => ({ value: u.user_id, label: u.display_name || u.full_name || u.email || u.user_id })) };

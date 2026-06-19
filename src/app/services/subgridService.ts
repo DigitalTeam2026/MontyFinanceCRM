@@ -239,7 +239,7 @@ export async function fetchViewColumnsForSubgrid(viewId: string): Promise<ViewDr
 
   const { data, error } = await supabase
     .from('view_column')
-    .select('*, field_definition(logical_name, physical_column_name, display_name, field_type(name), lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name))')
+    .select('*, field_definition(logical_name, physical_column_name, display_name, field_type(name), lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name, primary_key_column))')
     .eq('view_id', viewId)
     .eq('is_hidden', false)
     .order('display_order');

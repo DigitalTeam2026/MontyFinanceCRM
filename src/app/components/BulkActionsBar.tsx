@@ -28,6 +28,14 @@ import { fetchFieldsForEntity } from '../../services/fieldService';
 import type { FieldDefinition } from '../../types/field';
 import type { ColumnState } from './ColumnCustomizer';
 import { supabase } from '../../lib/supabase';
+import {
+  type SoftDeleteMode,
+  applySoftDeleteFilter,
+  candidateSoftDeleteModes,
+  isMissingColumnError,
+  rememberSoftDeleteMode,
+  resolveSoftDeleteMode,
+} from './lookupSoftDelete';
 import { usePermissions } from '../context/PermissionContext';
 
 interface BulkUser {
@@ -176,8 +184,13 @@ function getLookupEntityConfig(field: FieldDefinition): LookupEntityCfg | null {
     const labelCol = table === 'crm_user'
       ? 'email'
       : (field.lookup_entity.primary_field_name || 'name');
-    const pkGuess = table === 'crm_user' ? 'user_id' : `${table}_id`;
-    return { table, pk: pkGuess, labelCol };
+    // Prefer the real PK from metadata. The previous `${table}_id` guess produced
+    // wrong names like `crm_leadsource_id` (actual PK is `leadsource_id`), which
+    // 400'd every lookup query. Fall back to a prefix-stripped guess if metadata
+    // is missing (the `crm_` prefix is dropped for the PK column by convention).
+    const pk = field.lookup_entity.primary_key_column
+      || (table === 'crm_user' ? 'user_id' : `${table.replace(/^crm_/, '')}_id`);
+    return { table, pk, labelCol };
   }
   const cfg = field.config_json as Record<string, unknown> | null;
   if (cfg?.entity_table && cfg?.pk_column && cfg?.label_column) {
@@ -331,11 +344,26 @@ function BulkFieldInput({
     if (!cfg) return;
     const t = setTimeout(async () => {
       setLookupLoading(true);
-      let q = supabase.from(cfg.table).select(`${cfg.pk},${cfg.labelCol}`).is('deleted_at', null).limit(20);
-      if (lookupQuery.trim()) q = q.ilike(cfg.labelCol, `%${lookupQuery}%`);
-      const { data } = await q;
+      const buildQuery = (mode: SoftDeleteMode) => {
+        let q = applySoftDeleteFilter(
+          supabase.from(cfg.table).select(`${cfg.pk},${cfg.labelCol}`),
+          mode,
+        ).limit(20);
+        if (lookupQuery.trim()) q = q.ilike(cfg.labelCol, `%${lookupQuery}%`);
+        return q;
+      };
+      // Probe soft-delete predicates in order; the table's actual shape may not be
+      // `deleted_at`. Cache the first that succeeds so we don't 400 on the next open.
+      let res: { data?: unknown[] | null; error?: unknown } | null = null;
+      let usedMode: SoftDeleteMode = resolveSoftDeleteMode(cfg.table);
+      for (const mode of candidateSoftDeleteModes(cfg.table)) {
+        res = await buildQuery(mode);
+        usedMode = mode;
+        if (!res.error || !isMissingColumnError(res.error)) break;
+      }
+      if (res && !res.error) rememberSoftDeleteMode(cfg.table, usedMode);
       setLookupResults(
-        ((data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => ({
+        ((res?.data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => ({
           id: String(r[cfg.pk] ?? ''),
           label: String(r[cfg.labelCol] ?? ''),
         }))

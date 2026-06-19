@@ -10,6 +10,7 @@ import EntityListPage from './entities/EntityListPage';
 import EntityDesignerPage from './entities/EntityDesignerPage';
 import EntityDetailPage from './entities/EntityDetailPage';
 import FullDataGridPage from './entities/FullDataGridPage';
+import EntityRecycleBinPage from './entities/EntityRecycleBinPage';
 import FieldManagementPage from './fields/FieldManagementPage';
 import FormManagementPage from './forms/FormManagementPage';
 import ViewManagementPage from './views/ViewManagementPage';
@@ -41,7 +42,7 @@ import { fetchEntities } from '../services/entityService';
 import { parseRoute, buildStudioHash, replaceHash } from '../lib/appRoute';
 import type { StudioDashboardView } from '../lib/appRoute';
 
-type EntityView = 'list' | 'new' | 'edit' | 'detail' | 'data';
+type EntityView = 'list' | 'new' | 'edit' | 'detail' | 'data' | 'recycle';
 
 /** Read the Admin Studio module from the URL hash (defaults to 'entities'). */
 function initialStudioModule(): string {
@@ -388,6 +389,14 @@ export default function AdminStudio() {
           />
         );
       }
+      if (entityState.view === 'recycle' && entityState.selectedEntity) {
+        return (
+          <EntityRecycleBinPage
+            entity={entityState.selectedEntity}
+            onBack={() => setEntityState({ view: 'detail', selectedEntity: entityState.selectedEntity })}
+          />
+        );
+      }
       if (entityState.view === 'detail' && entityState.selectedEntity) {
         return (
           <EntityDetailPage
@@ -401,6 +410,7 @@ export default function AdminStudio() {
             onNavigateRules={(e) => navigateEntitySubArea('rules', e)}
             onNavigateWorkflows={(e) => navigateEntitySubArea('workflows', e)}
             onNavigateData={(e) => setEntityState({ view: 'data', selectedEntity: e })}
+            onNavigateRecycleBin={(e) => setEntityState({ view: 'recycle', selectedEntity: e })}
             onNavigateNavigation={() => { setActiveModule('navigation'); setEntityState({ view: 'list' }); }}
           />
         );

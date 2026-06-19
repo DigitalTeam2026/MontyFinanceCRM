@@ -2,7 +2,7 @@ import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   Plus, Save, RefreshCw, Download, X, ChevronDown, ChevronLeft, ChevronRight,
-  ArrowUp, ArrowDown, Trash2, Search, Filter, Columns3, Pencil,
+  ArrowUp, ArrowDown, Trash2, Search, Filter, Columns3, Pencil, RotateCcw,
   ChevronsLeft, ChevronsRight, ChevronRight as BreadcrumbChevron,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -11,6 +11,7 @@ import type { FieldDefinition } from '../../types/field';
 import { fetchFieldsForEntity } from '../../services/fieldService';
 import { getTableColumns } from '../../app/services/recordService';
 import ColumnSelectorPanel, { getFieldTypeIcon } from './ColumnSelectorPanel';
+import ConfirmDialog from '../components/ConfirmDialog';
 import ColumnFilterDropdown, {
   type ColumnFilter,
   applyColumnFilters,
@@ -66,6 +67,14 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
   // Summary of the last save attempt's failures, shown as a dismissable banner.
   const [saveError, setSaveError] = useState<string | null>(null);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [purgeConfirm, setPurgeConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  // Which column backs soft-delete for this table (resolved at load time):
+  // 'deleted_at' (preferred), legacy 'is_deleted', or null (hard-delete only).
+  const [softDeleteCol, setSoftDeleteCol] = useState<'deleted_at' | 'is_deleted' | null>(null);
+  // Recycle-bin toggle — 'active' shows live rows, 'deleted' shows the bin.
+  const [viewMode, setViewMode] = useState<'active' | 'deleted'>('active');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(50);
   const [alphaFilter, setAlphaFilter] = useState('All');
@@ -122,11 +131,21 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
       setAllFields(active);
       const visIds = await loadPreferences(entity.entity_definition_id, active);
       setVisibleFieldIds(visIds);
-      const hasIsDeleted = TABLES_WITH_SOFT_DELETE.has(table);
+
+      // Resolve the soft-delete column from the live schema (cached). Prefer the
+      // standard deleted_at timestamp; fall back to a legacy is_deleted boolean.
+      const tCols = await getTableColumns(table);
+      const sdCol: 'deleted_at' | 'is_deleted' | null =
+        tCols.has('deleted_at') ? 'deleted_at' : tCols.has('is_deleted') ? 'is_deleted' : null;
+      setSoftDeleteCol(sdCol);
+      // A table with no soft-delete column can't have a recycle bin — force active.
+      const mode = sdCol ? viewMode : 'active';
+
       const primaryField = active.find((f) => f.physical_column_name === entity.primary_field_name || f.logical_name === 'name');
 
       let countQuery = supabase.from(table).select('*', { count: 'exact', head: true });
-      if (hasIsDeleted) countQuery = countQuery.eq('is_deleted', false);
+      if (sdCol === 'deleted_at') countQuery = mode === 'deleted' ? countQuery.not('deleted_at', 'is', null) : countQuery.is('deleted_at', null);
+      else if (sdCol === 'is_deleted') countQuery = countQuery.eq('is_deleted', mode === 'deleted');
       if (alphaFilter !== 'All' && primaryField) {
         if (alphaFilter === '#') countQuery = countQuery.not(primaryField.physical_column_name, 'like', 'A%');
         else countQuery = countQuery.ilike(primaryField.physical_column_name, `${alphaFilter}%`);
@@ -139,7 +158,8 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
       setTotalCount(countRes.count ?? 0);
 
       let query = supabase.from(table).select('*').range(page * rowsPerPage, (page + 1) * rowsPerPage - 1);
-      if (hasIsDeleted) query = query.eq('is_deleted', false);
+      if (sdCol === 'deleted_at') query = mode === 'deleted' ? query.not('deleted_at', 'is', null) : query.is('deleted_at', null);
+      else if (sdCol === 'is_deleted') query = query.eq('is_deleted', mode === 'deleted');
       if (alphaFilter !== 'All' && primaryField) {
         if (alphaFilter === '#') query = query.not(primaryField.physical_column_name, 'like', 'A%');
         else query = query.ilike(primaryField.physical_column_name, `${alphaFilter}%`);
@@ -164,9 +184,15 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
     } finally {
       setLoading(false);
     }
-  }, [entity, table, pk, sort, page, rowsPerPage, alphaFilter, keyword, columnFilters, loadPreferences]);
+  }, [entity, table, pk, sort, page, rowsPerPage, alphaFilter, keyword, columnFilters, viewMode, loadPreferences]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Switching to a different entity resets the recycle-bin view + selection.
+  useEffect(() => {
+    setViewMode('active');
+    setSelectedRows(new Set());
+  }, [entity.entity_definition_id]);
 
   // Resolve lookup metadata (target table, PK, label field) for all lookup fields
   useEffect(() => {
@@ -367,6 +393,74 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
     setEditingCell(null);
   };
 
+  // Delete the selected rows. Tables with a soft-delete column are soft-deleted
+  // (moved to the recycle bin); all others are hard-deleted. Used in Active view.
+  const handleDeleteSelected = async () => {
+    const ids = [...selectedRows];
+    if (ids.length === 0) return;
+    setDeleting(true);
+    setSaveError(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const tCols = await getTableColumns(table);
+      let error;
+      if (softDeleteCol) {
+        const patch: Record<string, unknown> =
+          softDeleteCol === 'deleted_at' ? { deleted_at: new Date().toISOString() } : { is_deleted: true };
+        if (tCols.has('modified_at')) patch.modified_at = new Date().toISOString();
+        if (user && tCols.has('modified_by')) patch.modified_by = user.id;
+        ({ error } = await supabase.from(table).update(patch).in(pk, ids));
+      } else {
+        ({ error } = await supabase.from(table).delete().in(pk, ids));
+      }
+      if (error) { setSaveError(error.message); return; }
+      setSelectedRows(new Set());
+      setDeleteConfirm(false);
+      await loadData();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Restore the selected soft-deleted rows (clear the soft-delete column).
+  const handleRestoreSelected = async () => {
+    const ids = [...selectedRows];
+    if (ids.length === 0 || !softDeleteCol) return;
+    setDeleting(true);
+    setSaveError(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const tCols = await getTableColumns(table);
+      const patch: Record<string, unknown> =
+        softDeleteCol === 'deleted_at' ? { deleted_at: null } : { is_deleted: false };
+      if (tCols.has('modified_at')) patch.modified_at = new Date().toISOString();
+      if (user && tCols.has('modified_by')) patch.modified_by = user.id;
+      const { error } = await supabase.from(table).update(patch).in(pk, ids);
+      if (error) { setSaveError(error.message); return; }
+      setSelectedRows(new Set());
+      await loadData();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Permanently delete the selected rows (recycle bin → Delete forever).
+  const handlePurgeSelected = async () => {
+    const ids = [...selectedRows];
+    if (ids.length === 0) return;
+    setDeleting(true);
+    setSaveError(null);
+    try {
+      const { error } = await supabase.from(table).delete().in(pk, ids);
+      if (error) { setSaveError(error.message); return; }
+      setSelectedRows(new Set());
+      setPurgeConfirm(false);
+      await loadData();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleColumnSave = (newFieldIds: string[]) => {
     setVisibleFieldIds(newFieldIds);
     setShowColumnSelector(false);
@@ -409,7 +503,7 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
   const toggleRow = (rowPk: string) => {
     setSelectedRows((prev) => {
       const next = new Set(prev);
-      next.has(rowPk) ? next.delete(rowPk) : next.add(rowPk);
+      if (next.has(rowPk)) next.delete(rowPk); else next.add(rowPk);
       return next;
     });
   };
@@ -478,7 +572,7 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
 
       {/* Command Bar */}
       <div className="bg-white border-b border-[var(--divider)] px-3 py-1.5 flex items-center gap-0.5 shrink-0">
-        <CmdBtn icon={<Plus size={13} />} onClick={addNewRow} active={newRows.length > 0}>
+        <CmdBtn icon={<Plus size={13} />} onClick={addNewRow} active={newRows.length > 0} disabled={viewMode === 'deleted'}>
           New
         </CmdBtn>
         <CmdSep />
@@ -512,9 +606,38 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
         {selectedRows.size > 0 && (
           <>
             <CmdSep />
-            <CmdBtn icon={<Trash2 size={13} />} danger>
-              Delete ({selectedRows.size})
-            </CmdBtn>
+            {viewMode === 'deleted' ? (
+              <>
+                <CmdBtn icon={<RotateCcw size={13} />} onClick={handleRestoreSelected} disabled={deleting}>
+                  Restore ({selectedRows.size})
+                </CmdBtn>
+                <CmdBtn icon={<Trash2 size={13} />} danger onClick={() => setPurgeConfirm(true)} disabled={deleting}>
+                  Delete forever ({selectedRows.size})
+                </CmdBtn>
+              </>
+            ) : (
+              <CmdBtn icon={<Trash2 size={13} />} danger onClick={() => setDeleteConfirm(true)} disabled={deleting}>
+                Delete ({selectedRows.size})
+              </CmdBtn>
+            )}
+          </>
+        )}
+        {softDeleteCol && (
+          <>
+            <CmdSep />
+            <div className="flex items-center rounded-sm border border-[var(--border)] overflow-hidden">
+              {([['active', 'Active'], ['deleted', 'Recycle bin']] as const).map(([m, label]) => (
+                <button
+                  key={m}
+                  onClick={() => { if (viewMode !== m) { setViewMode(m); setSelectedRows(new Set()); setPage(0); } }}
+                  className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    viewMode === m ? 'bg-[var(--navy-accent)] text-white' : 'text-[var(--ink-600)] hover:bg-[var(--ink-50)]'
+                  }`}
+                >
+                  {m === 'deleted' ? <span className="inline-flex items-center gap-1"><Trash2 size={11} />{label}</span> : label}
+                </button>
+              ))}
+            </div>
           </>
         )}
         <div className="flex-1" />
@@ -801,8 +924,8 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
                             />
                           ) : (
                             <div
-                              className="px-3 py-[7px] min-h-[36px] cursor-text truncate text-[var(--ink-700)] leading-tight flex items-center"
-                              onClick={() => setEditingCell({ pk: record._pk, fieldId: field.field_definition_id })}
+                              className={`px-3 py-[7px] min-h-[36px] truncate text-[var(--ink-700)] leading-tight flex items-center ${viewMode === 'deleted' ? 'cursor-default' : 'cursor-text'}`}
+                              onClick={() => { if (viewMode !== 'deleted') setEditingCell({ pk: record._pk, fieldId: field.field_definition_id }); }}
                             >
                               <CellDisplay field={field} value={cellVal} lookupCache={lookupCache} />
                             </div>
@@ -889,6 +1012,36 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
           onRemove={() => handleRemoveFilter(activeFilterField.field.field_definition_id)}
           onClose={() => setActiveFilterField(null)}
           anchorRect={activeFilterField.rect}
+        />
+      )}
+
+      {/* Delete confirmation for the selected rows (soft-delete when supported) */}
+      {deleteConfirm && (
+        <ConfirmDialog
+          title={`Delete ${selectedRows.size} record${selectedRows.size === 1 ? '' : 's'}?`}
+          message={
+            softDeleteCol
+              ? `The selected record${selectedRows.size === 1 ? '' : 's'} will be moved to the recycle bin. You can restore ${selectedRows.size === 1 ? 'it' : 'them'} later.`
+              : `This permanently deletes the selected record${selectedRows.size === 1 ? '' : 's'}. This cannot be undone.`
+          }
+          confirmLabel="Delete"
+          destructive
+          loading={deleting}
+          onConfirm={handleDeleteSelected}
+          onCancel={() => setDeleteConfirm(false)}
+        />
+      )}
+
+      {/* Permanent-delete confirmation (recycle bin → Delete forever) */}
+      {purgeConfirm && (
+        <ConfirmDialog
+          title={`Permanently delete ${selectedRows.size} record${selectedRows.size === 1 ? '' : 's'}?`}
+          message={`This permanently removes the selected record${selectedRows.size === 1 ? '' : 's'} from the database. This cannot be undone.`}
+          confirmLabel="Delete forever"
+          destructive
+          loading={deleting}
+          onConfirm={handlePurgeSelected}
+          onCancel={() => setPurgeConfirm(false)}
         />
       )}
     </div>
@@ -1342,12 +1495,6 @@ function PagBtn({ children, onClick, disabled }: { children: React.ReactNode; on
 }
 
 /* ====== Helpers ====== */
-
-const TABLES_WITH_SOFT_DELETE = new Set([
-  'account', 'contact', 'lead', 'opportunity', 'ticket',
-  'activity_log', 'attachment', 'campaign', 'event',
-  'journey', 'marketing_email', 'note', 'segment', 'ticket_comment',
-]);
 
 const PK_OVERRIDES: Record<string, string> = {
   crm_user: 'user_id',

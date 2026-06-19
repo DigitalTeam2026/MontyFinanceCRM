@@ -413,9 +413,11 @@ export async function saveRecord(
     const updatePayload: Record<string, unknown> = { ...physicalValues };
     if (isCustomEntity || tableCols.has('modified_at')) updatePayload.modified_at = new Date().toISOString();
     if (isCustomEntity || tableCols.has('modified_by')) updatePayload.modified_by = userId;
+    // Strip keys with no matching column (no-op when tableCols is empty). See insert path below.
+    const finalUpdate = filterToExistingColumns(updatePayload, tableCols);
     const { data, error } = await supabase
       .from(table)
-      .update(updatePayload)
+      .update(finalUpdate)
       .eq(pk, id)
       .select()
       .maybeSingle();
@@ -494,9 +496,14 @@ export async function saveRecord(
         }
       }
     }
+    // Drop any keys that don't map to a real column. The isCustomEntity heuristic
+    // force-injects created_by/owner_id/owner_type, but hand-built reference tables
+    // (crm_source, country, currency, industry) lack owner_type and would 400.
+    // No-op when tableCols is empty, preserving the custom-entity injection fallback.
+    const finalInsert = filterToExistingColumns(insertPayload, tableCols);
     const { data, error } = await supabase
       .from(table)
-      .insert(insertPayload)
+      .insert(finalInsert)
       .select()
       .maybeSingle();
     if (error) rethrowProductAccessError(entity, error);
@@ -506,7 +513,7 @@ export async function saveRecord(
       // read, by design, so RETURNING yields no row. Return the submitted values
       // (no server-generated id) so the caller can finish gracefully; downstream
       // steps that need the new PK are skipped.
-      return translateToLogical(insertPayload as RecordData, mapping);
+      return translateToLogical(finalInsert as RecordData, mapping);
     }
     const created = translateToLogical(data as RecordData, mapping);
 

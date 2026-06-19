@@ -6,6 +6,7 @@ import AppHeader from './components/AppHeader';
 import { useCurrentUserName } from './hooks/useCurrentUserName';
 import EntityListPage from './pages/EntityListPage';
 import RecordFormPage from './pages/RecordFormPage';
+import DashboardViewer from './components/dashboard/DashboardViewer';
 import type { AppEntity, AppModule } from './types';
 import { ENTITY_LOGICAL_NAME } from './types';
 import LoginPage from '../LoginPage';
@@ -396,11 +397,9 @@ export default function CrmApp({
           viewType={view.type}
         />
         <div key={metadataEpoch} className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Dashboard intentionally blank — the dashboard feature was removed; the
-              nav item remains and shows an empty page pending the next design. */}
-          {view.type === 'dashboard' && (
-            <div className="flex-1" style={{ background: 'var(--app-bg)' }} />
-          )}
+          {/* Sales Dashboard — renders the org-wide default dashboard (is_default = true)
+              for every user. Admins set the default in Admin Studio → Dashboards. */}
+          {view.type === 'dashboard' && <DashboardViewer />}
 
           {(view.type === 'list' || view.type === 'filtered-list') && (
             <EntityListPage

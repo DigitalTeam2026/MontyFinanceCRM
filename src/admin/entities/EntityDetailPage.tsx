@@ -15,6 +15,7 @@ import { fetchRelationshipsForEntity } from '../../services/relationshipService'
 import { fetchWorkflowsForEntity } from '../../services/workflowService';
 import { checkEntityDependencies } from '../../services/dependencyService';
 import type { DependencyResult } from '../../services/dependencyService';
+import { getSoftDeleteMeta, countDeletedRecords } from './services/recycleBinService';
 import ConfirmDialog from '../components/ConfirmDialog';
 import DependencyBlockModal from '../components/DependencyBlockModal';
 
@@ -29,6 +30,7 @@ interface EntityDetailPageProps {
   onNavigateRules: (entity: EntityDefinition) => void;
   onNavigateWorkflows: (entity: EntityDefinition) => void;
   onNavigateData?: (entity: EntityDefinition) => void;
+  onNavigateRecycleBin?: (entity: EntityDefinition) => void;
   onNavigateNavigation?: () => void;
 }
 
@@ -52,6 +54,7 @@ export default function EntityDetailPage({
   onNavigateRules,
   onNavigateWorkflows,
   onNavigateData,
+  onNavigateRecycleBin,
   onNavigateNavigation,
 }: EntityDetailPageProps) {
   const [counts, setCounts] = useState<Counts>({
@@ -69,6 +72,11 @@ export default function EntityDetailPage({
   const [tableHealth, setTableHealth] = useState<{ tableExists: boolean; tableName: string } | null>(null);
   const [repairing, setRepairing] = useState(false);
   const [repairMsg, setRepairMsg] = useState<string | null>(null);
+  // Recycle Bin (Data management) — whether the table supports soft-delete and
+  // how many rows are currently sitting in the bin.
+  const [recycle, setRecycle] = useState<{ supported: boolean; count: number | null }>({
+    supported: false, count: null,
+  });
 
   const id = entity.entity_definition_id;
 
@@ -96,7 +104,23 @@ export default function EntityDetailPage({
     }
   }, [id]);
 
-  useEffect(() => { loadCounts(); }, [loadCounts]);
+  // Resolve soft-delete support + the recycle-bin count for this table. Folded
+  // into the same refresh path so the count updates after restore/purge actions
+  // (the user returns from the bin and Refresh re-runs this).
+  const loadRecycle = useCallback(async () => {
+    const table = entity.physical_table_name;
+    if (!table) { setRecycle({ supported: false, count: null }); return; }
+    try {
+      const meta = await getSoftDeleteMeta(table);
+      if (!meta.supported) { setRecycle({ supported: false, count: null }); return; }
+      const count = await countDeletedRecords(table, meta);
+      setRecycle({ supported: true, count });
+    } catch {
+      setRecycle({ supported: false, count: null });
+    }
+  }, [entity.physical_table_name]);
+
+  useEffect(() => { loadCounts(); loadRecycle(); }, [loadCounts, loadRecycle]);
 
   // Check physical table existence for all entities (custom and system)
   useEffect(() => {
@@ -185,7 +209,7 @@ export default function EntityDetailPage({
           Edit properties
         </CmdBtn>
         <CmdSep />
-        <CmdBtn icon={<RefreshCw size={12} className={loading ? 'animate-spin' : ''} />} onClick={loadCounts}>
+        <CmdBtn icon={<RefreshCw size={12} className={loading ? 'animate-spin' : ''} />} onClick={() => { loadCounts(); loadRecycle(); }}>
           Refresh
         </CmdBtn>
         {onNavigateData && (
@@ -302,7 +326,7 @@ export default function EntityDetailPage({
         )}
 
         {/* Sub-area Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           {/* Schema */}
           <SubAreaCard title="Schema" desc="Define the data model for this table">
             <SubAreaLink
@@ -355,6 +379,29 @@ export default function EntityDetailPage({
               loading={loading}
               onClick={() => onNavigateWorkflows(currentEntity)}
             />
+          </SubAreaCard>
+
+          {/* Data management */}
+          <SubAreaCard title="Data management" desc="Recover or purge deleted records">
+            {recycle.supported ? (
+              <SubAreaLink
+                icon={<Trash2 size={14} />}
+                label="Recycle Bin"
+                count={recycle.count}
+                loading={recycle.count === null}
+                onClick={() => onNavigateRecycleBin?.(currentEntity)}
+              />
+            ) : (
+              <div className="flex items-center gap-3 px-4 py-3 opacity-60">
+                <div className="w-8 h-8 rounded-md bg-slate-50 ring-1 ring-slate-100 flex items-center justify-center shrink-0 text-slate-300">
+                  <Trash2 size={14} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-medium text-slate-500">Recycle Bin</p>
+                  <p className="text-[10px] text-slate-400">Soft delete is not enabled for this table</p>
+                </div>
+              </div>
+            )}
           </SubAreaCard>
         </div>
 

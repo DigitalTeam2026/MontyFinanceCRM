@@ -144,3 +144,19 @@ export async function softDeleteEntity(id: string): Promise<void> {
 
   if (error) throw error;
 }
+
+/**
+ * Permanently delete a custom entity: DROPs the physical database table (CASCADE)
+ * AND removes its field_definition + entity_definition metadata, server-side, in one
+ * atomic transaction. Irreversible — there is no recycle-bin recovery afterwards.
+ *
+ * All DDL runs inside the SECURITY DEFINER `drop_crm_entity` RPC behind an admin
+ * guard; system (non-custom) entities are refused. Never executes raw SQL from the
+ * browser.
+ */
+export async function dropEntity(id: string): Promise<void> {
+  const { data, error } = await supabase.rpc('drop_crm_entity', { p_entity_id: id });
+  if (error) throw error;
+  const r = data as { ok: boolean; error?: string } | null;
+  if (!r || !r.ok) throw new Error(r?.error ?? 'Failed to delete table.');
+}

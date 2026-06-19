@@ -2220,6 +2220,16 @@ export default function RecordFormPage({
         setTimeout(() => setSaveStatus('idle'), 2500);
       }
     } catch (e) {
+      // Surface the full PostgREST error so the real cause (code/message/details/hint)
+      // is visible in the console, not just the friendly toast.
+      const pg = e as { code?: string; message?: string; details?: string; hint?: string };
+      console.error('saveRecord failed:', {
+        code: pg?.code,
+        message: pg?.message,
+        details: pg?.details,
+        hint: pg?.hint,
+        raw: e,
+      });
       setSaveStatus('error');
       showError(toFriendlyError(e, 'Unable to save the record. Please try again.'));
       setTimeout(() => setSaveStatus('idle'), 3000);
@@ -3749,6 +3759,7 @@ function RecordFormInner({
           onFieldNavigate={onFieldNavigate}
           fieldTypeMap={fieldTypeMap}
           lookupLabels={lookupLabels}
+          enhancedStageStates={entity === 'opportunities'}
         />
       )}
 

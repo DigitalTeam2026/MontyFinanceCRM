@@ -264,13 +264,14 @@ export default function ColumnFilterDropdown({
       if ((!targetTable || !nameCol) && column.field_definition_id) {
         const { data: fd } = await supabase
           .from('field_definition')
-          .select('lookup_entity_id, lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name)')
+          .select('lookup_entity_id, lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name, primary_key_column)')
           .eq('field_definition_id', column.field_definition_id)
           .maybeSingle();
         if (fd?.lookup_entity_id) {
-          const le = fd.lookup_entity as { physical_table_name?: string; primary_field_name?: string } | null;
+          const le = fd.lookup_entity as { physical_table_name?: string; primary_field_name?: string; primary_key_column?: string | null } | null;
           targetTable = targetTable ?? le?.physical_table_name ?? null;
           nameCol = nameCol ?? le?.primary_field_name ?? null;
+          pkCol = pkCol ?? le?.primary_key_column ?? null;
         }
       }
 
@@ -295,7 +296,9 @@ export default function ColumnFilterDropdown({
         pkCol = 'user_id';
       } else {
         nameCol = nameCol ?? 'name';
-        pkCol = PK_OVERRIDES[targetTable] ?? `${targetTable}_id`;
+        // Prefer the metadata PK; the `${table}_id` guess breaks on crm_-prefixed
+        // tables (crm_leadsource → leadsource_id, not crm_leadsource_id).
+        pkCol = pkCol ?? PK_OVERRIDES[targetTable] ?? `${targetTable.replace(/^crm_/, '')}_id`;
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

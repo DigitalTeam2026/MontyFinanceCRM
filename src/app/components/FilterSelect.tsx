@@ -36,6 +36,12 @@ interface FlatOption {
 interface FilterSelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'onChange'> {
   onChange?: ChangeEventHandler<HTMLSelectElement>;
   placeholder?: string;
+  /** Always open the menu below the trigger (never flip up). Used inside panels
+   *  anchored near the top of the screen — e.g. the BPF stage popup — so the menu
+   *  never opens over the command bar above it. */
+  forceDown?: boolean;
+  /** Constrain the menu to exactly the trigger's width (drops the min-width floor). */
+  matchTriggerWidth?: boolean;
 }
 
 /** Flatten an arbitrary ReactNode tree of <option>/<optgroup> into a flat list. */
@@ -50,11 +56,17 @@ function collectOptions(children: ReactNode, group: string | undefined, out: Fla
     if (child.type === 'option') {
       const rawValue = props.value;
       const node = props.children as ReactNode;
-      const text = nodeToText(node);
+      const nodeText = nodeToText(node);
+      // When an option renders a custom component (e.g. a field row with an icon
+      // and an "Entity · Type" subtitle), nodeToText can't see its text — a custom
+      // component exposes no `children` prop. Callers supply the searchable text
+      // explicitly via `data-search` (label + logical/physical name + type, etc.).
+      const override = props['data-search'];
+      const searchText = typeof override === 'string' && override ? override : nodeText;
       out.push({
-        value: rawValue != null ? String(rawValue) : text,
-        text,
-        node: node ?? text,
+        value: rawValue != null ? String(rawValue) : nodeText,
+        text: searchText,
+        node: node ?? nodeText,
         disabled: Boolean(props.disabled),
         group,
       });
@@ -65,6 +77,22 @@ function collectOptions(children: ReactNode, group: string | undefined, out: Fla
       collectOptions(props.children as ReactNode, group, out);
     }
   });
+}
+
+/**
+ * Normalise a string for separator-insensitive matching: lower-case and drop
+ * spaces/underscores/dashes so "Created On" matches `createdon`, "Status Reason"
+ * matches `status reason`, `status_reason` and `statusreason` alike.
+ */
+export function normalizeSearch(value: string): string {
+  return value.normalize('NFKD').toLowerCase().replace(/[_\-\s]+/g, '');
+}
+
+/** Does an option's searchable text match the raw query (separator-insensitive)? */
+export function optionMatchesSearch(text: string, rawQuery: string): boolean {
+  const q = normalizeSearch(rawQuery);
+  if (!q) return true;
+  return normalizeSearch(text).includes(q);
 }
 
 /** Best-effort string label for filtering, from a ReactNode's text content. */
@@ -91,6 +119,8 @@ export default function FilterSelect({
   style,
   title,
   name,
+  forceDown = false,
+  matchTriggerWidth = false,
   ...rest
 }: FilterSelectProps) {
   const [open, setOpen] = useState(false);
@@ -108,9 +138,9 @@ export default function FilterSelect({
     const r = el.getBoundingClientRect();
     const MENU_MAX = 320;
     const spaceBelow = window.innerHeight - r.bottom;
-    const openUp = spaceBelow < MENU_MAX && r.top > spaceBelow;
+    const openUp = forceDown ? false : (spaceBelow < MENU_MAX && r.top > spaceBelow);
     setRect({ top: openUp ? r.top : r.bottom, left: r.left, width: r.width, openUp });
-  }, []);
+  }, [forceDown]);
 
   useLayoutEffect(() => { if (open) reposition(); }, [open, reposition]);
 
@@ -176,9 +206,8 @@ export default function FilterSelect({
   };
 
   const showSearch = options.length > SEARCH_THRESHOLD;
-  const q = search.trim().toLowerCase();
-  const filtered = q
-    ? options.filter((o) => o.text.toLowerCase().includes(q))
+  const filtered = search.trim()
+    ? options.filter((o) => optionMatchesSearch(o.text, search))
     : options;
 
   // Group the filtered options preserving first-seen group order.
@@ -217,14 +246,18 @@ export default function FilterSelect({
           data-overlay-portal=""
           style={{
             position: 'fixed',
-            left: rect.left,
+            // Clamp horizontally so the menu always stays inside the viewport.
+            left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
             width: rect.width,
+            ...(matchTriggerWidth ? { maxWidth: rect.width } : {}),
             zIndex: OVERLAY_Z.popover,
             ...(rect.openUp
               ? { bottom: window.innerHeight - rect.top + 4 }
-              : { top: rect.top + 4 }),
+              // When forced down, cap height to the space left below so the menu
+              // never runs off the bottom of the screen (the list scrolls internally).
+              : { top: rect.top + 4, ...(forceDown ? { maxHeight: window.innerHeight - rect.top - 12 } : {}) }),
           }}
-          className="min-w-[180px] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+          className={`${matchTriggerWidth ? '' : 'min-w-[180px]'} flex flex-col bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden`}
         >
           {showSearch && (
             <div className="p-2 border-b border-slate-100">
@@ -251,7 +284,7 @@ export default function FilterSelect({
             </div>
           )}
 
-          <div className="max-h-60 overflow-y-auto py-1">
+          <div className="flex-1 min-h-0 max-h-60 overflow-y-auto py-1">
             {filtered.length === 0 ? (
               <div className="px-3 py-4 text-center text-[12px] text-slate-400">No results found</div>
             ) : (

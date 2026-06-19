@@ -57,6 +57,7 @@ export interface FieldDefinition {
   lookup_entity?: {
     physical_table_name: string;
     primary_field_name: string;
+    primary_key_column?: string | null;
   } | null;
 }
 

@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import {
   Gauge, Table2, BarChart3, LineChart, AreaChart, PieChart, CircleDot,
   TrendingUp, Filter, Type, Image as ImageIcon, Square, MousePointerClick,
-  ListOrdered, Grid3x3, Hash, Activity, GitMerge, Calendar, Code2, Boxes, FileText,
+  ListOrdered, Grid3x3, Hash, Activity, GitMerge, Calendar, Code2, Boxes, FileText, ListFilter,
+  Target,
 } from 'lucide-react';
 import type { VisualType, DashboardVisual } from '../types/dashboard';
 
@@ -28,13 +29,39 @@ const base = (over: Partial<DashboardVisual>): Partial<DashboardVisual> => ({
 export const VISUAL_REGISTRY: Record<VisualType, VisualMeta> = {
   kpi: {
     type: 'kpi', label: 'KPI Card', icon: <Hash size={15} />, category: 'kpi',
-    dataMode: 'aggregate', defaultSize: { width: 5, height: 4 },
-    defaultConfig: () => base({ format_config: { showHeader: true, numberFormat: 'number', emptyMessage: 'No data' } }),
+    dataMode: 'aggregate', defaultSize: { width: 6, height: 6 },
+    defaultConfig: () => base({
+      data_config: { kpiMode: 'simple', mainAgg: 'count', breakdownLimit: 10, kpiLayout: 'detailed' },
+      format_config: { showHeader: false, numberFormat: 'number', emptyMessage: 'No data' },
+    }),
   },
   funnel_stage: {
     type: 'funnel_stage', label: 'Funnel Stage Card', icon: <GitMerge size={15} />, category: 'kpi',
-    dataMode: 'none', defaultSize: { width: 20, height: 5 },
-    defaultConfig: () => base({ data_config: { stages: [] } }),
+    dataMode: 'none', defaultSize: { width: 24, height: 6 },
+    defaultConfig: () => base({
+      data_config: { stages: [] },
+      format_config: {
+        showHeader: true, emptyMessage: 'Add stages in the Data tab',
+        funnelLayout: 'horizontal', showArrows: true, showConversion: true,
+        conversionDecimals: 0, showStageSubtitle: true, scrollStages: true,
+        stageGap: 8, numberFormat: 'compact',
+      },
+    }),
+  },
+  donut_progress: {
+    type: 'donut_progress', label: 'Donut Progress Gauge', icon: <Target size={15} />, category: 'kpi',
+    dataMode: 'aggregate', defaultSize: { width: 6, height: 7 },
+    defaultConfig: () => base({
+      data_config: {
+        donutProgress: { calcMode: 'count_percentage', centerLabelMode: 'percentage' },
+      },
+      format_config: {
+        showHeader: true, emptyMessage: 'Configure the metric', numberFormat: 'number', decimals: 0,
+        cardContentAlign: 'center', chartPosition: 'center', legendPosition: 'bottom', valuePosition: 'center',
+        donutPrimaryColor: '#0B2E4A', donutSecondaryColor: '#F5A400', donutTrackColor: '#E5E7EB',
+        donutStrokeWidth: 16, donutStartAngle: -90, donutRoundedEnds: true,
+      },
+    }),
   },
   table: {
     type: 'table', label: 'Table', icon: <Table2 size={15} />, category: 'table',
@@ -94,11 +121,31 @@ export const VISUAL_REGISTRY: Record<VisualType, VisualMeta> = {
   },
   timeline: {
     type: 'timeline', label: 'Timeline / Date Slicer', icon: <Calendar size={15} />, category: 'filter',
-    dataMode: 'none', defaultSize: { width: 24, height: 3 }, defaultConfig: () => base({}),
+    dataMode: 'none', defaultSize: { width: 24, height: 4 },
+    defaultConfig: () => base({
+      data_config: {
+        dateSlicer: {
+          filterMode: 'between', defaultRange: 'this_year', granularity: 'month',
+          applyTo: 'dashboard', filterScope: 'dashboard', style: 'timeline', orientation: 'horizontal',
+          showClearButton: true, showTodayButton: true, showPresetRanges: true, showYearLabels: true,
+          autoApply: true,
+        },
+      },
+      format_config: { showHeader: true, emptyMessage: 'Select a date field' },
+    }),
   },
   slicer: {
-    type: 'slicer', label: 'Slicer / Filter', icon: <Filter size={15} />, category: 'filter',
-    dataMode: 'aggregate', defaultSize: { width: 5, height: 5 }, defaultConfig: () => base({}),
+    type: 'slicer', label: 'Value Slicer', icon: <ListFilter size={15} />, category: 'filter',
+    dataMode: 'none', defaultSize: { width: 5, height: 8 },
+    defaultConfig: () => base({
+      data_config: {
+        valueSlicer: {
+          style: 'list', multiSelect: true, searchable: true,
+          showSelectAll: true, showClearButton: true,
+        },
+      },
+      format_config: { showHeader: true, emptyMessage: 'Bind to a global filter' },
+    }),
   },
   text: {
     type: 'text', label: 'Text Box', icon: <Type size={15} />, category: 'content',
