@@ -52,6 +52,9 @@ export interface ViewColumn {
   lookup_table?: string;
   /** For lookup/owner fields: primary display field on target table (e.g. "account_name") */
   lookup_label_field?: string;
+  /** Per-view override of which lookup field the filter searches/displays by.
+   *  NULL = use entity primary field + fallbacks. */
+  lookup_label_field_override?: string | null;
   /** For choice/option-set fields: the option_set.name used to load options */
   option_set_name?: string;
   /** For inline-choice fields: choices stored directly in config_json */

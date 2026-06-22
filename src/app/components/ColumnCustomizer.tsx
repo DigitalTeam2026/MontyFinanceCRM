@@ -2,12 +2,15 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   GripVertical, Columns3, RotateCcw,
   Pencil, Check, X, Search, Plus, Trash2, Save, Loader2,
-  Link2, ChevronLeft, Building2,
+  Link2, ChevronLeft, Building2, SlidersHorizontal,
 } from 'lucide-react';
 import type { ListColumn } from '../services/listService';
 import { fetchFieldsForEntity } from '../../services/fieldService';
 import { fetchRelationshipsForEntity } from '../../services/relationshipService';
 import type { RelationshipDefinitionWithEntities } from '../../types/relationship';
+import { supabase } from '../../lib/supabase';
+import { getTable } from '../services/metadata/metadataStore';
+import FilterSelect from './FilterSelect';
 
 export interface ColumnState {
   key: string;
@@ -35,6 +38,9 @@ export interface ColumnState {
   lookup_table?: string;
   /** For lookup columns: the primary display field on the lookup table (e.g. "account_name") */
   lookup_label_field?: string;
+  /** Per-view override of which lookup field the filter searches/displays by.
+   *  NULL/undefined = use entity primary field + fallbacks. */
+  lookup_label_field_override?: string | null;
   /** For choice/option-set columns: the option_set.name used to load filter options */
   option_set_name?: string;
   /** For inline-choice columns: the choices stored directly in config_json */
@@ -96,13 +102,24 @@ export default function ColumnCustomizer({
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [loadingRelFields, setLoadingRelFields] = useState(false);
 
+  // Per-column "filter/search by field" picker (lookup columns only)
+  const [fieldPickerKey, setFieldPickerKey] = useState<string | null>(null);
+  const [lookupFieldOpts, setLookupFieldOpts] = useState<Record<string, { value: string; label: string }[]>>({});
+  const [loadingLookupTable, setLoadingLookupTable] = useState<string | null>(null);
+
   const dragIndex = useRef<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) onClose();
+      const target = e.target as HTMLElement;
+      if (panelRef.current && !panelRef.current.contains(target)) {
+        // Don't close when interacting with a portaled overlay (e.g. the
+        // FilterSelect dropdown for the per-column "filter by" field picker).
+        if (target.closest?.('[data-overlay-portal]')) return;
+        onClose();
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -198,6 +215,56 @@ export default function ColumnCustomizer({
   };
 
   const cancelEdit = () => setEditingKey(null);
+
+  // Field types that don't make sense as a lookup display/search field.
+  const EXCLUDED_PICK_TYPES = new Set([
+    'lookup', 'owner', 'boolean', 'two_options', 'twooptions',
+    'date', 'datetime', 'file', 'image', 'customer',
+  ]);
+
+  const loadLookupFieldOpts = useCallback(async (table: string) => {
+    if (!table || lookupFieldOpts[table]) return;
+    setLoadingLookupTable(table);
+    try {
+      const ents = getTable<Record<string, unknown>>('entity_definition');
+      let entId = ents?.find((e) => e.physical_table_name === table)?.entity_definition_id as string | undefined;
+      if (!entId) {
+        const { data } = await supabase
+          .from('entity_definition')
+          .select('entity_definition_id')
+          .eq('physical_table_name', table)
+          .maybeSingle();
+        entId = data?.entity_definition_id as string | undefined;
+      }
+      let opts: { value: string; label: string }[] = [];
+      if (entId) {
+        const fields = await fetchFieldsForEntity(entId);
+        opts = fields
+          .filter((f) =>
+            f.physical_column_name &&
+            !EXCLUDED_PICK_TYPES.has(((f.field_type as { name?: string } | null)?.name ?? '').toLowerCase())
+          )
+          .map((f) => ({ value: f.physical_column_name as string, label: f.display_name }));
+      }
+      setLookupFieldOpts((prev) => ({ ...prev, [table]: opts }));
+    } catch { /* leave options empty on failure */ }
+    finally { setLoadingLookupTable(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lookupFieldOpts]);
+
+  const toggleFieldPicker = (col: ColumnState) => {
+    if (fieldPickerKey === col.key) { setFieldPickerKey(null); return; }
+    setFieldPickerKey(col.key);
+    if (col.lookup_table) loadLookupFieldOpts(col.lookup_table);
+  };
+
+  const setLookupOverride = (key: string, value: string | null) => {
+    emit(local.map((c) => c.key === key
+      // Fold the override into lookup_label_field so the grid + filter use it
+      // immediately this session; on reload it's re-resolved from the stored override.
+      ? { ...c, lookup_label_field_override: value, lookup_label_field: value || c.lookup_label_field }
+      : c));
+  };
 
   const onDragStart = (i: number) => { dragIndex.current = i; };
   const onDragEnter = (i: number) => {
@@ -355,16 +422,18 @@ export default function ColumnCustomizer({
               const isEditing = editingKey === col.key;
               const displayLabel = col.labelOverride || col.label;
               const isRelated = !!col.relationship_definition_id;
+              const isLookupCol = !!col.lookup_table && col.lookup_table !== 'crm_user' && !isRelated;
+              const pickerOpen = fieldPickerKey === col.key;
 
               return (
+                <div key={col.key} className="border-b border-slate-50">
                 <div
-                  key={col.key}
                   draggable={!isEditing}
                   onDragStart={() => onDragStart(i)}
                   onDragEnter={() => onDragEnter(i)}
                   onDragEnd={onDragEnd}
                   onDragOver={(e) => e.preventDefault()}
-                  className="flex items-center gap-2 px-3 py-2.5 hover:bg-slate-50 group transition-colors select-none border-b border-slate-50"
+                  className="flex items-center gap-2 px-3 py-2.5 hover:bg-slate-50 group transition-colors select-none"
                 >
                   <GripVertical size={14} className="text-slate-300 group-hover:text-slate-400 shrink-0 cursor-grab active:cursor-grabbing" />
 
@@ -407,6 +476,20 @@ export default function ColumnCustomizer({
                     </div>
                   )}
 
+                  {!isEditing && isLookupCol && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleFieldPicker(col); }}
+                      className={`p-1 transition shrink-0 ${
+                        col.lookup_label_field_override || pickerOpen
+                          ? 'opacity-100 text-blue-500'
+                          : 'opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600'
+                      }`}
+                      title="Choose which field this lookup is filtered / searched by (this view only)"
+                    >
+                      <SlidersHorizontal size={11} />
+                    </button>
+                  )}
+
                   {!isEditing && (
                     <button
                       onClick={(e) => { e.stopPropagation(); startEdit(col); }}
@@ -424,6 +507,37 @@ export default function ColumnCustomizer({
                   >
                     <Trash2 size={12} />
                   </button>
+                </div>
+
+                {pickerOpen && isLookupCol && (
+                  <div
+                    className="px-3 pb-3 pt-1 bg-slate-50/70"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
+                      Filter / search this column by
+                    </label>
+                    {loadingLookupTable === col.lookup_table ? (
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 py-1.5">
+                        <Loader2 size={11} className="animate-spin" /> Loading fields…
+                      </div>
+                    ) : (
+                      <FilterSelect
+                        value={col.lookup_label_field_override ?? ''}
+                        onChange={(e) => setLookupOverride(col.key, e.target.value || null)}
+                        className="w-full px-2 py-1.5 text-[12px] border border-slate-200 rounded bg-white text-slate-700"
+                      >
+                        <option value="">Default (record name + fallbacks)</option>
+                        {(lookupFieldOpts[col.lookup_table!] ?? []).map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </FilterSelect>
+                    )}
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Applies to this view only. Controls both the column filter list and the displayed text.
+                    </p>
+                  </div>
+                )}
                 </div>
               );
             })}

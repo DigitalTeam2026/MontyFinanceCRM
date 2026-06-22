@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase';
 import type { ColumnState } from '../components/ColumnCustomizer';
 import type { ListRow } from './listService';
 import { getTable } from './metadata/metadataStore';
+import { LOOKUP_LABEL_FALLBACKS as LABEL_FALLBACKS } from './lookupLabel';
 
 export interface LookupSpec {
   colKey: string;
@@ -22,11 +23,6 @@ export interface InlineChoiceSpec {
   physicalColumn: string;
   choices: { value: string; label: string }[];
 }
-
-const LABEL_FALLBACKS: Record<string, string[]> = {
-  lead: ['topic', 'company_name', 'email'],
-  contact: ['email', 'business_phone'],
-};
 
 // Fast-path PKs for well-known tables. Any table NOT listed here is resolved from the
 // database via get_table_pk_column so the real primary key is always used — never the

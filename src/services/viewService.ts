@@ -25,6 +25,7 @@ function mapViewColumnRow(row: Record<string, unknown>): ViewColumn {
     lookup_label_field: le?.physical_table_name === 'crm_user'
       ? 'email'
       : le?.primary_field_name as string | undefined,
+    lookup_label_field_override: (row.lookup_label_field_override as string | null) ?? null,
     display_order: row.display_order,
     width: row.width as number | null,
     is_sortable: row.is_sortable as boolean,
@@ -114,6 +115,7 @@ export interface ViewColumnInput {
   is_sortable: boolean;
   display_order: number;
   relationship_definition_id?: string | null;
+  lookup_label_field_override?: string | null;
 }
 
 export async function fetchViewsForEntity(entityId: string): Promise<ViewDefinition[]> {
@@ -252,6 +254,7 @@ export async function saveViewColumns(
     label_override: col.label_override ?? null,
     is_hidden: col.is_hidden,
     relationship_definition_id: col.relationship_definition_id ?? null,
+    lookup_label_field_override: col.lookup_label_field_override ?? null,
   }));
 
   const { data, error } = await supabase
@@ -387,6 +390,7 @@ export async function savePersonalView(payload: {
       label_override: c.label_override ?? null,
       is_hidden: false,
       relationship_definition_id: c.relationship_definition_id ?? null,
+      lookup_label_field_override: c.lookup_label_field_override ?? null,
     }));
     await supabase.from('view_column').insert(rows);
   }
@@ -425,6 +429,7 @@ export async function updateViewColumns(
     label_override: c.label_override ?? null,
     is_hidden: false,
     relationship_definition_id: c.relationship_definition_id ?? null,
+    lookup_label_field_override: c.lookup_label_field_override ?? null,
   }));
   const { error } = await supabase.from('view_column').insert(rows);
   if (error) throw error;

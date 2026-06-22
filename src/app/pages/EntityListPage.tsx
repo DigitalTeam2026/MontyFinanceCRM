@@ -426,6 +426,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           is_sortable: c.sortable ?? false,
           display_order: i,
           relationship_definition_id: c.relationship_definition_id ?? null,
+          lookup_label_field_override: c.lookup_label_field_override ?? null,
         }));
       await updateViewColumns(view.view_id, cols);
       setSavedColumnSnapshot(columnSnapshot(columnStatesRef.current));

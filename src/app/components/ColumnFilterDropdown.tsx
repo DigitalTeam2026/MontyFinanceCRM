@@ -5,6 +5,7 @@ import { Search, X, Check, Loader2, ArrowUpAZ, ArrowDownZA, EyeOff } from 'lucid
 import { supabase } from '../../lib/supabase';
 import type { ColumnState } from './ColumnCustomizer';
 import type { ActiveFilter, FilterOperator } from '../services/listService';
+import { pickLookupLabel, lookupLabelColumns } from '../services/lookupLabel';
 
 interface ColumnFilterDropdownProps {
   column: ColumnState;
@@ -301,10 +302,20 @@ export default function ColumnFilterDropdown({
         pkCol = pkCol ?? PK_OVERRIDES[targetTable] ?? `${targetTable.replace(/^crm_/, '')}_id`;
       }
 
+      // Search/display across the primary field AND the same fallbacks the grid
+      // uses (e.g. lead → topic/company_name/email), so options never render blank
+      // and typing matches whichever field actually holds the text. crm_user is
+      // already pinned to `email`, so it gets no fallbacks.
+      const labelField = nameCol as string;
+      const labelCols = targetTable === 'crm_user'
+        ? [labelField]
+        : lookupLabelColumns(labelField, targetTable);
+      const selectCols = [...new Set([pkCol, ...labelCols])].join(',');
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let qb: any = supabase
         .from(targetTable)
-        .select(`${pkCol},${nameCol}`)
+        .select(selectCols)
         .limit(30);
 
       if (targetTable === 'crm_user') {
@@ -315,13 +326,13 @@ export default function ColumnFilterDropdown({
         qb = qb.eq('is_deleted', false);
       }
 
-      if (q) qb = qb.ilike(nameCol, `%${q}%`);
+      if (q) qb = qb.or(labelCols.map((c) => `${c}.ilike.%${q}%`).join(','));
 
       const { data } = await qb;
       setLookupResults(
         (data ?? []).map((r: Record<string, unknown>) => ({
           id: String(r[pkCol!] ?? r['id'] ?? ''),
-          label: String(r[nameCol as string] ?? ''),
+          label: pickLookupLabel(r, labelField, labelCols.slice(1)),
         }))
       );
     } finally {

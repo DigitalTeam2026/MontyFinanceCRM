@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Read(//c/c/Users/habib.serhan/Desktop/Monty Finance CRM/src/**)",
-      "Bash(grep -E \"\\\\.\\(ts|tsx|js\\)$\")"
+      "Bash(grep -E \"\\\\.\\(ts|tsx|js\\)$\")",
+      "Bash(npx tsc *)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

@@ -1,8 +1,8 @@
 import FilterSelect from '../../app/components/FilterSelect';
+import ConditionValueInput from '../../app/components/ConditionValueInput';
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, ChevronDown, GitBranch, Loader2 } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, GitBranch } from 'lucide-react';
 import type { FieldDefinition } from '../../types/field';
-import { supabase } from '../../lib/supabase';
 import type { ProcessFlow, ProcessStage } from '../../types/processFlow';
 import type {
   RuleConditionGroup,
@@ -23,52 +23,6 @@ import {
 let idCtr = 0;
 const cid = () => `c_${Date.now()}_${idCtr++}`;
 const gid = () => `g_${Date.now()}_${idCtr++}`;
-
-// Name column per physical table for lookup dropdowns
-const TABLE_NAME_COL: Record<string, string> = {
-  account: 'account_name',
-  contact: 'full_name',
-  crm_user: 'full_name',
-  currency: 'name',
-  country: 'name',
-  industry: 'name',
-  product: 'name',
-  product_family: 'name',
-  lead: 'full_name',
-  opportunity: 'topic',
-  campaign: 'name',
-  event: 'name',
-  crm_source: 'name',
-  business_unit: 'name',
-  team: 'name',
-  security_role: 'name',
-  segment: 'name',
-  journey: 'name',
-  marketing_email: 'subject',
-};
-
-// Primary key column per physical table
-const TABLE_PK_COL: Record<string, string> = {
-  account: 'account_id',
-  contact: 'contact_id',
-  crm_user: 'user_id',
-  currency: 'currency_id',
-  country: 'country_id',
-  industry: 'industry_id',
-  product: 'product_id',
-  product_family: 'family_id',
-  lead: 'lead_id',
-  opportunity: 'opportunity_id',
-  campaign: 'campaign_id',
-  event: 'event_id',
-  crm_source: 'source_id',
-  business_unit: 'business_unit_id',
-  team: 'team_id',
-  security_role: 'role_id',
-  segment: 'segment_id',
-  journey: 'journey_id',
-  marketing_email: 'email_id',
-};
 
 function getOps(field?: FieldDefinition): ConditionOperator[] {
   if (!field) return ['eq', 'neq', 'is_null', 'is_not_null'];
@@ -347,7 +301,7 @@ function EntityCondRow({
       {needsVal(cond.operator) && (
         <>
           <div className="w-px h-4 bg-slate-200 shrink-0" />
-          <CondValueInput
+          <ConditionValueInput
             field={sel}
             fieldTypeName={typeName}
             value={(cond.value as string) ?? ''}
@@ -373,172 +327,6 @@ function EntityCondRow({
         <Trash2 size={11} />
       </button>
     </div>
-  );
-}
-
-// ─── Condition value input — field-type-aware ─────────────────────────────────
-
-interface CondValueInputProps {
-  field?: FieldDefinition;
-  fieldTypeName: string;
-  value: string;
-  onChange: (v: string) => void;
-}
-
-function CondValueInput({ field, fieldTypeName, value, onChange }: CondValueInputProps) {
-  const cfg = field?.config_json as Record<string, unknown> | null;
-  const isStatecodeField = !!(cfg?.is_statecode_field);
-  const isStatusreasonField = !!(cfg?.is_statusreason_field);
-  const isChoice = fieldTypeName === 'choice' || fieldTypeName === 'multi_choice' || fieldTypeName === 'optionset';
-  const isLookup = fieldTypeName === 'lookup';
-  const isBool = fieldTypeName === 'boolean';
-
-  const choices = Array.isArray(cfg?.choices) ? (cfg!.choices as { value: string; label: string }[]) : [];
-
-  const [statecodeOptions, setStatecodeOptions] = useState<{ value: string; label: string }[]>([]);
-  const [statusreasonOptions, setStatusreasonOptions] = useState<{ value: string; label: string }[]>([]);
-  const [lookupOptions, setLookupOptions] = useState<{ value: string; label: string }[]>([]);
-  const [lookupLoading, setLookupLoading] = useState(false);
-
-  useEffect(() => {
-    if (!field) return;
-    if (isStatecodeField) {
-      supabase
-        .from('statecode_definition')
-        .select('state_value, display_label')
-        .eq('entity_definition_id', field.entity_definition_id)
-        .order('sort_order')
-        .then(({ data }) => {
-          setStatecodeOptions((data ?? []).map((r) => ({ value: String(r.state_value), label: r.display_label })));
-        });
-    }
-    if (isStatusreasonField) {
-      supabase
-        .from('status_reason_definition')
-        .select('reason_value, display_label')
-        .eq('entity_definition_id', field.entity_definition_id)
-        .order('sort_order')
-        .then(({ data }) => {
-          setStatusreasonOptions((data ?? []).map((r) => ({ value: String(r.reason_value), label: r.display_label })));
-        });
-    }
-  }, [field?.field_definition_id, isStatecodeField, isStatusreasonField]);
-
-  useEffect(() => {
-    if (!isLookup || !field?.lookup_entity_id) return;
-    setLookupLoading(true);
-    supabase
-      .from('entity_definition')
-      .select('physical_table_name, logical_name')
-      .eq('entity_definition_id', field.lookup_entity_id)
-      .maybeSingle()
-      .then(async ({ data: ent }) => {
-        if (!ent) { setLookupLoading(false); return; }
-        const table = ent.physical_table_name as string;
-        const pkCol = TABLE_PK_COL[table] ?? `${table}_id`;
-        const nameCol = TABLE_NAME_COL[table] ?? 'name';
-        const { data } = await supabase.from(table).select(`${pkCol}, ${nameCol}`).order(nameCol).limit(200);
-        setLookupOptions(
-          ((data ?? []) as unknown as Record<string, unknown>[]).map((r: Record<string, unknown>) => ({
-            value: String(r[pkCol] ?? ''),
-            label: String(r[nameCol] ?? r[pkCol] ?? ''),
-          }))
-        );
-        setLookupLoading(false);
-      });
-  }, [field?.field_definition_id, isLookup]);
-
-  const selectCls = 'flex-1 min-w-0 appearance-none text-xs text-slate-700 bg-transparent border-0 focus:outline-none pr-4';
-
-  if (isBool) {
-    return (
-      <div className="relative flex-1 min-w-0">
-        <FilterSelect value={value || 'true'} onChange={(e) => onChange(e.target.value)} className={selectCls}>
-          <option value="true">Yes</option>
-          <option value="false">No</option>
-        </FilterSelect>
-        </div>
-    );
-  }
-
-  if (isStatecodeField && statecodeOptions.length > 0) {
-    return (
-      <div className="relative flex-1 min-w-0">
-        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
-          <option value="">— Select —</option>
-          {statecodeOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </FilterSelect>
-        </div>
-    );
-  }
-
-  if (isStatusreasonField && statusreasonOptions.length > 0) {
-    return (
-      <div className="relative flex-1 min-w-0">
-        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
-          <option value="">— Select —</option>
-          {statusreasonOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </FilterSelect>
-        </div>
-    );
-  }
-
-  if (isChoice && choices.length > 0) {
-    return (
-      <div className="relative flex-1 min-w-0">
-        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
-          <option value="">— Select —</option>
-          {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </FilterSelect>
-        </div>
-    );
-  }
-
-  if (isLookup) {
-    if (lookupLoading) {
-      return (
-        <div className="flex-1 min-w-0 flex items-center gap-1.5 text-xs text-slate-400">
-          <Loader2 size={10} className="animate-spin" /> Loading...
-        </div>
-      );
-    }
-    if (lookupOptions.length > 0) {
-      return (
-        <div className="relative flex-1 min-w-0">
-          <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
-            <option value="">— Select —</option>
-            {lookupOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </FilterSelect>
-          </div>
-      );
-    }
-    // Fallback: no options loaded — still allow editing but show a select with current value if it looks like a UUID
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const isUuid = UUID_RE.test(value);
-    return (
-      <div className="relative flex-1 min-w-0">
-        <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={selectCls}>
-          <option value="">— Select —</option>
-          {isUuid && value && <option value={value}>{value.slice(0, 8)}…</option>}
-        </FilterSelect>
-        </div>
-    );
-  }
-
-  const inputType =
-    ['number', 'decimal', 'currency', 'integer'].includes(fieldTypeName) ? 'number'
-    : fieldTypeName === 'date' ? 'date'
-    : fieldTypeName === 'datetime' ? 'datetime-local'
-    : 'text';
-
-  return (
-    <input
-      type={inputType}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder="Value..."
-      className="flex-1 min-w-0 text-xs text-slate-700 bg-transparent border-0 focus:outline-none placeholder:text-slate-300"
-    />
   );
 }
 

@@ -64,7 +64,10 @@ export function buildColumnStatesFromViewColumns(entity: AppEntity, cols: ViewCo
         ? `${c.related_entity_display_name}: ${c.field_display_name ?? c.field_logical_name}`
         : null;
       const resolvedLookupTable = c.lookup_table ?? def?.lookup_table;
-      const resolvedLookupLabel = c.lookup_label_field ?? def?.lookup_label_field;
+      // Per-view override wins over the entity primary field for both grid display
+      // and the column filter (they both read lookup_label_field).
+      const resolvedLookupLabel = c.lookup_label_field_override
+        ?? c.lookup_label_field ?? def?.lookup_label_field;
       let resolvedType = normalizeFieldType(c.field_type_name) ?? def?.type;
       if (resolvedType === 'lookup' && resolvedLookupTable === 'crm_user') resolvedType = 'owner';
       if (resolvedType === 'owner' && (key === 'owner_id' || key === 'ownerid')) key = 'owner_email';
@@ -82,6 +85,7 @@ export function buildColumnStatesFromViewColumns(entity: AppEntity, cols: ViewCo
         field_physical_column: c.field_physical_column,
         lookup_table: resolvedLookupTable,
         lookup_label_field: resolvedLookupLabel,
+        lookup_label_field_override: c.lookup_label_field_override ?? null,
         option_set_name: c.option_set_name,
         inline_choices: c.inline_choices,
         labelOverride: c.label_override ?? undefined,
