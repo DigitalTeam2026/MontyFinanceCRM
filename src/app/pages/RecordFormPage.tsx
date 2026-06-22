@@ -2063,16 +2063,21 @@ export default function RecordFormPage({
       if (entity !== 'leads') delete saveValues.is_qualified;
     }
 
-    // Validate statusreason against statecode for all entities
+    // Validate statusreason against statecode for all entities.
+    // state_value / reason_value are numeric columns, so only proceed when the
+    // values parse to finite numbers — otherwise the query would send
+    // state_value=eq.NaN and PostgREST rejects it with a 400.
     if (entityDefId && (saveValues.statecode !== undefined || saveValues.statusreason !== undefined)) {
-      const sc = String(saveValues.statecode ?? '');
-      const sr = String(saveValues.statusreason ?? '');
-      if (sc && sr) {
+      const scNum = Number(saveValues.statecode);
+      const srNum = Number(saveValues.statusreason);
+      const hasSc = saveValues.statecode != null && saveValues.statecode !== '' && Number.isFinite(scNum);
+      const hasSr = saveValues.statusreason != null && saveValues.statusreason !== '' && Number.isFinite(srNum);
+      if (hasSc && hasSr) {
         const { data: scDef } = await supabase
           .from('statecode_definition')
           .select('statecode_id')
           .eq('entity_definition_id', entityDefId)
-          .eq('state_value', Number(sc))
+          .eq('state_value', scNum)
           .maybeSingle();
         if (scDef) {
           const { data: validReason } = await supabase
@@ -2080,18 +2085,18 @@ export default function RecordFormPage({
             .select('reason_value')
             .eq('entity_definition_id', entityDefId)
             .eq('statecode_id', scDef.statecode_id)
-            .eq('reason_value', Number(sr))
+            .eq('reason_value', srNum)
             .eq('is_active', true)
             .maybeSingle();
           if (!validReason) {
-            const defaults = await getDefaultStatusForState(entityDefId, Number(sc));
+            const defaults = await getDefaultStatusForState(entityDefId, scNum);
             if (defaults) {
               saveValues = { ...saveValues, statusreason: String(defaults.reasonValue) };
             }
           }
         }
-      } else if (sc && !sr) {
-        const defaults = await getDefaultStatusForState(entityDefId, Number(sc));
+      } else if (hasSc && !hasSr) {
+        const defaults = await getDefaultStatusForState(entityDefId, scNum);
         if (defaults) {
           saveValues = { ...saveValues, statusreason: String(defaults.reasonValue) };
         }
@@ -3209,7 +3214,7 @@ function RecordFormInner({
 
   // Currency selector / lock indicator — shared so it stays available in the
   // redesigned header too (not shown for leads/accounts or entities without a currency field).
-  const currencyChip = (entity !== 'leads' && entity !== 'accounts' && currencies.length > 0 && values.currency_id !== undefined) ? (
+  const currencyChip = (entity !== 'leads' && entity !== 'accounts' && entity !== 'opportunities' && currencies.length > 0 && values.currency_id !== undefined) ? (
     <div className="shrink-0 flex items-center gap-1">
       {isCurrencyLocked ? (
         <>

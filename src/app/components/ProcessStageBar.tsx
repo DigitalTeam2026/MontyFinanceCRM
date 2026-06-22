@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 import { Check, Trophy, XCircle, AlertTriangle, X, Clock, ChevronRight, ChevronLeft, ArrowLeftRight, AlertCircle, Link2, GitBranch, Lock, Maximize2, Minimize2 } from 'lucide-react';
 import type { RecordData } from '../services/recordService';
 import type { FormRuleState } from '../services/businessRulesEngine';
-import type { DesignerLayout } from '../../types/form';
+import type { DesignerLayout, LookupConfig } from '../../types/form';
+import { LookupField } from './form/FormField';
 import type { LoadedProcessFlow } from '../services/processFlowEngine';
 import { validateStageAdvance, isTransitionAllowed, getCrossEntityInfo, filterLoadedFlowForEntity, evaluateConditionBranch, resolveNextNonConditionStage, resolveRuntimePath } from '../services/processFlowEngine';
 import type { StageGateViolation } from '../services/stageValidationService';
@@ -43,6 +44,10 @@ interface StageFieldDef extends ProcessStageField {
   display_name: string;
   config_json: Record<string, unknown> | null;
   lookup_entity_id: string | null;
+  // Resolved logical_name (slug) of the lookup target entity, so a lookup field can be
+  // selected inline in the stage popup (reusing the form's LookupField) instead of bouncing
+  // the user back to the form to pick a value.
+  lookup_entity_slug?: string | null;
   option_set_name: string | null;
 }
 
@@ -145,11 +150,20 @@ function StagePopup({
     onNextStage();
   };
 
+  // A field is locked when the whole form is read-only, or the stage is past/completed, or
+  // the field is configured read-only — EXCEPT a required field on the active stage stays
+  // editable. A required-and-locked field is a contradiction: the user could never fill it
+  // to satisfy the advance gate. Mandatory always wins over the per-field read-only flag.
+  const isFieldLocked = (sf: StageFieldDef) => isReadonly || isPast || (!!sf.is_readonly && !sf.is_required);
+
+  const clearFieldError = (field: string) =>
+    setValidationErrors((prev) => { const s = new Set(prev); s.delete(field); return s; });
+
   const renderFieldControl = (sf: StageFieldDef) => {
     const val = values[sf.field_logical_name];
     const strVal = val == null ? '' : String(val);
     const hasError = validationErrors.has(sf.field_logical_name);
-    const fieldReadonly = isReadonly || sf.is_readonly || isPast;
+    const fieldReadonly = isFieldLocked(sf);
     const typeName = sf.field_type_name;
 
     const inputBase = `w-full text-[13px] text-slate-800 border rounded-md px-3 py-[7px] transition focus:outline-none focus:ring-2 focus:ring-offset-0 ${
@@ -219,13 +233,44 @@ function StagePopup({
 
     if (typeName === 'lookup' || typeName === 'owner') {
       const displayLabel = lookupLabels[sf.field_logical_name] ?? (strVal || '');
+      // When editable, render the same inline lookup picker the form uses so the value can be
+      // selected directly in the stage popup (search + browse dialog) without leaving for the
+      // form. The browse dialog opens as a top-level modal, so it is never clipped by the popup.
+      if (!fieldReadonly && sf.lookup_entity_slug) {
+        return (
+          <LookupField
+            entitySlug={sf.lookup_entity_slug}
+            value={strVal}
+            displayLabel={displayLabel}
+            readonly={false}
+            inputBase={inputBase}
+            ds={{ input: 'px-3 py-[7px] text-[13px] text-slate-800' }}
+            borderCls="border-slate-200"
+            label={sf.display_label || sf.display_name || humanizeFieldName(sf.field_logical_name)}
+            onChange={(v) => { onChange(sf.field_logical_name, v == null ? '' : String(v)); clearFieldError(sf.field_logical_name); }}
+            onBlur={() => {}}
+            lookupConfig={(sf.config_json as unknown as LookupConfig) ?? null}
+            formValues={values}
+          />
+        );
+      }
+      // Editable but the lookup target slug couldn't be resolved — fall back to navigating to
+      // the matching form field so the value can still be picked.
+      if (!fieldReadonly) {
+        return (
+          <button type="button"
+            onClick={() => onFieldNavigate?.(sf.field_logical_name)}
+            className={`${inputBase} text-left truncate ${strVal ? '' : 'text-slate-400'}`}
+          >
+            {displayLabel || 'Click to select...'}
+          </button>
+        );
+      }
+      // Locked lookup: show the resolved label as read-only text (no form navigation).
       return (
-        <button type="button" disabled={fieldReadonly}
-          onClick={() => !fieldReadonly && onFieldNavigate?.(sf.field_logical_name)}
-          className={`${inputBase} text-left truncate ${strVal ? '' : 'text-slate-400'}`}
-        >
-          {displayLabel || 'Click to select...'}
-        </button>
+        <div className={`${inputBase} text-left truncate ${strVal ? '' : 'text-slate-400'} bg-slate-50`}>
+          {displayLabel || '—'}
+        </div>
       );
     }
 
@@ -286,7 +331,7 @@ function StagePopup({
                   <label className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 mb-1 uppercase tracking-wide">
                     {label}
                     {sf.is_required && <span className="text-red-500 text-[10px] leading-none">*</span>}
-                    {sf.is_readonly && <Lock size={8} className="text-slate-400 ml-auto" />}
+                    {isFieldLocked(sf) && <Lock size={8} className="text-slate-400 ml-auto" />}
                   </label>
                   {renderFieldControl(sf)}
                   {hasError && (
@@ -834,14 +879,32 @@ export default function ProcessStageBar({
         });
       }
 
+      // Resolve lookup target entity slugs (logical_name) so lookup fields can be picked
+      // inline in the popup. One batched query for all lookup-typed fields in this stage.
+      const lookupEntityIds = Array.from(new Set(
+        Array.from(fdMap.values()).map((fd) => fd.lookup_entity_id).filter((id): id is string => !!id),
+      ));
+      const slugById = new Map<string, string>();
+      if (lookupEntityIds.length > 0) {
+        const { data: entRows } = await supabase
+          .from('entity_definition')
+          .select('entity_definition_id, logical_name')
+          .in('entity_definition_id', lookupEntityIds);
+        for (const e of (entRows ?? []) as Array<{ entity_definition_id: string; logical_name: string }>) {
+          slugById.set(e.entity_definition_id, e.logical_name);
+        }
+      }
+
       const merged: StageFieldDef[] = psFields.map((psf) => {
         const fd = fdMap.get(psf.field_logical_name);
+        const lookupId = fd?.lookup_entity_id ?? null;
         return {
           ...psf,
           field_type_name: fd?.field_type_name ?? (fieldTypeMap[psf.field_logical_name] || 'text'),
           display_name: fd?.display_name ?? psf.field_logical_name,
           config_json: fd?.config_json ?? null,
-          lookup_entity_id: fd?.lookup_entity_id ?? null,
+          lookup_entity_id: lookupId,
+          lookup_entity_slug: lookupId ? (slugById.get(lookupId) ?? null) : null,
           option_set_name: null,
         } as StageFieldDef;
       });
@@ -1241,7 +1304,10 @@ export default function ProcessStageBar({
                         <span>{idx + 1}</span>
                       )}
                     </button>
-                    <span className={`mt-1 text-[10px] font-medium leading-tight text-center max-w-[80px] truncate ${labelColor}`}>
+                    <span
+                      title={stage.name}
+                      className={`mt-1 px-1 text-[10px] font-medium leading-[1.2] text-center whitespace-normal break-words line-clamp-2 max-w-[clamp(80px,14vw,160px)] ${labelColor}`}
+                    >
                       {stage.name}
                     </span>
                   </div>

@@ -105,7 +105,7 @@ const ENTITY_META: Record<string, { logicalName: string; table: string; pk: stri
 // Runtime cache for dynamically-resolved entity meta (for custom entities)
 const dynamicEntityMetaCache: Record<string, { logicalName: string; table: string; pk: string; labelCol: string } | null> = {};
 
-function LookupField({
+export function LookupField({
   entitySlug,
   value,
   displayLabel,
