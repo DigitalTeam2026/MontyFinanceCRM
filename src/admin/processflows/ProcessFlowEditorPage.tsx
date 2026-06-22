@@ -612,7 +612,92 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
   // so a newly-added stage always sorts last and lands in the right column).
   const nextDisplayOrder = () => (stages.length ? Math.max(...stages.map((s) => s.display_order)) + 1 : 0);
 
+  // A "trunk condition" is a condition that sits on the main line (it is NOT nested inside
+  // another condition's Yes/No branch). Once the trunk ends in one, the flow only continues
+  // through that condition's branches — there is no slot to append a stage AFTER it. New
+  // trunk stages must therefore be inserted BEFORE it (Stage → New Stage → Condition).
+  // Fully generic: derived purely from branch links, never from entity/stage names.
+  const findTrunkCondition = (): ProcessStage | null => {
+    const branchTargets = new Set<string>();
+    for (const s of stages) {
+      if (s.branch_yes_stage_id) branchTargets.add(s.branch_yes_stage_id);
+      if (s.branch_no_stage_id) branchTargets.add(s.branch_no_stage_id);
+    }
+    return stages
+      .filter((s) =>
+        s.stage_type === 'active' &&
+        s.component_type === 'condition' &&
+        !branchTargets.has(s.process_stage_id))
+      .sort((a, b) => a.display_order - b.display_order)[0] ?? null;
+  };
+
+  // Create a new component (stage OR condition) and slot it immediately BEFORE `beforeStageId`
+  // — anywhere in the flow: the main line OR inside any Yes/No branch. The target and every
+  // node ordered at/after it shift up by one, so column ordering is preserved and the new node
+  // takes the freed slot. Connections are re-wired so nothing orphans:
+  //   • Incoming — whoever pointed at `before` through a Yes/No branch slot now points at the
+  //     new node instead (on the trunk there is no pointer; display-order adjacency reconnects).
+  //   • Outgoing — the new node connects to `before`. A CONDITION always adopts `before` as its
+  //     YES branch (… → Condition --YES--> before …, empty NO). A STAGE only needs an explicit
+  //     link when it landed inside a branch; on the trunk, order adjacency already connects it.
+  // Fully generic — derived from branch links, never from entity/stage names.
+  const insertComponentBefore = async (beforeStageId: string, componentType: ComponentType) => {
+    const before = stages.find((s) => s.process_stage_id === beforeStageId);
+    if (!before) return;
+    const insertOrder = before.display_order;
+
+    // Who currently points at `before` through a branch slot (its incoming link, if any)?
+    let predId: string | null = null;
+    let predSlot: 'yes' | 'no' | null = null;
+    for (const s of stages) {
+      if (s.branch_yes_stage_id === beforeStageId) { predId = s.process_stage_id; predSlot = 'yes'; break; }
+      if (s.branch_no_stage_id === beforeStageId) { predId = s.process_stage_id; predSlot = 'no'; break; }
+    }
+    const beforeIsBranchTarget = predId !== null;
+
+    try {
+      let created = await createProcessStage(flow.process_flow_id, buildStagePayload(componentType, insertOrder));
+      const newId = created.process_stage_id;
+
+      // Outgoing: keep `before` attached to the new node.
+      if (componentType === 'condition' || beforeIsBranchTarget) {
+        created = await updateProcessStage(newId, { branch_yes_stage_id: beforeStageId });
+      }
+      // Incoming: redirect the predecessor's branch slot from `before` to the new node.
+      let predUpdated: ProcessStage | null = null;
+      if (predId && predSlot) {
+        predUpdated = await updateProcessStage(predId, predSlot === 'yes'
+          ? { branch_yes_stage_id: newId }
+          : { branch_no_stage_id: newId });
+      }
+
+      const next = [...stages, created].map((s) => {
+        if (s.process_stage_id === newId) return created;
+        const base = predUpdated && s.process_stage_id === predId ? predUpdated : s;
+        return base.display_order >= insertOrder ? { ...base, display_order: base.display_order + 1 } : base;
+      });
+      setStages(next);
+      setSelectedStageId(newId);
+      setDropTarget(null);
+      markDirty();
+      await reorderProcessStages(next.map((s) => ({ process_stage_id: s.process_stage_id, display_order: s.display_order })));
+    } catch (e: unknown) {
+      showError(e instanceof Error ? e.message : 'Failed to insert component');
+    }
+  };
+
   const handleDropOnCanvas = async (componentType: ComponentType) => {
+    // Adding a stage while the trunk already ends in a branch point (condition): the stage
+    // belongs in front of that condition, not after it. Both the "+" button and a palette
+    // drag funnel through here, so this one guard fixes every entry point. Conditions keep
+    // appending normally (a new branch point at the end of the line).
+    if (componentType === 'stage') {
+      const trunkCondition = findTrunkCondition();
+      if (trunkCondition) {
+        await insertComponentBefore(trunkCondition.process_stage_id, 'stage');
+        return;
+      }
+    }
     const order = nextDisplayOrder();
     const def = getComponentDef(componentType);
     const isFirstStage = stages.filter((s) => s.stage_type === 'active').length === 0 && componentType === 'stage';
@@ -981,6 +1066,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
                   onMove={handleMoveStage}
                   onRename={handleRenameStage}
                   onDropType={handleDropOnCanvas}
+                  onInsertBefore={insertComponentBefore}
                   onAddToBranch={(conditionId, branch) => setAddBranchState({ conditionId, branch })}
                   onDropInBranch={handleAddToBranch}
                   onClearBranch={handleClearBranch}
@@ -1147,6 +1233,7 @@ interface BpfCanvasProps {
   onMove: (id: string, dir: 'left' | 'right') => Promise<void>;
   onRename: (id: string, name: string) => void;
   onDropType: (type: ComponentType) => Promise<void>;
+  onInsertBefore: (beforeStageId: string, componentType: ComponentType) => Promise<void>;
   onAddToBranch: (conditionId: string, branch: 'yes' | 'no') => void;
   onDropInBranch: (conditionId: string, branch: 'yes' | 'no', componentType: ComponentType) => void;
   onClearBranch: (conditionId: string, branch: 'yes' | 'no') => void;
@@ -1167,10 +1254,12 @@ type ConnectorDef = { d: string; color: string; dashed?: boolean; label?: string
 
 function BpfCanvas({
   flow, stages, entities, selectedStageId, onSelect, onDelete, onSetDefault, onMove, onRename,
-  onDropType, onAddToBranch, onDropInBranch, onClearBranch, dropTarget, setDropTarget, draggingType,
+  onDropType, onInsertBefore, onAddToBranch, onDropInBranch, onClearBranch, dropTarget, setDropTarget, draggingType,
 }: BpfCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [branchDrop, setBranchDrop] = useState<{ conditionId: string; branch: 'yes' | 'no' } | null>(null);
+  // The id of the trunk node a dragged component would be inserted BEFORE (gap-drop hover).
+  const [gapInsert, setGapInsert] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -1530,6 +1619,49 @@ function BpfCanvas({
     ? mainFlowStages.reduce((a, b) => ((colOf.get(b.process_stage_id) ?? 0) > (colOf.get(a.process_stage_id) ?? 0) ? b : a))
     : null;
   const mainAddTail = mainTail && mainTail.component_type !== 'condition' ? mainTail : null;
+
+  // Insertion gaps: one "+" sits on EVERY drawn connector — the main line AND inside any Yes/No
+  // branch — so a stage or condition can be dropped/clicked in at any position. Each gap inserts
+  // BEFORE the node its connector enters. The predecessor map mirrors how connectors are drawn
+  // (buildConnectors), so the "+" lands exactly on a visible line and never jumps over a branch
+  // node that shares a row. Generic — derived from layout adjacency, never from names.
+  const insertPredecessor = new Map<string, { id: string; slot: 'yes' | 'no' | 'order' }>();
+  // Sequential connectors: per row, left→right by column, skipping a condition source (it draws
+  // its own YES) and a NO-target dest (drawn by its NO connector) — same skips as buildConnectors.
+  const rowBuckets = new Map<number, ProcessStage[]>();
+  for (const s of activeStages) {
+    const r = rowOf.get(s.process_stage_id) ?? 0;
+    if (!rowBuckets.has(r)) rowBuckets.set(r, []);
+    rowBuckets.get(r)!.push(s);
+  }
+  for (const rowStages of rowBuckets.values()) {
+    const ordered = [...rowStages].sort((a, b) => (colOf.get(a.process_stage_id) ?? 0) - (colOf.get(b.process_stage_id) ?? 0));
+    for (let i = 0; i < ordered.length - 1; i++) {
+      const curr = ordered[i];
+      const next = ordered[i + 1];
+      if (curr.component_type === 'condition') continue;
+      if (noBranchStageIds.has(next.process_stage_id)) continue;
+      insertPredecessor.set(next.process_stage_id, { id: curr.process_stage_id, slot: 'order' });
+    }
+  }
+  // Branch entries: a condition's YES/NO target enters from that condition.
+  for (const s of activeStages) {
+    if (s.component_type !== 'condition') continue;
+    if (s.branch_yes_stage_id && !branchOpen(s.branch_yes_stage_id)) insertPredecessor.set(s.branch_yes_stage_id, { id: s.process_stage_id, slot: 'yes' });
+    if (s.branch_no_stage_id && !branchOpen(s.branch_no_stage_id)) insertPredecessor.set(s.branch_no_stage_id, { id: s.process_stage_id, slot: 'no' });
+  }
+  const insertGaps: { beforeId: string; x: number; y: number }[] = [];
+  for (const s of activeStages) {
+    const pred = insertPredecessor.get(s.process_stage_id);
+    if (!pred) continue; // first node on a line has no incoming connector
+    const rPos = nodePositions.get(s.process_stage_id);
+    const pPos = nodePositions.get(pred.id);
+    if (!rPos || !pPos) continue;
+    // NO branch drops vertically onto the node, so anchor its "+" just left of the node;
+    // horizontal connectors (trunk / YES / stage-chain) get a midpoint "+".
+    const x = pred.slot === 'no' ? rPos.x - 22 : (pPos.x + NODE_WIDTH + rPos.x) / 2;
+    insertGaps.push({ beforeId: s.process_stage_id, x, y: rPos.y + NODE_HEIGHT / 2 });
+  }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -1902,6 +2034,52 @@ function BpfCanvas({
                   </div>
                 );
               })()}
+
+              {/* Insertion gaps — a "+" on every connector, on the main line AND inside Yes/No
+                  branches. Click inserts a stage at that position; dropping a dragged
+                  Stage/Condition inserts that type. Both slot in BEFORE the node the connector
+                  enters, pushing the rest of that line along (e.g. Qualify → [new] → Develop). */}
+              {insertGaps.map((gap) => {
+                const active = gapInsert === gap.beforeId;
+                return (
+                  <div
+                    key={'gap-' + gap.beforeId}
+                    className="absolute flex items-center justify-center"
+                    style={{ left: gap.x - 16, top: gap.y - 16, width: 32, height: 32 }}
+                    onDragOver={(e) => {
+                      if (!draggingType.current) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDropTarget(null);
+                      setBranchDrop(null);
+                      if (!active) setGapInsert(gap.beforeId);
+                    }}
+                    onDragLeave={(e) => { e.stopPropagation(); setGapInsert(null); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const type = draggingType.current;
+                      setGapInsert(null);
+                      setDropTarget(null);
+                      if (type) { onInsertBefore(gap.beforeId, type); draggingType.current = null; }
+                    }}
+                  >
+                    <button
+                      type="button"
+                      title="Insert a stage here"
+                      onClick={(e) => { e.stopPropagation(); onInsertBefore(gap.beforeId, 'stage'); }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`rounded-full border-2 border-dashed flex items-center justify-center transition-all cursor-pointer select-none ${
+                        active
+                          ? 'w-8 h-8 border-blue-500 bg-blue-50 text-blue-600'
+                          : 'w-5 h-5 border-blue-300/80 bg-white text-blue-400 opacity-60 hover:opacity-100 hover:w-7 hover:h-7 hover:border-blue-400 hover:bg-blue-50'
+                      }`}
+                    >
+                      <Plus size={active ? 16 : 12} />
+                    </button>
+                  </div>
+                );
+              })}
             </>
           )}
         </div>
