@@ -6,6 +6,7 @@ import type { RecordData } from '../services/recordService';
 import type { FormRuleState } from '../services/businessRulesEngine';
 import type { DesignerLayout, LookupConfig } from '../../types/form';
 import { LookupField } from './form/FormField';
+import OptionSetSelect from './form/OptionSetSelect';
 import type { LoadedProcessFlow } from '../services/processFlowEngine';
 import { validateStageAdvance, isTransitionAllowed, getCrossEntityInfo, filterLoadedFlowForEntity, evaluateConditionBranch, resolveNextNonConditionStage, resolveRuntimePath } from '../services/processFlowEngine';
 import type { StageGateViolation } from '../services/stageValidationService';
@@ -219,11 +220,25 @@ function StagePopup({
       );
     }
 
-    if (typeName === 'choice' || typeName === 'optionset') {
-      const choices = (sf.config_json as { choices?: { value: string; label: string }[] } | null)?.choices ?? [];
+    if (typeName === 'choice' || typeName === 'optionset' || typeName === 'picklist' || typeName === 'status') {
+      const cfg = sf.config_json as { choices?: { value: string; label: string }[]; option_set_name?: string } | null;
+      // Options come from EITHER a named global option set OR inline choices stored in config_json.
+      // Resolve both the same way the form does so the dropdown is never empty.
+      const optionSetName = cfg?.option_set_name;
+      if (optionSetName) {
+        return (
+          <OptionSetSelect
+            optionSetName={optionSetName}
+            value={strVal}
+            isReadonly={fieldReadonly}
+            onChange={(v) => { onChange(sf.field_logical_name, v); clearFieldError(sf.field_logical_name); }}
+          />
+        );
+      }
+      const choices = cfg?.choices ?? [];
       return (
         <FilterSelect value={strVal} disabled={fieldReadonly} forceDown={scopedDropdowns} matchTriggerWidth={scopedDropdowns} className={`${inputBase} appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px] bg-[right_8px_center] bg-no-repeat pr-8`}
-          onChange={(e) => { onChange(sf.field_logical_name, e.target.value); setValidationErrors((prev) => { const s = new Set(prev); s.delete(sf.field_logical_name); return s; }); }}
+          onChange={(e) => { onChange(sf.field_logical_name, e.target.value); clearFieldError(sf.field_logical_name); }}
         >
           <option value="">-- Select --</option>
           {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
@@ -826,6 +841,19 @@ export default function ProcessStageBar({
     if (id) next.add(String(id));
     return Array.from(next);
   };
+  // Build the completed-set when moving the active pointer BACK to `targetKey`: the target and
+  // every stage after it are no longer "passed", so drop them — they must render as active/future
+  // (blue/grey), not green. Stages outside the current entity view (e.g. an earlier entity's
+  // stages) carry no index here and are always kept so cross-entity history is preserved.
+  const completedIdsBackTo = (targetKey: string): string[] => {
+    const targetIdx = displayStages.findIndex((s) => s.stage_key === targetKey);
+    if (targetIdx < 0) return Array.from(completedStageIdSet);
+    return Array.from(completedStageIdSet).filter((id) => {
+      const idx = displayStages.findIndex((s) => String(s.process_stage_id) === id);
+      if (idx < 0) return true;      // not in this entity view → keep
+      return idx < targetIdx;        // keep only stages strictly before the new active stage
+    });
+  };
 
   const currentIdx = displayStages.findIndex((s) => s.stage_key === currentStageKey);
   // runtimeIdx is the same as currentIdx since we use a single resolved path
@@ -860,17 +888,24 @@ export default function ProcessStageBar({
       if (!psFields || psFields.length === 0) { setPopupFieldDefs([]); return; }
 
       const fieldNames = psFields.map((f) => f.field_logical_name);
-      const entityDefId_flow = processFlow.flow.entity_definition_id;
+      // Resolve field defs against BOTH the current entity (the record being viewed) and the
+      // flow's root entity. A cross-entity flow (e.g. lead-rooted, crossing into opportunity)
+      // has stage fields that belong to the CURRENT entity — querying only the flow's root entity
+      // missed them, so their config_json/type/choices came back empty (blank choice dropdowns).
+      const flowEntityDefId = processFlow.flow.entity_definition_id;
+      const entityDefIds = Array.from(new Set([entityDefId, flowEntityDefId].filter(Boolean))) as string[];
 
       const { data: fieldDefs } = await supabase
         .from('field_definition')
-        .select('logical_name, display_name, config_json, lookup_entity_id, field_type:field_type_id(name)')
-        .eq('entity_definition_id', entityDefId_flow)
+        .select('logical_name, display_name, config_json, lookup_entity_id, entity_definition_id, field_type:field_type_id(name)')
+        .in('entity_definition_id', entityDefIds)
         .in('logical_name', fieldNames)
         .eq('is_active', true);
 
       const fdMap = new Map<string, { display_name: string; field_type_name: string; config_json: Record<string, unknown> | null; lookup_entity_id: string | null }>();
-      for (const fd of (fieldDefs ?? []) as unknown as Array<{ logical_name: string; display_name: string; config_json: Record<string, unknown> | null; lookup_entity_id: string | null; field_type: { name: string } | null }>) {
+      for (const fd of (fieldDefs ?? []) as unknown as Array<{ logical_name: string; display_name: string; config_json: Record<string, unknown> | null; lookup_entity_id: string | null; entity_definition_id: string; field_type: { name: string } | null }>) {
+        // Prefer the definition from the CURRENT entity when the same logical_name exists on both.
+        if (fdMap.has(fd.logical_name) && fd.entity_definition_id !== entityDefId) continue;
         fdMap.set(fd.logical_name, {
           display_name: fd.display_name,
           field_type_name: fd.field_type?.name ?? 'text',
@@ -1099,9 +1134,9 @@ export default function ProcessStageBar({
     if (navIdx <= 0) return;
     const prevStage = displayStages[navIdx - 1];
     if (!prevStage) return;
-    // Move the active pointer back one stage. finished=false re-opens the flow so the
-    // later stages become "future" again instead of staying marked completed.
-    commitStageChange(sourceKey, prevStage.stage_key, false);
+    // Move the active pointer back one stage. finished=false re-opens the flow, and we drop the
+    // target + later stages from the completed-set so they render as active/future (not green).
+    commitStageChange(sourceKey, prevStage.stage_key, false, completedIdsBackTo(prevStage.stage_key));
     setOpenPopupStageKey(prevStage.stage_key);
   };
 

@@ -1887,29 +1887,22 @@ export default function RecordFormPage({
     const completedPatch = completedStageIds ? { completed_stage_ids: completedStageIds } : {};
     // Optimistically apply finished flag (and completed set) immediately so the bar updates instantly
     setValues((prev) => ({ ...prev, bpf_is_finished: finished, ...completedPatch }));
+    const currentPf = processFlowRef.current;
+    const stageField = currentPf?.flow.stage_field;
     try {
-      // Include the bpf_is_finished patch in the save payload so it persists correctly.
-      // Also explicitly set the stage field to toStage: onChange(stageField, toStage) queues a
-      // React state update but valuesRef.current is still the old values at this point, so without
-      // this the save would write the previous stage key and refreshFullRecord would revert the bar.
-      const currentPf = processFlowRef.current;
-      const stageField = currentPf?.flow.stage_field;
-      const savePayload = {
-        ...valuesRef.current,
-        ...(stageField ? { [stageField]: toStage } : {}),
-        bpf_is_finished: finished,
-        ...completedPatch,
-      };
-      await doSave(savePayload);
-
+      // 1. Persist the STAGE CHANGE FIRST and authoritatively (active_process_stage_id via the
+      // RPC, plus the stage_field/completed columns). Doing this before the full-record save means
+      // a Previous/Next move can never be lost just because some edited field fails to save — the
+      // earlier ordering ran doSave first, so a field-save error skipped the stage write and the
+      // bar snapped back to the previously-saved stage.
       if (currentPf) {
         const newStage = currentPf.stageByKey.get(toStage);
         if (newStage) {
           const table = await getEntityTable(entity);
           const pk = await getEntityPK(entity);
           await updateRecordActiveStage(table, pk, currentRecordId, newStage.process_stage_id, finished);
-          // Directly write the stage key column — the RPC only sets active_process_stage_id,
-          // so we must also persist the stage_field value or refreshFullRecord will revert the bar.
+          // The RPC only sets active_process_stage_id; also persist the stage_field key (and the
+          // completed set when provided) so refreshFullRecord doesn't revert the bar.
           if (stageField) {
             await updateRowFields(entity, currentRecordId, { [stageField]: toStage, ...completedPatch }, userId);
           } else if (completedStageIds) {
@@ -1918,6 +1911,20 @@ export default function RecordFormPage({
           setValues((prev) => ({ ...prev, active_process_stage_id: newStage.process_stage_id, bpf_is_finished: finished, ...completedPatch, ...(stageField ? { [stageField]: toStage } : {}) }));
         }
       }
+
+      // 2. Save the rest of the form (the user's field edits). The stage is already committed, so
+      // even if this throws the move sticks. Drop the stale active_process_stage_id from the
+      // payload — the RPC above is the sole authority for it; writing the old value here would
+      // race the RPC. Explicitly set the stage_field to toStage (onChange only queues state).
+      const { active_process_stage_id: _staleActiveStage, ...restValues } = valuesRef.current;
+      const savePayload = {
+        ...restValues,
+        ...(stageField ? { [stageField]: toStage } : {}),
+        bpf_is_finished: finished,
+        ...completedPatch,
+      };
+      await doSave(savePayload);
+
       if (!finished) {
         const result = await runStageAutomations(entity, fromStage, toStage, valuesRef.current);
         if (Object.keys(result.fieldPatches).length > 0) {
