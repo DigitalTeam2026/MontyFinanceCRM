@@ -872,6 +872,17 @@ export default function ProcessStageBar({
       .then(({ data }) => setStageFields((data ?? []) as ProcessStageField[]));
   }, [activeStageObj?.process_stage_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Keep the popup anchored under the badge of the stage it is showing. Clicking a badge captures
+  // its rect directly, but advancing via the Next/Previous/Finish buttons changes openPopupStageKey
+  // WITHOUT a click — so without this the panel stayed under the previous stage. Recompute the rect
+  // from the target badge after each stage/open change so the panel always follows the active stage.
+  useEffect(() => {
+    if (!openPopupStageKey) return;
+    const sel = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(openPopupStageKey) : openPopupStageKey;
+    const el = document.querySelector(`[data-stage-badge="${sel}"]`);
+    if (el) setPopupAnchorRect(el.getBoundingClientRect());
+  }, [openPopupStageKey, currentStageKey, displayStages.length]);
+
   // Load field definitions when popup opens
   useEffect(() => {
     if (!openPopupStageKey) { setPopupFieldDefs([]); return; }
@@ -1325,6 +1336,7 @@ export default function ProcessStageBar({
                   <div key={stage.stage_key} className="flex flex-col items-center relative group" style={{ flex: '1 1 0%' }}>
                     <button
                       type="button"
+                      data-stage-badge={stage.stage_key}
                       onClick={(e) => handleStageClick(stage.stage_key, e)}
                       className={`relative w-[26px] h-[26px] rounded-full flex items-center justify-center text-[11px] font-bold transition-all duration-300 ${badgeColor} ${isPopupOpen ? 'scale-110' : 'hover:scale-105'}`}
                     >
