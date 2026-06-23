@@ -9,6 +9,7 @@ import {
   PlayCircle,
   PauseCircle,
   Database,
+  X,
 } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
 import type { WorkflowDefinition, WorkflowStep, WorkflowTriggerType, WorkflowTriggerConditions } from '../../types/workflow';

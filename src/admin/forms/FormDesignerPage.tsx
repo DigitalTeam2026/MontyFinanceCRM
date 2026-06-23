@@ -25,7 +25,7 @@ import {
   createField,
 } from '../../services/fieldService';
 import { fetchEntities } from '../../services/entityService';
-import { createRule } from '../../services/businessRuleService';
+import { buildDraftRule } from '../../services/businessRuleService';
 import { useDesignerStore } from './designerStore';
 import { uid } from './designerStore';
 import FormToolbar from './FormToolbar';
@@ -166,36 +166,31 @@ export default function FormDesignerPage({
     setRuleEditorRule(rule);
   };
 
-  const handleNewRule = async (fieldLogicalName: string, fieldDisplayName: string) => {
-    try {
-      const rule = await createRule({
-        entity_definition_id: entityId,
-        name: `${fieldDisplayName} Rule`,
-        description: `Auto-created rule for field "${fieldDisplayName}"`,
-      });
-      const seeded: BusinessRule = {
-        ...rule,
-        trigger_json: {
-          trigger_on: 'onChange',
-          watch_fields: [fieldLogicalName],
-          condition_group: null,
-        },
-        action_json: {
-          if_actions: [{
-            id: `a_${Date.now()}`,
-            action_type: 'set_visibility',
-            target_field: fieldLogicalName,
-            target_field_display_name: fieldDisplayName,
-            value: true,
-          }],
-          else_actions: [],
-        },
-      };
-      setRuleEditorRule(seeded);
-      showSuccess(`Rule "${rule.name}" created — configure it now`);
-    } catch (e) {
-      showError(e instanceof Error ? e.message : 'Failed to create rule');
-    }
+  const handleNewRule = (fieldLogicalName: string, fieldDisplayName: string) => {
+    // Open the editor on an in-memory draft seeded for this field. Nothing is
+    // written to the DB until the user clicks Save, so dismissing the editor
+    // leaves no orphaned rule behind.
+    const draft = buildDraftRule(entityId, `${fieldDisplayName} Rule`);
+    const seeded: BusinessRule = {
+      ...draft,
+      description: `Auto-created rule for field "${fieldDisplayName}"`,
+      trigger_json: {
+        trigger_on: 'onChange',
+        watch_fields: [fieldLogicalName],
+        condition_group: null,
+      },
+      action_json: {
+        if_actions: [{
+          id: `a_${Date.now()}`,
+          action_type: 'set_visibility',
+          target_field: fieldLogicalName,
+          target_field_display_name: fieldDisplayName,
+          value: true,
+        }],
+        else_actions: [],
+      },
+    };
+    setRuleEditorRule(seeded);
   };
 
   const handleRename = async () => {
