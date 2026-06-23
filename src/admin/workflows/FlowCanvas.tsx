@@ -80,7 +80,7 @@ export default function FlowCanvas({ steps, workflowId, fields, onStepsChange }:
       <div className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_1px_1px,#e2e8f0_1px,transparent_0)] [background-size:24px_24px]">
         <div className="flex flex-col items-center py-8 px-4 min-h-full">
           {steps.length === 0 ? (
-            <EmptyCanvas onAdd={() => addStep(-1)} />
+            <EmptyCanvas onAdd={(type) => addStep(-1, type)} />
           ) : (
             <>
               {steps.map((step, index) => (
@@ -120,7 +120,7 @@ export default function FlowCanvas({ steps, workflowId, fields, onStepsChange }:
   );
 }
 
-function EmptyCanvas({ onAdd }: { onAdd: () => void }) {
+function EmptyCanvas({ onAdd }: { onAdd: (type?: WorkflowStepType) => void }) {
   const QUICK_STEPS: { type: WorkflowStepType; label: string; color: string }[] = [
     { type: 'update_record',     label: 'Update Record',     color: 'bg-blue-50 border-blue-200 text-blue-700' },
     { type: 'assign_record',     label: 'Assign Record',     color: 'bg-teal-50 border-teal-200 text-teal-700' },
@@ -141,7 +141,7 @@ function EmptyCanvas({ onAdd }: { onAdd: () => void }) {
         {QUICK_STEPS.map(({ type, label, color }) => (
           <button
             key={type}
-            onClick={onAdd}
+            onClick={() => onAdd(type)}
             className={`flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium border rounded-xl transition-all hover:shadow-sm ${color}`}
           >
             <Plus size={11} />
@@ -150,7 +150,7 @@ function EmptyCanvas({ onAdd }: { onAdd: () => void }) {
         ))}
       </div>
       <button
-        onClick={onAdd}
+        onClick={() => onAdd()}
         className="text-xs text-slate-500 hover:text-blue-600 font-medium"
       >
         Or add any step type →

@@ -7,7 +7,7 @@ import type { BusinessRule, RuleScope } from '../../types/businessRule';
 import { fetchEntities } from '../../services/entityService';
 import {
   fetchRulesForEntity,
-  createRule,
+  buildDraftRule,
   softDeleteRule,
   toggleRuleActive,
   cloneRule,
@@ -92,17 +92,15 @@ export default function RuleListPage({ onOpen, preselectedEntityId }: RuleListPa
   const activeFiltered = filtered.filter((r) => r.is_active);
   const inactiveFiltered = filtered.filter((r) => !r.is_active);
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
     if (!newName.trim() || !selectedEntityId) return;
-    try {
-      const r = await createRule({ entity_definition_id: selectedEntityId, name: newName.trim() });
-      setRules((prev) => [...prev, r]);
-      setCreating(false);
-      setNewName('');
-      onOpen(r, selectedEntityId, selectedEntity?.display_name ?? '');
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create');
-    }
+    // Open the editor on an in-memory draft. Nothing is written to the DB
+    // until the user clicks Save in the editor, so closing without saving
+    // leaves no orphaned rule behind.
+    const draft = buildDraftRule(selectedEntityId, newName.trim());
+    setCreating(false);
+    setNewName('');
+    onOpen(draft, selectedEntityId, selectedEntity?.display_name ?? '');
   };
 
   const handleDelete = async () => {

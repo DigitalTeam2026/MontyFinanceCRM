@@ -8,8 +8,7 @@ import type { ListColumn } from '../services/listService';
 import { fetchFieldsForEntity } from '../../services/fieldService';
 import { fetchRelationshipsForEntity } from '../../services/relationshipService';
 import type { RelationshipDefinitionWithEntities } from '../../types/relationship';
-import { supabase } from '../../lib/supabase';
-import { getTable } from '../services/metadata/metadataStore';
+import { fetchLookupFieldOptions } from '../services/lookupLabel';
 import FilterSelect from './FilterSelect';
 
 export interface ColumnState {
@@ -216,40 +215,14 @@ export default function ColumnCustomizer({
 
   const cancelEdit = () => setEditingKey(null);
 
-  // Field types that don't make sense as a lookup display/search field.
-  const EXCLUDED_PICK_TYPES = new Set([
-    'lookup', 'owner', 'boolean', 'two_options', 'twooptions',
-    'date', 'datetime', 'file', 'image', 'customer',
-  ]);
-
   const loadLookupFieldOpts = useCallback(async (table: string) => {
     if (!table || lookupFieldOpts[table]) return;
     setLoadingLookupTable(table);
     try {
-      const ents = getTable<Record<string, unknown>>('entity_definition');
-      let entId = ents?.find((e) => e.physical_table_name === table)?.entity_definition_id as string | undefined;
-      if (!entId) {
-        const { data } = await supabase
-          .from('entity_definition')
-          .select('entity_definition_id')
-          .eq('physical_table_name', table)
-          .maybeSingle();
-        entId = data?.entity_definition_id as string | undefined;
-      }
-      let opts: { value: string; label: string }[] = [];
-      if (entId) {
-        const fields = await fetchFieldsForEntity(entId);
-        opts = fields
-          .filter((f) =>
-            f.physical_column_name &&
-            !EXCLUDED_PICK_TYPES.has(((f.field_type as { name?: string } | null)?.name ?? '').toLowerCase())
-          )
-          .map((f) => ({ value: f.physical_column_name as string, label: f.display_name }));
-      }
+      const opts = await fetchLookupFieldOptions(table);
       setLookupFieldOpts((prev) => ({ ...prev, [table]: opts }));
     } catch { /* leave options empty on failure */ }
     finally { setLoadingLookupTable(null); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lookupFieldOpts]);
 
   const toggleFieldPicker = (col: ColumnState) => {

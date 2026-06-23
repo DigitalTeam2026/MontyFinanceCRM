@@ -5,7 +5,9 @@ import { Search, X, Check, Loader2, ArrowUpAZ, ArrowDownZA, EyeOff } from 'lucid
 import { supabase } from '../../lib/supabase';
 import type { ColumnState } from './ColumnCustomizer';
 import type { ActiveFilter, FilterOperator } from '../services/listService';
-import { pickLookupLabel, lookupLabelColumns } from '../services/lookupLabel';
+import {
+  pickLookupLabel, lookupLabelColumns, resolveNestedLabel, fetchNestedLabelMap,
+} from '../services/lookupLabel';
 
 interface ColumnFilterDropdownProps {
   column: ColumnState;
@@ -302,11 +304,64 @@ export default function ColumnFilterDropdown({
         pkCol = pkCol ?? PK_OVERRIDES[targetTable] ?? `${targetTable.replace(/^crm_/, '')}_id`;
       }
 
+      const labelField = nameCol as string;
+
+      // Nested: the chosen "filter by" field is itself a lookup (e.g. show the
+      // lead picker by each lead's Account). List/search by the RELATED record's
+      // name rather than a raw id. Two hops: nested name ⇢ base FK ⇢ base row.
+      const nested = resolveNestedLabel(targetTable, labelField);
+      if (nested.isNested && nested.table && nested.fkColumn && nested.labelField) {
+        const basePk = pkCol as string;
+        const fk = nested.fkColumn;
+        const nTable = nested.table;
+        const nName = nested.labelField;
+        const nFallbacks = nested.fallbackFields ?? [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const applyActive = (b: any, t: string) =>
+          t === 'crm_user' ? b.eq('is_active', true)
+            : DELETED_AT_TABLES.has(t) ? b.is('deleted_at', null)
+            : b.eq('is_deleted', false);
+
+        // Search step: find nested records whose name matches `q`.
+        let restrictIds: string[] | null = null;
+        if (q) {
+          if (nTable === 'crm_user') {
+            const { data } = await applyActive(supabase.from('crm_user').select('user_id'), 'crm_user')
+              .or(`email.ilike.%${q}%,full_name.ilike.%${q}%`).limit(50);
+            restrictIds = (data ?? []).map((r: Record<string, unknown>) => String(r['user_id']));
+          } else {
+            const nPk = nested.pk ?? `${nTable.replace(/^crm_/, '')}_id`;
+            const ncols = [...new Set([nName, ...nFallbacks])];
+            const { data } = await applyActive(supabase.from(nTable).select(nPk), nTable)
+              .or(ncols.map((c) => `${c}.ilike.%${q}%`).join(',')).limit(50);
+            restrictIds = (data ?? []).map((r: Record<string, unknown>) => String(r[nPk]));
+          }
+          if (restrictIds.length === 0) { setLookupResults([]); return; }
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let bq: any = applyActive(supabase.from(targetTable).select(`${basePk}, ${fk}`), targetTable).limit(30);
+        if (restrictIds) bq = bq.in(fk, restrictIds);
+        const { data: baseRows } = await bq;
+        const rows = (baseRows ?? []) as Record<string, unknown>[];
+        const nestedMap = await fetchNestedLabelMap(
+          nTable, rows.map((r) => r[fk] as string | null), nName, nFallbacks, nested.pk,
+        );
+        setLookupResults(
+          rows
+            .map((r) => ({
+              id: String(r[basePk] ?? ''),
+              label: nestedMap[r[fk] != null ? String(r[fk]) : ''] ?? '',
+            }))
+            .filter((x) => x.label)
+        );
+        return;
+      }
+
       // Search/display across the primary field AND the same fallbacks the grid
       // uses (e.g. lead → topic/company_name/email), so options never render blank
       // and typing matches whichever field actually holds the text. crm_user is
       // already pinned to `email`, so it gets no fallbacks.
-      const labelField = nameCol as string;
       const labelCols = targetTable === 'crm_user'
         ? [labelField]
         : lookupLabelColumns(labelField, targetTable);

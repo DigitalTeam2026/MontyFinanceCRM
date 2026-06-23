@@ -2,7 +2,11 @@ import { supabase } from '../../lib/supabase';
 import type { ColumnState } from '../components/ColumnCustomizer';
 import type { ListRow } from './listService';
 import { getTable } from './metadata/metadataStore';
-import { LOOKUP_LABEL_FALLBACKS as LABEL_FALLBACKS } from './lookupLabel';
+import {
+  LOOKUP_LABEL_FALLBACKS as LABEL_FALLBACKS,
+  resolveNestedLabel, fetchNestedLabelMap,
+} from './lookupLabel';
+import type { NestedLabelSpec } from './lookupLabel';
 
 export interface LookupSpec {
   colKey: string;
@@ -10,6 +14,8 @@ export interface LookupSpec {
   lookupTable: string;
   lookupLabelField: string;
   fallbackFields?: string[];
+  /** Set when the chosen label field is itself a lookup → resolve the related name. */
+  nested?: NestedLabelSpec;
 }
 
 export interface OptionSetSpec {
@@ -64,12 +70,14 @@ export function buildLookupSpecs(columns: ColumnState[]): LookupSpec[] {
     if (!c.lookup_table || !c.lookup_label_field) continue;
     const fkCol = c.field_physical_column ?? c.key;
     if (fkCol === 'owner_id' || fkCol === 'ownerid') continue;
+    const nested = resolveNestedLabel(c.lookup_table, c.lookup_label_field);
     specs.push({
       colKey: c.key,
       fkColumn: fkCol,
       lookupTable: c.lookup_table,
       lookupLabelField: c.lookup_label_field,
       fallbackFields: LABEL_FALLBACKS[c.lookup_table],
+      nested: nested.isNested ? nested : undefined,
     });
   }
 
@@ -161,6 +169,33 @@ async function batchResolveLookup(
   fkValues: string[],
 ): Promise<Record<string, string>> {
   if (fkValues.length === 0) return {};
+
+  // Nested: the chosen display field is itself a lookup (e.g. show the lead lookup
+  // by each lead's Account). Two hops: base row → FK id → related record name.
+  if (spec.nested?.isNested && spec.nested.table && spec.nested.fkColumn && spec.nested.labelField) {
+    const basePk = await resolveLookupPk(spec.lookupTable);
+    const fk = spec.nested.fkColumn;
+    const { data: baseRows } = await supabase
+      .from(spec.lookupTable)
+      .select(`${basePk}, ${fk}`)
+      .in(basePk, fkValues)
+      .limit(1000);
+    if (!baseRows) return {};
+    const rows = baseRows as unknown as Record<string, unknown>[];
+    const nestedMap = await fetchNestedLabelMap(
+      spec.nested.table,
+      rows.map((r) => r[fk] as string | null),
+      spec.nested.labelField,
+      spec.nested.fallbackFields ?? [],
+      spec.nested.pk,
+    );
+    const map: Record<string, string> = {};
+    for (const r of rows) {
+      const nid = r[fk] != null ? String(r[fk]) : '';
+      if (nid && nestedMap[nid]) map[String(r[basePk])] = nestedMap[nid];
+    }
+    return map;
+  }
 
   if (spec.lookupTable === 'crm_user') {
     const { data } = await supabase.rpc('fn_get_user_display_map', { p_user_ids: fkValues });

@@ -13,6 +13,18 @@ export async function fetchEntities(): Promise<EntityDefinition[]> {
   return data as EntityDefinition[];
 }
 
+export async function fetchEntityById(entityId: string): Promise<EntityDefinition | null> {
+  if (!entityId) return null;
+  const { data, error } = await supabase
+    .from('entity_definition')
+    .select('*')
+    .eq('entity_definition_id', entityId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as EntityDefinition) ?? null;
+}
+
 /**
  * Creates the physical PostgreSQL table AND the entity_definition metadata in one
  * atomic server-side operation. Use this for all new custom entity creation.

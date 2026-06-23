@@ -121,7 +121,12 @@ function columnSnapshot(cols: ColumnState[]): string {
   return JSON.stringify(
     cols
       .filter((c) => c.visible)
-      .map((c) => ({ key: c.key, labelOverride: c.labelOverride ?? null, width: c.width ?? null }))
+      .map((c) => ({
+        key: c.key,
+        labelOverride: c.labelOverride ?? null,
+        width: c.width ?? null,
+        lookupOverride: c.lookup_label_field_override ?? null,
+      }))
   );
 }
 

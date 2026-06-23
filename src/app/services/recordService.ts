@@ -559,7 +559,7 @@ export async function saveRecord(
       }).catch(() => {});
     }
 
-    runWorkflowsForEvent(entitySlug, 'on_update', id, saved, userId).catch(() => {});
+    runWorkflowsForEvent(entitySlug, 'on_update', id, saved, userId, prevRecord).catch(() => {});
 
     return saved;
   } else {

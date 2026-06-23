@@ -8,13 +8,17 @@ import {
   CheckCircle2,
   PlayCircle,
   PauseCircle,
+  Database,
 } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
 import type { WorkflowDefinition, WorkflowStep, WorkflowTriggerType, WorkflowTriggerConditions } from '../../types/workflow';
 import { TRIGGER_META } from '../../types/workflow';
 import type { FieldDefinition } from '../../types/field';
+import type { EntityDefinition } from '../../types/entity';
 import { fetchFieldsForEntity } from '../../services/fieldService';
+import { fetchEntities } from '../../services/entityService';
 import { fetchStepsForWorkflow, saveWorkflow, saveAllSteps } from '../../services/workflowService';
+import FilterSelect from '../../app/components/FilterSelect';
 import FlowCanvas from './FlowCanvas';
 
 type Tab = 'trigger' | 'flow' | 'settings';
@@ -30,6 +34,7 @@ export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflo
   const [wf, setWf] = useState<WorkflowDefinition>(initWf);
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [fields, setFields] = useState<FieldDefinition[]>([]);
+  const [entities, setEntities] = useState<EntityDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -39,16 +44,19 @@ export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflo
     Promise.all([
       fetchFieldsForEntity(wf.entity_definition_id),
       fetchStepsForWorkflow(wf.workflow_id),
+      fetchEntities().catch(() => [] as EntityDefinition[]),
     ])
-      .then(([f, s]) => {
+      .then(([f, s, ents]) => {
         setFields(f);
         setSteps(s);
+        setEntities(ents);
       })
       .catch((e) => showError(e.message))
       .finally(() => setLoading(false));
   }, [wf.workflow_id, wf.entity_definition_id]);
 
   const mark = () => setDirty(true);
+  const entity = entities.find((e) => e.entity_definition_id === wf.entity_definition_id) ?? null;
 
   const handleSave = async () => {
     setSaving(true);
@@ -57,6 +65,7 @@ export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflo
         saveWorkflow(wf.workflow_id, {
           name: wf.name,
           description: wf.description,
+          entity_definition_id: wf.entity_definition_id,
           trigger_type: wf.trigger_type,
           trigger_conditions: wf.trigger_conditions,
           is_active: wf.is_active,
@@ -108,6 +117,13 @@ export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflo
           <CheckCircle2 size={10} />
           {wf.is_active ? 'Active' : 'Draft'}
         </div>
+        <div
+          className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${entity ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-600'}`}
+          title={entity ? `This workflow runs on the ${entity.display_name} table` : 'No table is bound to this workflow'}
+        >
+          <Database size={10} />
+          {entity ? entity.display_name : 'No table bound'}
+        </div>
         <div className="ml-auto flex items-center gap-3">
           {dirty && <span className="text-[10px] text-amber-500">Unsaved changes</span>}
           <button
@@ -144,7 +160,7 @@ export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflo
       <div className="flex-1 min-h-0 overflow-hidden">
         {activeTab === 'trigger' && (
           <div className="h-full overflow-y-auto p-6 max-w-lg mx-auto w-full">
-            <TriggerPanel wf={wf} onChange={(w) => { setWf(w); mark(); }} />
+            <TriggerPanel wf={wf} fields={fields} entities={entities} onChange={(w) => { setWf(w); mark(); }} />
           </div>
         )}
         {activeTab === 'flow' && (
@@ -165,12 +181,46 @@ export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflo
   );
 }
 
-function TriggerPanel({ wf, onChange }: { wf: WorkflowDefinition; onChange: (w: WorkflowDefinition) => void }) {
+function TriggerPanel({
+  wf,
+  fields,
+  entities,
+  onChange,
+}: {
+  wf: WorkflowDefinition;
+  fields: FieldDefinition[];
+  entities: EntityDefinition[];
+  onChange: (w: WorkflowDefinition) => void;
+}) {
   const triggers = Object.entries(TRIGGER_META) as [WorkflowTriggerType, (typeof TRIGGER_META)[WorkflowTriggerType]][];
   const conds: WorkflowTriggerConditions = wf.trigger_conditions ?? {};
+  const watchFields = conds.watch_fields ?? [];
+  // Only fields not already watched are offered in the "add" picker.
+  const availableFields = fields.filter((f) => !watchFields.includes(f.logical_name));
 
   return (
     <div className="space-y-5">
+      <div>
+        <label className="block text-xs font-bold text-slate-600 mb-2">Which table?</label>
+        <FilterSelect
+          value={wf.entity_definition_id}
+          forceSearch
+          onChange={(e) => {
+            const newId = e.target.value;
+            if (newId === wf.entity_definition_id) return;
+            // Switching tables invalidates field-scoped settings; clear watch fields
+            // (steps that reference old fields are left for the user to review).
+            onChange({ ...wf, entity_definition_id: newId, trigger_conditions: { ...conds, watch_fields: [] } });
+          }}
+          className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white"
+        >
+          {entities.map((ent) => (
+            <option key={ent.entity_definition_id} value={ent.entity_definition_id}>{ent.display_name}</option>
+          ))}
+        </FilterSelect>
+        <p className="text-[10px] text-slate-400 mt-1">The record events that fire this workflow come from this table.</p>
+      </div>
+
       <div>
         <p className="text-xs font-bold text-slate-600 mb-3">When should this workflow run?</p>
         <div className="space-y-2">
@@ -199,16 +249,45 @@ function TriggerPanel({ wf, onChange }: { wf: WorkflowDefinition; onChange: (w: 
       {wf.trigger_type === 'on_update' && (
         <div>
           <label className="block text-xs font-bold text-slate-600 mb-2">Watch Fields <span className="font-normal text-slate-400">(leave empty = any field)</span></label>
-          <textarea
-            value={(conds.watch_fields ?? []).join('\n')}
+
+          {watchFields.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {watchFields.map((logical) => {
+                const f = fields.find((x) => x.logical_name === logical);
+                return (
+                  <span key={logical} className="inline-flex items-center gap-1 text-[11px] bg-blue-50 text-blue-700 border border-blue-200 rounded-full pl-2.5 pr-1 py-0.5">
+                    {f?.display_name ?? logical}
+                    <button
+                      type="button"
+                      onClick={() => onChange({ ...wf, trigger_conditions: { ...conds, watch_fields: watchFields.filter((w) => w !== logical) } })}
+                      className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-200 text-blue-500"
+                    >
+                      <X size={9} />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          <FilterSelect
+            value=""
+            forceSearch
+            placeholder={availableFields.length ? 'Add a field to watch…' : 'All fields added'}
+            disabled={availableFields.length === 0}
             onChange={(e) => {
-              const fields = e.target.value.split('\n').map((f) => f.trim()).filter(Boolean);
-              onChange({ ...wf, trigger_conditions: { ...conds, watch_fields: fields } });
+              const logical = e.target.value;
+              if (!logical) return;
+              onChange({ ...wf, trigger_conditions: { ...conds, watch_fields: [...watchFields, logical] } });
             }}
-            rows={3}
-            placeholder="Enter field logical names, one per line..."
-            className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300 resize-none"
-          />
+            className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white"
+          >
+            <option value="">Add a field to watch…</option>
+            {availableFields.map((f) => (
+              <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>
+            ))}
+          </FilterSelect>
+          <p className="text-[10px] text-slate-400 mt-1">The workflow fires only when one of these fields changes. Leave empty to fire on any change.</p>
         </div>
       )}
 

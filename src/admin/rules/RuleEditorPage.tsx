@@ -10,7 +10,7 @@ import type { FormDefinition } from '../../types/form';
 import type { ProcessFlow, ProcessStage } from '../../types/processFlow';
 import { fetchFieldsForEntity } from '../../services/fieldService';
 import { fetchFormsForEntity } from '../../services/formService';
-import { saveRule } from '../../services/businessRuleService';
+import { saveRule, createRule } from '../../services/businessRuleService';
 import { fetchProcessFlowsForEntity, fetchProcessFlowWithDetails } from '../../services/processFlowService';
 import RulePreviewPanel from './RulePreviewPanel';
 import RuleCanvas from './RuleCanvas';
@@ -112,7 +112,9 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
   const [stageCache, setStageCache] = useState<Record<string, ProcessStage[]>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  // A draft rule (empty id, not yet inserted) starts dirty so it can be saved
+  // straight away; an existing rule starts clean.
+  const [dirty, setDirty] = useState(() => !initRule.business_rule_id);
   const [activeTab, setActiveTab] = useState<Tab>('canvas');
   const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
 
@@ -211,19 +213,29 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
       return;
     }
 
+    const payload = {
+      name: rule.name,
+      description: rule.description,
+      scope: rule.scope,
+      target_form_id: rule.scope === 'specific_form' ? rule.target_form_id : null,
+      target_process_flow_id: (rule.scope === 'specific_bpf' || rule.scope === 'specific_bpf_stage') ? rule.target_process_flow_id : null,
+      target_process_stage_id: rule.scope === 'specific_bpf_stage' ? rule.target_process_stage_id : null,
+      run_order: rule.run_order,
+      trigger_json: rule.trigger_json,
+      action_json: rule.action_json,
+    };
+
     setSaving(true);
     try {
-      const updated = await saveRule(rule.business_rule_id, {
-        name: rule.name,
-        description: rule.description,
-        scope: rule.scope,
-        target_form_id: rule.scope === 'specific_form' ? rule.target_form_id : null,
-        target_process_flow_id: (rule.scope === 'specific_bpf' || rule.scope === 'specific_bpf_stage') ? rule.target_process_flow_id : null,
-        target_process_stage_id: rule.scope === 'specific_bpf_stage' ? rule.target_process_stage_id : null,
-        run_order: rule.run_order,
-        trigger_json: rule.trigger_json,
-        action_json: rule.action_json,
-      });
+      // A draft (empty id) is inserted here on first save; thereafter it has a
+      // real id and is updated in place.
+      const updated = rule.business_rule_id
+        ? await saveRule(rule.business_rule_id, payload)
+        : await createRule({
+            entity_definition_id: entityId,
+            is_active: rule.is_active,
+            ...payload,
+          });
       const normalized = normalizeRule(updated);
       setRule(normalized);
       if (!normalized.action_json.condition_blocks?.some((b) => b.id === activeBlockId)) {

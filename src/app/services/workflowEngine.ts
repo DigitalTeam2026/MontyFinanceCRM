@@ -3,6 +3,8 @@ import { createNotification } from './notificationService';
 import type {
   WorkflowStep,
   WorkflowStepType,
+  WorkflowTriggerConditions,
+  WorkflowFilterCondition,
   SendNotificationConfig,
   UpdateRecordConfig,
   AssignRecordConfig,
@@ -33,7 +35,8 @@ export async function runWorkflowsForEvent(
   triggerType: 'on_create' | 'on_update' | 'on_status_change',
   recordId: string,
   record: Record<string, unknown>,
-  triggerUserId: string
+  triggerUserId: string,
+  prevRecord?: Record<string, unknown> | null
 ): Promise<void> {
   try {
     const { data: entityDef } = await supabase
@@ -46,7 +49,7 @@ export async function runWorkflowsForEvent(
 
     const { data: workflows } = await supabase
       .from('workflow_definition')
-      .select('workflow_id')
+      .select('workflow_id, trigger_conditions')
       .eq('entity_definition_id', entityDef.entity_definition_id)
       .eq('trigger_type', triggerType)
       .eq('is_active', true)
@@ -57,10 +60,88 @@ export async function runWorkflowsForEvent(
     const ctx: WorkflowContext = { entityName: entityLogicalName, recordId, record, triggerUserId };
 
     for (const wf of workflows) {
-      runWorkflow(wf.workflow_id, ctx, triggerType).catch(() => {});
+      // Power Automate parity: a workflow only runs when its trigger conditions
+      // (filtering attributes + trigger condition + status transition) are met.
+      // Without this gate every active workflow fires on every save.
+      if (!matchesTriggerConditions(
+        (wf as { trigger_conditions: WorkflowTriggerConditions | null }).trigger_conditions,
+        triggerType,
+        record,
+        prevRecord ?? null,
+      )) {
+        continue;
+      }
+      runWorkflow((wf as { workflow_id: string }).workflow_id, ctx, triggerType).catch(() => {});
     }
   } catch {
   }
+}
+
+// ─── Trigger-condition gate ─────────────────────────────────────────────────────
+// Mirrors Power Automate's Dataverse trigger: a flow stays dormant unless its
+// filtering attributes moved, the chosen status transition happened, AND every
+// trigger condition holds against the new row.
+
+function matchesTriggerConditions(
+  tc: WorkflowTriggerConditions | null | undefined,
+  triggerType: 'on_create' | 'on_update' | 'on_status_change',
+  record: Record<string, unknown>,
+  prevRecord: Record<string, unknown> | null,
+): boolean {
+  if (!tc) return true;
+
+  // 1. Filtering attributes — on an update, at least one watched field must have
+  //    actually changed vs the pre-image. (On create there is no pre-image, so
+  //    "changed" is meaningless and this check is skipped.)
+  if (triggerType !== 'on_create' && tc.watch_fields?.length && prevRecord) {
+    const anyChanged = tc.watch_fields.some((f) => !valuesEqual(record[f], prevRecord[f]));
+    if (!anyChanged) return false;
+  }
+
+  // 2. Status transition — prev must equal status_from (when set) and the new row
+  //    must equal status_to (when set). Catches a SPECIFIC transition, not any edit.
+  if (triggerType === 'on_status_change') {
+    if (tc.status_from && getStatusValue(prevRecord) !== tc.status_from) return false;
+    if (tc.status_to && getStatusValue(record) !== tc.status_to) return false;
+  }
+
+  // 3. Trigger condition — ALL filter conditions must hold against the new row.
+  //    This is the "only proceed when the value is now X" guard (e.g. is_approved = true).
+  if (tc.filter_conditions?.length) {
+    if (!tc.filter_conditions.every((c) => evalFilterCondition(c, record))) return false;
+  }
+
+  return true;
+}
+
+function evalFilterCondition(cond: WorkflowFilterCondition, record: Record<string, unknown>): boolean {
+  const raw = record[cond.field];
+  const val = raw == null ? '' : String(raw);
+  const cmp = cond.value ?? '';
+  switch (cond.operator) {
+    case 'eq':          return val === cmp;
+    case 'neq':         return val !== cmp;
+    case 'contains':    return val.toLowerCase().includes(cmp.toLowerCase());
+    case 'gt':          return Number(val) > Number(cmp);
+    case 'lt':          return Number(val) < Number(cmp);
+    case 'is_null':     return raw == null || val === '';
+    case 'is_not_null': return raw != null && val !== '';
+    default:            return true;
+  }
+}
+
+// Status lives under different physical names across entities; probe the usual ones.
+function getStatusValue(record: Record<string, unknown> | null): string {
+  if (!record) return '';
+  for (const k of ['statuscode', 'status_code', 'statecode', 'state_code', 'status']) {
+    if (record[k] != null) return String(record[k]);
+  }
+  return '';
+}
+
+function valuesEqual(a: unknown, b: unknown): boolean {
+  if (a == null && b == null) return true;
+  return String(a ?? '') === String(b ?? '');
 }
 
 // ─── Single workflow runner ───────────────────────────────────────────────────

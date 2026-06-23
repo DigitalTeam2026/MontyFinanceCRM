@@ -61,7 +61,7 @@ export async function createWorkflow(payload: {
 export async function saveWorkflow(
   workflowId: string,
   updates: Partial<
-    Pick<WorkflowDefinition, 'name' | 'description' | 'trigger_type' | 'trigger_conditions' | 'is_active'>
+    Pick<WorkflowDefinition, 'name' | 'description' | 'entity_definition_id' | 'trigger_type' | 'trigger_conditions' | 'is_active'>
   >
 ): Promise<WorkflowDefinition> {
   const { data, error } = await supabase
