@@ -1692,6 +1692,8 @@ export default function RecordFormPage({
     const currentRecord = { ...values, product_id: productId ?? null, active_process_flow_id: null };
     resolveProcessFlowForRecord(entityLogical, currentRecord).then(async (pf) => {
       if (!pf) return;
+      // Skip auto-switching into a flow the user's role isn't allowed to use.
+      if (!isFlowAllowed(permissions, pf.flow.process_flow_id)) return;
       const currentPfId = processFlowRef.current?.flow.process_flow_id;
       if (pf.flow.process_flow_id === currentPfId) return;
 
@@ -1755,7 +1757,7 @@ export default function RecordFormPage({
         .maybeSingle();
       if (eDef) {
         const flows = await fetchProcessFlowsForEntity(eDef.entity_definition_id);
-        setAvailableFlows(flows.filter((f) => f.is_active && !f.deleted_at));
+        setAvailableFlows(filterAllowedFlows(flows));
       }
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1914,7 +1916,7 @@ export default function RecordFormPage({
       fetchTimelineItems(entity, currentId),
       fetchEntityRules(entity),
     ]);
-    const pf = await resolveProcessFlowForRecord(entityLogical, record).catch(() => null);
+    const pf = gateFlow(await resolveProcessFlowForRecord(entityLogical, record).catch(() => null));
     const labels = await fetchLookupLabels(record, lookupEntitySlugMap, lookupPhysicalMap);
     const ownerId = record['owner_id'];
     if (ownerId && typeof ownerId === 'string') {
@@ -1929,7 +1931,7 @@ export default function RecordFormPage({
     setLookupLabels(labels);
     setSubgridRefreshCounter((c) => c + 1);
     checkLeadHasRelatedOpp(currentId);
-  }, [entity, lookupEntitySlugMap, crmUsers, checkLeadHasRelatedOpp]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entity, lookupEntitySlugMap, crmUsers, checkLeadHasRelatedOpp, gateFlow]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStageChangeAsync = useCallback(async (fromStage: string, toStage: string, finished = false, completedStageIds?: string[]) => {
     const currentRecordId = resolvedRecordIdRef.current;
@@ -2002,6 +2004,8 @@ export default function RecordFormPage({
   const handleSwitchFlow = useCallback(async (targetFlowId: string) => {
     const currentRecordId = resolvedRecordIdRef.current;
     if (!currentRecordId || formReadonly) return;
+    // Block switching into a flow the user's role isn't allowed to use.
+    if (!isFlowAllowed(permissions, targetFlowId)) return;
     try {
       const entityLogical = ENTITY_LOGICAL_NAME[entity] ?? entity;
       invalidateFlowCacheById(targetFlowId);
@@ -2052,11 +2056,11 @@ export default function RecordFormPage({
         .maybeSingle();
       if (eDef) {
         const flows = await fetchProcessFlowsForEntity(eDef.entity_definition_id);
-        setAvailableFlows(flows.filter((f) => f.is_active && !f.deleted_at));
+        setAvailableFlows(filterAllowedFlows(flows));
       }
     } catch {
     }
-  }, [entity, formReadonly]);
+  }, [entity, formReadonly, permissions, filterAllowedFlows]);
 
   // Auto-save disabled: users must explicitly click Save.
 
@@ -2189,12 +2193,14 @@ export default function RecordFormPage({
         const label = String(saved[labelField] ?? '');
         if (label) onRecordLoaded?.(pk, label);
         const entityLogical = ENTITY_LOGICAL_NAME[entity] ?? entity;
-        const [pf, rulesData, tl, pinned] = await Promise.all([
+        const [rawPf, rulesData, tl, pinned] = await Promise.all([
           resolveProcessFlowForRecord(entityLogical, saved),
           fetchEntityRules(entity),
           fetchTimelineItems(entity, pk),
           isRecordPinned(userId, entity, pk),
         ]);
+        // Apply the flow (and its linked form) only if the user's role allows it.
+        const pf = gateFlow(rawPf);
         setProcessFlow(pf);
 
         // Persist process flow fields to DB for the new record so the stage bar
@@ -2237,7 +2243,7 @@ export default function RecordFormPage({
         if (eDef2) {
           setEntityDefId(eDef2.entity_definition_id);
           const flows = await fetchProcessFlowsForEntity(eDef2.entity_definition_id);
-          setAvailableFlows(flows.filter((f) => f.is_active && !f.deleted_at));
+          setAvailableFlows(filterAllowedFlows(flows));
         }
         setRules(rulesData);
         setTimeline(tl);
