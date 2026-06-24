@@ -23,6 +23,24 @@ export async function fetchProcessFlows(): Promise<ProcessFlow[]> {
   return data as ProcessFlow[];
 }
 
+/**
+ * Returns every (process_flow_id → form_id) link: a flow's primary form plus each
+ * related entity's form from process_flow_entity_config. Used to show in Security
+ * Roles which forms are auto-granted when a flow is allowed (the flow→form cascade).
+ */
+export async function fetchFlowFormLinks(): Promise<{ process_flow_id: string; form_id: string }[]> {
+  const [pfRes, pfecRes] = await Promise.all([
+    supabase.from('process_flow').select('process_flow_id, form_id').is('deleted_at', null).not('form_id', 'is', null),
+    supabase.from('process_flow_entity_config').select('process_flow_id, form_id').not('form_id', 'is', null),
+  ]);
+  if (pfRes.error) throw pfRes.error;
+  if (pfecRes.error) throw pfecRes.error;
+  return [
+    ...((pfRes.data ?? []) as { process_flow_id: string; form_id: string }[]),
+    ...((pfecRes.data ?? []) as { process_flow_id: string; form_id: string }[]),
+  ];
+}
+
 export async function fetchProcessFlowsForEntity(entityId: string): Promise<ProcessFlow[]> {
   const { data, error } = await supabase
     .from('process_flow')

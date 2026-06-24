@@ -24,7 +24,7 @@ import type { FieldPermissionRow, SectionPermissionRow, ActionPermissionRow, For
 import { fetchEntities } from '../../services/entityService';
 import { fetchFieldsForEntity } from '../../services/fieldService';
 import { fetchFormsForEntity } from '../../services/formService';
-import { fetchProcessFlows } from '../../services/processFlowService';
+import { fetchProcessFlows, fetchFlowFormLinks } from '../../services/processFlowService';
 import type { DesignerSection, DesignerTab } from '../../types/form';
 import ConfirmDialog from '../components/ConfirmDialog';
 
@@ -112,13 +112,29 @@ export default function SecurityRolesPage() {
   const [flowPerms, setFlowPerms] = useState<ProcessFlowPermissionRow[]>([]);
   const [flowPermsDirty, setFlowPermsDirty] = useState(false);
   const [allFlows, setAllFlows] = useState<EntityFlows[]>([]);
+  // form_id → set of flow_ids that link to it (flow→form cascade).
+  const [formToFlows, setFormToFlows] = useState<Map<string, Set<string>>>(new Map());
 
   useEffect(() => {
-    Promise.all([fetchSecurityRoles(), fetchEntities(), fetchProcessFlows().catch(() => [])])
-      .then(([r, e, flows]) => {
+    Promise.all([
+      fetchSecurityRoles(),
+      fetchEntities(),
+      fetchProcessFlows().catch(() => []),
+      fetchFlowFormLinks().catch(() => []),
+    ])
+      .then(([r, e, flows, flowFormLinks]) => {
         setRoles(r);
         const activeEntities = e.filter((ent: EntityDefinition) => ent.is_active !== false);
         setEntities(activeEntities);
+
+        // Build form_id → flow_ids map for the flow→form cascade hint in Form Perms.
+        const f2f = new Map<string, Set<string>>();
+        for (const link of flowFormLinks) {
+          if (!link.form_id) continue;
+          if (!f2f.has(link.form_id)) f2f.set(link.form_id, new Set());
+          f2f.get(link.form_id)!.add(link.process_flow_id);
+        }
+        setFormToFlows(f2f);
 
         // Group process flows under their owning entity for the Flow Perms matrix.
         setAllFlows(
@@ -443,6 +459,19 @@ export default function SecurityRolesPage() {
     });
     setFormPermsDirty(true);
   }, [selected]);
+
+  // Flow→form cascade: a form is auto-granted (read-only "Via flow") when any flow
+  // linking to it is currently allowed for this role.
+  const allowedFlowIdSet = useMemo(
+    () => new Set(flowPerms.filter((fp) => fp.is_allowed).map((fp) => fp.process_flow_id)),
+    [flowPerms]
+  );
+  const isFormViaFlow = useCallback((formId: string): boolean => {
+    const flows = formToFlows.get(formId);
+    if (!flows) return false;
+    for (const fid of flows) if (allowedFlowIdSet.has(fid)) return true;
+    return false;
+  }, [formToFlows, allowedFlowIdSet]);
 
   const handleSaveFlowPerms = async () => {
     if (!selected) return;
@@ -816,6 +845,7 @@ export default function SecurityRolesPage() {
                   allForms={allForms}
                   getFormPerm={getFormPerm}
                   onToggle={toggleFormAllowed}
+                  isFormViaFlow={isFormViaFlow}
                   readOnly={isSystemAdminRole}
                 />
               )}
@@ -1377,11 +1407,12 @@ function ActionPermissionsMatrix({
  * ───────────────────────────────────────────────────────── */
 
 function FormPermissionsMatrix({
-  allForms, getFormPerm, onToggle, readOnly = false,
+  allForms, getFormPerm, onToggle, isFormViaFlow, readOnly = false,
 }: {
   allForms: EntityForms[];
   getFormPerm: (entityName: string, formId: string) => FormPermissionRow | undefined;
   onToggle: (entityName: string, formId: string, value: boolean) => void;
+  isFormViaFlow: (formId: string) => boolean;
   readOnly?: boolean;
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -1392,9 +1423,14 @@ function FormPermissionsMatrix({
     [allForms]
   );
 
+  // A form is effectively allowed if directly granted OR auto-granted via a flow.
+  const isEffectivelyAllowed = useCallback((entityName: string, formId: string) =>
+    getFormPerm(entityName, formId)?.is_allowed === true || isFormViaFlow(formId),
+  [getFormPerm, isFormViaFlow]);
+
   const entityHasAccess = useCallback(({ entity, forms }: EntityForms) => {
-    return forms.some((f) => getFormPerm(entity.logical_name, f.form_id)?.is_allowed === true);
-  }, [getFormPerm]);
+    return forms.some((f) => isEffectivelyAllowed(entity.logical_name, f.form_id));
+  }, [isEffectivelyAllowed]);
 
   const counts = useMemo(() => {
     const has = entitiesWithForms.filter(entityHasAccess).length;
@@ -1419,7 +1455,7 @@ function FormPermissionsMatrix({
         <div className="flex items-start gap-2 p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
           <LayoutTemplate size={13} className="text-indigo-500 shrink-0 mt-0.5" />
           <p className="text-[11px] text-indigo-700 leading-relaxed">
-            Choose which forms this role can use for each entity. <strong>Allow wins</strong> — a user gets every form granted by any of their roles. When more than one form is allowed, users pick which to use from a chooser card. Forms left off are hidden from this role. System Admins always see every form.
+            Choose which forms this role can use for each entity. <strong>Allow wins</strong> — a user gets every form granted by any of their roles. When more than one form is allowed, users pick which to use from a chooser card. Forms marked <strong>Via flow</strong> are granted automatically because a business process flow this role is allowed links to them (manage those under <strong>Flow Perms</strong>). System Admins always see every form.
           </p>
         </div>
         <SearchFilterBar
@@ -1442,7 +1478,7 @@ function FormPermissionsMatrix({
         ) : (
           <div className="space-y-3">
             {filtered.map(({ entity, forms }) => {
-              const allowedCount = forms.filter((f) => getFormPerm(entity.logical_name, f.form_id)?.is_allowed === true).length;
+              const allowedCount = forms.filter((f) => isEffectivelyAllowed(entity.logical_name, f.form_id)).length;
 
               return (
                 <div key={entity.entity_definition_id} className="border border-slate-200 rounded-xl overflow-hidden bg-white">
@@ -1465,7 +1501,11 @@ function FormPermissionsMatrix({
 
                   <div className="divide-y divide-slate-100">
                     {forms.map((f) => {
-                      const isAllowed = getFormPerm(entity.logical_name, f.form_id)?.is_allowed === true;
+                      const directlyAllowed = getFormPerm(entity.logical_name, f.form_id)?.is_allowed === true;
+                      const viaFlow = isFormViaFlow(f.form_id);
+                      const isAllowed = directlyAllowed || viaFlow;
+                      // Granted via a flow ⇒ can't deny here (the flow still grants it).
+                      const toggleLocked = readOnly || viaFlow;
 
                       return (
                         <div
@@ -1484,13 +1524,19 @@ function FormPermissionsMatrix({
                                 <Star size={7} /> Default
                               </span>
                             )}
+                            {viaFlow && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-violet-50 border border-violet-200 text-violet-700 text-[9px] font-semibold rounded-full shrink-0" title="Auto-granted by an allowed business process flow">
+                                <Workflow size={7} /> Via flow
+                              </span>
+                            )}
                           </div>
                           <div
-                            onClick={() => !readOnly && onToggle(entity.logical_name, f.form_id, !isAllowed)}
-                            className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                            onClick={() => !toggleLocked && onToggle(entity.logical_name, f.form_id, !directlyAllowed)}
+                            title={viaFlow ? 'Granted automatically by an allowed process flow — manage under Flow Perms' : undefined}
+                            className={`flex items-center gap-2 select-none ${toggleLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
                           >
                             <span className={`text-[11px] font-semibold ${isAllowed ? 'text-emerald-600' : 'text-red-500'}`}>
-                              {isAllowed ? 'Allowed' : 'Denied'}
+                              {viaFlow ? 'Via flow' : isAllowed ? 'Allowed' : 'Denied'}
                             </span>
                             <div className={`relative w-9 h-5 rounded-full transition-colors ${isAllowed ? 'bg-emerald-500' : 'bg-red-500'}`}>
                               <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${isAllowed ? 'left-[19px]' : 'left-[1px]'}`} />

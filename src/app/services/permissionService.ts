@@ -247,6 +247,33 @@ export async function loadUserPermissions(userId: string): Promise<UserPermissio
     if (row.is_allowed === true) allowedFlowIds.add(row.process_flow_id);
   }
 
+  // Flow → form cascade: being allowed a flow automatically grants the forms that
+  // flow links to (its primary form + each related entity's form), so an admin
+  // only has to grant the flow. These implied grants are merged into
+  // allowedFormIds keyed by the linked form's entity logical name.
+  if (allowedFlowIds.size > 0) {
+    const flowIdArr = [...allowedFlowIds];
+    const [pfFormsRes, pfecFormsRes] = await Promise.all([
+      supabase.from('process_flow').select('form_id, entity_definition_id').in('process_flow_id', flowIdArr).not('form_id', 'is', null),
+      supabase.from('process_flow_entity_config').select('form_id, entity_definition_id').in('process_flow_id', flowIdArr).not('form_id', 'is', null),
+    ]);
+    const linked = [
+      ...((pfFormsRes.data ?? []) as { form_id: string; entity_definition_id: string }[]),
+      ...((pfecFormsRes.data ?? []) as { form_id: string; entity_definition_id: string }[]),
+    ];
+    const entityIds = [...new Set(linked.map((r) => r.entity_definition_id).filter(Boolean))];
+    if (entityIds.length > 0) {
+      const edRes = await supabase.from('entity_definition').select('entity_definition_id, logical_name').in('entity_definition_id', entityIds);
+      const idToLogical = new Map(((edRes.data ?? []) as { entity_definition_id: string; logical_name: string }[]).map((r) => [r.entity_definition_id, r.logical_name]));
+      for (const row of linked) {
+        const logical = idToLogical.get(row.entity_definition_id);
+        if (!logical || !row.form_id) continue;
+        if (!allowedFormIds[logical]) allowedFormIds[logical] = new Set();
+        allowedFormIds[logical].add(row.form_id);
+      }
+    }
+  }
+
   return {
     isSystemAdmin: false,
     entityPrivileges,
