@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 import {
   loadUserPermissions, getEntityPrivilege, getFieldRestriction,
   getSectionRestriction, getActionRestriction, isActionAllowed, isRecordAccessible,
-  getAllowedFormIds, isFormAllowed,
+  getAllowedFormIds, isFormAllowed, isFlowAllowed,
 } from '../services/permissionService';
 import type {
   UserPermissions, EntityPrivilege, FieldRestriction,
@@ -24,6 +24,7 @@ interface PermissionContextValue {
   /** Allowed form_ids for an entity, or null = all forms allowed (system admin). */
   getAllowedFormIds: (entityName: string) => Set<string> | null;
   isFormAllowed: (entityName: string, formId: string) => boolean;
+  isFlowAllowed: (flowId: string) => boolean;
 }
 
 const DEFAULT_ACCESS_CONTEXT: UserAccessContext = {
@@ -40,6 +41,7 @@ const DEFAULT_PERMISSIONS: UserPermissions = {
   sectionRestrictions: {},
   actionRestrictions: {},
   allowedFormIds: {},
+  allowedFlowIds: new Set(),
   securedFieldAccess: {},
   securedFields: {},
   accessContext: DEFAULT_ACCESS_CONTEXT,
@@ -63,6 +65,7 @@ const PermissionContext = createContext<PermissionContextValue>({
   isRecordAccessible: () => true,
   getAllowedFormIds: () => null,
   isFormAllowed: () => true,
+  isFlowAllowed: () => true,
 });
 
 export function PermissionProvider({ userId, children }: { userId: string; children: ReactNode }) {
@@ -100,6 +103,7 @@ export function PermissionProvider({ userId, children }: { userId: string; child
     isRecordAccessible: (level, recordOwnerId) => isRecordAccessible(level, recordOwnerId, ctx),
     getAllowedFormIds: (entityName) => getAllowedFormIds(permissions, entityName),
     isFormAllowed: (entityName, formId) => isFormAllowed(permissions, entityName, formId),
+    isFlowAllowed: (flowId) => isFlowAllowed(permissions, flowId),
   };
 
   return (

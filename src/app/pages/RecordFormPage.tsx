@@ -64,7 +64,7 @@ import {
   getEntityDefinitionId,
 } from '../services/recordService';
 import type { TimelineItem, SelectableForm } from '../services/recordService';
-import { getAllowedFormIds } from '../services/permissionService';
+import { getAllowedFormIds, isFlowAllowed } from '../services/permissionService';
 import { evaluateRules, applyRuleStateToValues, getRuleMessages } from '../services/businessRulesEngine';
 import type { ProcessRuleContext } from '../services/businessRulesEngine';
 import { mergeStageVisibilityIntoRuleState } from '../services/stageValidationService';
@@ -1324,6 +1324,19 @@ export default function RecordFormPage({
     return JSON.stringify(values) !== JSON.stringify(savedValues);
   }, [values, savedValues, resolvedRecordId]);
 
+  // ── Process-flow access enforcement ──────────────────────────────────────────
+  // A flow (and any form it loads) is applied only when the user's role(s) allow
+  // it. Deny → treat as no flow. Declared before loadAll so it can gate there too;
+  // depends on the stable `permissions` object.
+  const gateFlow = useCallback((pf: LoadedProcessFlow | null): LoadedProcessFlow | null => {
+    if (!pf) return null;
+    return isFlowAllowed(permissions, pf.flow.process_flow_id) ? pf : null;
+  }, [permissions]);
+
+  const filterAllowedFlows = useCallback((flows: ProcessFlow[]): ProcessFlow[] =>
+    flows.filter((f) => f.is_active && !f.deleted_at && isFlowAllowed(permissions, f.process_flow_id)),
+  [permissions]);
+
   const loadAll = useCallback(async (gen: number) => {
     if (skipNextLoadAllRef.current) {
       skipNextLoadAllRef.current = false;
@@ -1447,7 +1460,7 @@ export default function RecordFormPage({
       applyForm(formDef, 'default');
 
       if (!recordId) {
-        const pf = await resolveProcessFlowForRecord(entityLogical, null);
+        const pf = gateFlow(await resolveProcessFlowForRecord(entityLogical, null));
         setProcessFlow(pf);
         // The user's explicit form choice (from the chooser) wins over a flow's
         // default form; only fall back to the flow form when no override is set.
@@ -1530,7 +1543,7 @@ export default function RecordFormPage({
         } catch { /* non-fatal */ }
 
         try {
-          const pf = await resolveProcessFlowForRecord(entityLogical, record);
+          const pf = gateFlow(await resolveProcessFlowForRecord(entityLogical, record));
           setProcessFlow(pf);
           await applyFlowForm(pf);
         } catch { /* non-fatal: BPF resolution failure should not block the form */ }
@@ -1539,7 +1552,7 @@ export default function RecordFormPage({
           if (resolvedEntityDefId) {
             setEntityDefId(resolvedEntityDefId);
             const flows = await fetchProcessFlowsForEntity(resolvedEntityDefId);
-            setAvailableFlows(flows.filter((f) => f.is_active && !f.deleted_at));
+            setAvailableFlows(filterAllowedFlows(flows));
           }
         } catch { /* non-fatal */ }
 
@@ -1576,7 +1589,7 @@ export default function RecordFormPage({
       // Only the most recent load controls the spinner
       if (gen === loadGenRef.current) setLoading(false);
     }
-  }, [entity, recordId, formIdOverride]);
+  }, [entity, recordId, formIdOverride, gateFlow, filterAllowedFlows]);
 
   useEffect(() => {
     // Do not run ANY data/metadata load (incl. fetchRecord) before authorization

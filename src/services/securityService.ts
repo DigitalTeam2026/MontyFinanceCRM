@@ -304,11 +304,12 @@ export async function softDeleteSecurityRole(id: string): Promise<void> {
 }
 
 export async function cloneSecurityRole(roleId: string, newName: string): Promise<SecurityRole> {
-  const [privRes, srcRes, actionRes, formRes] = await Promise.all([
+  const [privRes, srcRes, actionRes, formRes, flowRes] = await Promise.all([
     fetchPrivilegesForRole(roleId),
     supabase.from('security_role').select('*').eq('role_id', roleId).single(),
     fetchActionPermissionsForRole(roleId),
     fetchFormPermissionsForRole(roleId),
+    fetchFlowPermissionsForRole(roleId),
   ]);
   if (srcRes.error) throw srcRes.error;
   const src = srcRes.data as SecurityRole;
@@ -342,6 +343,14 @@ export async function cloneSecurityRole(roleId: string, newName: string): Promis
       role_id: cloned.role_id,
     }));
     await supabase.from('form_permission').insert(clonedForms);
+  }
+
+  if (flowRes.length > 0) {
+    const clonedFlows = flowRes.map(({ process_flow_permission_id: _id, role_id: _rid, ...rest }) => ({
+      ...rest,
+      role_id: cloned.role_id,
+    }));
+    await supabase.from('process_flow_permission').insert(clonedFlows);
   }
 
   return cloned;
@@ -549,5 +558,49 @@ export async function saveFormPermissionsForRole(
     is_allowed: true,
   }));
   const { error } = await supabase.from('form_permission').insert(rows);
+  if (error) throw error;
+}
+
+// ─── Process Flow Permissions ─────────────────────────────────────────────────
+//
+// Controls which business process flows a role may use. Deny-by-default, mirroring
+// form_permission. A process flow can be linked to a form, so both dimensions are
+// checked at runtime when a record is created/edited.
+
+export interface ProcessFlowPermissionRow {
+  process_flow_permission_id: string;
+  role_id: string;
+  process_flow_id: string;
+  is_allowed: boolean;
+}
+
+export async function fetchFlowPermissionsForRole(roleId: string): Promise<ProcessFlowPermissionRow[]> {
+  const { data, error } = await supabase
+    .from('process_flow_permission')
+    .select('*')
+    .eq('role_id', roleId);
+  if (error) throw error;
+  return data as ProcessFlowPermissionRow[];
+}
+
+export async function saveFlowPermissionsForRole(
+  roleId: string,
+  permissions: { process_flow_id: string; is_allowed: boolean }[]
+): Promise<void> {
+  const { error: delErr } = await supabase
+    .from('process_flow_permission')
+    .delete()
+    .eq('role_id', roleId);
+  if (delErr) throw delErr;
+
+  // Persist only granted flows; absence of a row means denied.
+  const allowed = permissions.filter((p) => p.is_allowed);
+  if (allowed.length === 0) return;
+  const rows = allowed.map((p) => ({
+    role_id: roleId,
+    process_flow_id: p.process_flow_id,
+    is_allowed: true,
+  }));
+  const { error } = await supabase.from('process_flow_permission').insert(rows);
   if (error) throw error;
 }

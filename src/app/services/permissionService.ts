@@ -57,6 +57,12 @@ export interface UserPermissions {
    * null for system admins, meaning "all forms allowed").
    */
   allowedFormIds: Record<string, Set<string>>;
+  /**
+   * Process flow ids the user's role(s) are granted. Deny-by-default: a flow id
+   * absent from the set is NOT available. System admins get all (isFlowAllowed
+   * short-circuits on isSystemAdmin).
+   */
+  allowedFlowIds: Set<string>;
   securedFieldAccess: Record<string, Record<string, { can_read: boolean; can_update: boolean }>>;
   securedFields: Record<string, Set<string>>;
   accessContext: UserAccessContext;
@@ -119,6 +125,7 @@ export async function loadUserPermissions(userId: string): Promise<UserPermissio
       sectionRestrictions: {},
       actionRestrictions: {},
       allowedFormIds: {},
+      allowedFlowIds: new Set(),
       securedFieldAccess: {},
       securedFields: {},
       accessContext,
@@ -140,13 +147,14 @@ export async function loadUserPermissions(userId: string): Promise<UserPermissio
       sectionRestrictions: {},
       actionRestrictions: {},
       allowedFormIds: {},
+      allowedFlowIds: new Set(),
       securedFieldAccess,
       securedFields,
       accessContext,
     };
   }
 
-  const [privRes, fieldRes, sectionRes, actionRes, formRes, securedFieldAccess, securedFields] = await Promise.all([
+  const [privRes, fieldRes, sectionRes, actionRes, formRes, flowRes, securedFieldAccess, securedFields] = await Promise.all([
     supabase
       .from('role_privilege')
       .select('entity_name,can_create,can_read,can_write,can_delete,can_assign,can_share,create_access_level,read_access_level,write_access_level,delete_access_level,assign_access_level,share_access_level')
@@ -155,6 +163,7 @@ export async function loadUserPermissions(userId: string): Promise<UserPermissio
     supabase.from('section_permission').select('entity_name,section_id,is_hidden').in('role_id', roleIds),
     supabase.from('action_permission').select('entity_name,action_key,is_denied').in('role_id', roleIds),
     supabase.from('form_permission').select('entity_name,form_id,is_allowed').in('role_id', roleIds),
+    supabase.from('process_flow_permission').select('process_flow_id,is_allowed').in('role_id', roleIds),
     loadColumnSecurityForUser(userId, teamIds),
     loadSecuredFieldIndex(),
   ]);
@@ -232,6 +241,12 @@ export async function loadUserPermissions(userId: string): Promise<UserPermissio
     allowedFormIds[row.entity_name].add(row.form_id);
   }
 
+  // Process flow grants: union across roles.
+  const allowedFlowIds = new Set<string>();
+  for (const row of flowRes.data ?? []) {
+    if (row.is_allowed === true) allowedFlowIds.add(row.process_flow_id);
+  }
+
   return {
     isSystemAdmin: false,
     entityPrivileges,
@@ -239,6 +254,7 @@ export async function loadUserPermissions(userId: string): Promise<UserPermissio
     sectionRestrictions,
     actionRestrictions,
     allowedFormIds,
+    allowedFlowIds,
     securedFieldAccess,
     securedFields,
     accessContext,
@@ -341,6 +357,12 @@ export function getAllowedFormIds(perms: UserPermissions, entityName: string): S
 export function isFormAllowed(perms: UserPermissions, entityName: string, formId: string): boolean {
   const allowed = getAllowedFormIds(perms, entityName);
   return allowed === null || allowed.has(formId);
+}
+
+/** True if the user may use a specific business process flow (system admins: always). */
+export function isFlowAllowed(perms: UserPermissions, flowId: string): boolean {
+  if (perms.isSystemAdmin) return true;
+  return perms.allowedFlowIds.has(flowId);
 }
 
 /**

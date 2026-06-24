@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Plus, Trash2, RefreshCw, Search,
   Shield, ShieldCheck, Check, ChevronDown, X, Lock,
-  Copy, Wrench, EyeOff, ShieldAlert, Clock, LayoutTemplate, Star,
+  Copy, Wrench, EyeOff, ShieldAlert, Clock, LayoutTemplate, Star, Workflow,
 } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
 import type { SecurityRole, RolePrivilege, AccessLevel, PrivilegeKey } from '../../types/security';
@@ -17,20 +17,27 @@ import {
   fetchSectionPermissionsForRole, saveSectionPermissionsForRole,
   fetchActionPermissionsForRole, saveActionPermissionsForRole,
   fetchFormPermissionsForRole, saveFormPermissionsForRole,
+  fetchFlowPermissionsForRole, saveFlowPermissionsForRole,
   STANDARD_ACTION_KEYS,
 } from '../../services/securityService';
-import type { FieldPermissionRow, SectionPermissionRow, ActionPermissionRow, FormPermissionRow } from '../../services/securityService';
+import type { FieldPermissionRow, SectionPermissionRow, ActionPermissionRow, FormPermissionRow, ProcessFlowPermissionRow } from '../../services/securityService';
 import { fetchEntities } from '../../services/entityService';
 import { fetchFieldsForEntity } from '../../services/fieldService';
 import { fetchFormsForEntity } from '../../services/formService';
+import { fetchProcessFlows } from '../../services/processFlowService';
 import type { DesignerSection, DesignerTab } from '../../types/form';
 import ConfirmDialog from '../components/ConfirmDialog';
 
-type Tab = 'details' | 'privileges' | 'field_permissions' | 'section_permissions' | 'action_permissions' | 'form_permissions';
+type Tab = 'details' | 'privileges' | 'field_permissions' | 'section_permissions' | 'action_permissions' | 'form_permissions' | 'flow_permissions';
 
 interface EntityForms {
   entity: EntityDefinition;
   forms: { form_id: string; name: string; is_default: boolean }[];
+}
+
+interface EntityFlows {
+  entity: EntityDefinition;
+  flows: { process_flow_id: string; name: string; is_system: boolean }[];
 }
 type CategoryFilter = 'all' | 'system' | 'custom';
 type AccessFilter = 'all' | 'has_access' | 'no_access';
@@ -102,12 +109,28 @@ export default function SecurityRolesPage() {
   const [formPermsDirty, setFormPermsDirty] = useState(false);
   const [allForms, setAllForms] = useState<EntityForms[]>([]);
 
+  const [flowPerms, setFlowPerms] = useState<ProcessFlowPermissionRow[]>([]);
+  const [flowPermsDirty, setFlowPermsDirty] = useState(false);
+  const [allFlows, setAllFlows] = useState<EntityFlows[]>([]);
+
   useEffect(() => {
-    Promise.all([fetchSecurityRoles(), fetchEntities()])
-      .then(([r, e]) => {
+    Promise.all([fetchSecurityRoles(), fetchEntities(), fetchProcessFlows().catch(() => [])])
+      .then(([r, e, flows]) => {
         setRoles(r);
         const activeEntities = e.filter((ent: EntityDefinition) => ent.is_active !== false);
         setEntities(activeEntities);
+
+        // Group process flows under their owning entity for the Flow Perms matrix.
+        setAllFlows(
+          activeEntities.map((ent: EntityDefinition) => ({
+            entity: ent,
+            flows: flows
+              .filter((f) => f.entity_definition_id === ent.entity_definition_id && !f.deleted_at)
+              .map((f) => ({ process_flow_id: f.process_flow_id, name: f.name, is_system: f.is_system === true }))
+              .sort((a, b) => a.name.localeCompare(b.name)),
+          }))
+        );
+
         // Field/section/action permissions are only relevant for non-activity entities
         const nonActivityEntities = activeEntities.filter((ent: EntityDefinition) => !ent.is_activity);
         Promise.all(
@@ -153,12 +176,13 @@ export default function SecurityRolesPage() {
     setTab('details');
     setPrivDirty(false);
     setFieldPermsDirty(false);
-    const [privs, fps, sps, aps, fmps] = await Promise.all([
+    const [privs, fps, sps, aps, fmps, flps] = await Promise.all([
       fetchPrivilegesForRole(role.role_id),
       fetchFieldPermissionsForRole(role.role_id),
       fetchSectionPermissionsForRole(role.role_id),
       fetchActionPermissionsForRole(role.role_id),
       fetchFormPermissionsForRole(role.role_id),
+      fetchFlowPermissionsForRole(role.role_id),
     ]);
     const existingNames = new Set(privs.map((p) => p.entity_name));
     const filled = [...privs];
@@ -185,6 +209,8 @@ export default function SecurityRolesPage() {
     setActionPermsDirty(false);
     setFormPerms(fmps);
     setFormPermsDirty(false);
+    setFlowPerms(flps);
+    setFlowPermsDirty(false);
   };
 
   const openCreate = () => {
@@ -418,6 +444,46 @@ export default function SecurityRolesPage() {
     setFormPermsDirty(true);
   }, [selected]);
 
+  const handleSaveFlowPerms = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      await saveFlowPermissionsForRole(selected.role_id, flowPerms.map((fp) => ({
+        process_flow_id: fp.process_flow_id,
+        is_allowed: fp.is_allowed,
+      })));
+      setFlowPermsDirty(false);
+      showSuccess('Process flow permissions saved');
+    } catch (e: unknown) {
+      showError(e instanceof Error ? e.message : 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const getFlowPerm = useCallback((flowId: string): ProcessFlowPermissionRow | undefined =>
+    flowPerms.find((fp) => fp.process_flow_id === flowId),
+  [flowPerms]);
+
+  const toggleFlowAllowed = useCallback((flowId: string, value: boolean) => {
+    setFlowPerms((prev) => {
+      const existing = prev.find((fp) => fp.process_flow_id === flowId);
+      if (existing) {
+        // Deny = drop the grant row entirely (absence of a row means denied).
+        if (!value) return prev.filter((fp) => fp.process_flow_id !== flowId);
+        return prev.map((fp) => fp.process_flow_id === flowId ? { ...fp, is_allowed: true } : fp);
+      }
+      if (!value) return prev;
+      return [...prev, {
+        process_flow_permission_id: `local_${flowId}`,
+        role_id: selected?.role_id ?? '',
+        process_flow_id: flowId,
+        is_allowed: true,
+      }];
+    });
+    setFlowPermsDirty(true);
+  }, [selected]);
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     await softDeleteSecurityRole(deleteTarget.role_id);
@@ -514,7 +580,7 @@ export default function SecurityRolesPage() {
   });
 
   const isSystemAdminRole = selected?.name === 'System Administrator';
-  const isDirty = privDirty || fieldPermsDirty || sectionPermsDirty || actionPermsDirty || formPermsDirty;
+  const isDirty = privDirty || fieldPermsDirty || sectionPermsDirty || actionPermsDirty || formPermsDirty || flowPermsDirty;
 
   const saveHandler =
     isSystemAdminRole ? null  // SA role: nothing is saveable from UI
@@ -523,6 +589,7 @@ export default function SecurityRolesPage() {
     : tab === 'section_permissions' && sectionPermsDirty ? handleSaveSectionPerms
     : tab === 'action_permissions' && actionPermsDirty ? handleSaveActionPerms
     : tab === 'form_permissions' && formPermsDirty ? handleSaveFormPerms
+    : tab === 'flow_permissions' && flowPermsDirty ? handleSaveFlowPerms
     : tab === 'details' && !selected?.is_system ? handleSave
     : null;
 
@@ -532,6 +599,7 @@ export default function SecurityRolesPage() {
     : tab === 'section_permissions' ? 'Save Section Permissions'
     : tab === 'action_permissions' ? 'Save Action Permissions'
     : tab === 'form_permissions' ? 'Save Form Permissions'
+    : tab === 'flow_permissions' ? 'Save Process Flow Permissions'
     : 'Save';
 
   if (loading) return <div className="flex-1 flex items-center justify-center"><RefreshCw size={20} className="animate-spin text-slate-400" /></div>;
@@ -669,9 +737,9 @@ export default function SecurityRolesPage() {
 
             {/* ── Tab bar (fixed) ── */}
             <div className="flex border-b border-slate-200 bg-white px-5 shrink-0">
-              {(['details', 'privileges', 'field_permissions', 'section_permissions', 'action_permissions', 'form_permissions'] as Tab[]).map((t) => (
+              {(['details', 'privileges', 'field_permissions', 'section_permissions', 'action_permissions', 'form_permissions', 'flow_permissions'] as Tab[]).map((t) => (
                 <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                  {t === 'details' ? 'Details' : t === 'privileges' ? 'Privileges' : t === 'field_permissions' ? 'Field Perms' : t === 'section_permissions' ? 'Section Perms' : t === 'action_permissions' ? 'Action Perms' : 'Form Perms'}
+                  {t === 'details' ? 'Details' : t === 'privileges' ? 'Privileges' : t === 'field_permissions' ? 'Field Perms' : t === 'section_permissions' ? 'Section Perms' : t === 'action_permissions' ? 'Action Perms' : t === 'form_permissions' ? 'Form Perms' : 'Flow Perms'}
                 </button>
               ))}
               {isDirty && <span className="ml-auto self-center text-[10px] text-amber-500 font-medium">Unsaved changes</span>}
@@ -748,6 +816,14 @@ export default function SecurityRolesPage() {
                   allForms={allForms}
                   getFormPerm={getFormPerm}
                   onToggle={toggleFormAllowed}
+                  readOnly={isSystemAdminRole}
+                />
+              )}
+              {tab === 'flow_permissions' && (
+                <FlowPermissionsMatrix
+                  allFlows={allFlows}
+                  getFlowPerm={getFlowPerm}
+                  onToggle={toggleFlowAllowed}
                   readOnly={isSystemAdminRole}
                 />
               )}
@@ -1411,6 +1487,148 @@ function FormPermissionsMatrix({
                           </div>
                           <div
                             onClick={() => !readOnly && onToggle(entity.logical_name, f.form_id, !isAllowed)}
+                            className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                          >
+                            <span className={`text-[11px] font-semibold ${isAllowed ? 'text-emerald-600' : 'text-red-500'}`}>
+                              {isAllowed ? 'Allowed' : 'Denied'}
+                            </span>
+                            <div className={`relative w-9 h-5 rounded-full transition-colors ${isAllowed ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${isAllowed ? 'left-[19px]' : 'left-[1px]'}`} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────
+ * Process Flow Permissions Matrix
+ *
+ * Controls which business process flows a role may use, grouped by entity.
+ * Deny-by-default. A flow can be linked to a form, so this is checked alongside
+ * Form Perms when a record is created/edited.
+ * ───────────────────────────────────────────────────────── */
+
+function FlowPermissionsMatrix({
+  allFlows, getFlowPerm, onToggle, readOnly = false,
+}: {
+  allFlows: EntityFlows[];
+  getFlowPerm: (flowId: string) => ProcessFlowPermissionRow | undefined;
+  onToggle: (flowId: string, value: boolean) => void;
+  readOnly?: boolean;
+}) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [accessFilter, setAccessFilter] = useState<AccessFilter>('all');
+
+  const entitiesWithFlows = useMemo(
+    () => allFlows.filter(({ flows }) => flows.length > 0),
+    [allFlows]
+  );
+
+  const entityHasAccess = useCallback(({ flows }: EntityFlows) => {
+    return flows.some((f) => getFlowPerm(f.process_flow_id)?.is_allowed === true);
+  }, [getFlowPerm]);
+
+  const counts = useMemo(() => {
+    const has = entitiesWithFlows.filter(entityHasAccess).length;
+    return { all: entitiesWithFlows.length, has_access: has, no_access: entitiesWithFlows.length - has };
+  }, [entitiesWithFlows, entityHasAccess]);
+
+  const filtered = useMemo(() => {
+    return entitiesWithFlows.filter((item) => {
+      if (searchTerm) {
+        const q = searchTerm.toLowerCase();
+        if (!item.entity.display_name.toLowerCase().includes(q) && !item.entity.logical_name.toLowerCase().includes(q)) return false;
+      }
+      if (accessFilter === 'has_access') return entityHasAccess(item);
+      if (accessFilter === 'no_access') return !entityHasAccess(item);
+      return true;
+    });
+  }, [entitiesWithFlows, searchTerm, accessFilter, entityHasAccess]);
+
+  return (
+    <div className="flex flex-col">
+      <div className="px-5 pt-4 pb-3 space-y-3 bg-[#f3f4f6]">
+        <div className="flex items-start gap-2 p-3 bg-violet-50 border border-violet-100 rounded-xl">
+          <Workflow size={13} className="text-violet-500 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-violet-700 leading-relaxed">
+            Choose which business process flows this role can use for each entity. <strong>Allow wins</strong> across a user's roles. A denied flow (and any form it loads) is not applied for the user when creating or editing records. System Admins always have every flow.
+          </p>
+        </div>
+        <SearchFilterBar
+          search={searchTerm}
+          onSearch={setSearchTerm}
+          accessFilter={accessFilter}
+          onAccessFilter={setAccessFilter}
+          counts={counts}
+        />
+      </div>
+
+      <div className="px-5 pb-4">
+        {filtered.length === 0 ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="text-center">
+              <Workflow size={24} className="text-slate-200 mx-auto mb-2" />
+              <p className="text-xs text-slate-400">No entities with process flows found.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map(({ entity, flows }) => {
+              const allowedCount = flows.filter((f) => getFlowPerm(f.process_flow_id)?.is_allowed === true).length;
+
+              return (
+                <div key={entity.entity_definition_id} className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                  <div className="flex items-center gap-3 px-4 py-3 bg-slate-50">
+                    <Workflow size={13} className="text-slate-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-semibold text-slate-700">{entity.display_name}</span>
+                      <span className="ml-2 text-[10px] text-slate-400 font-mono">{entity.logical_name}</span>
+                    </div>
+                    {allowedCount > 0 ? (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full text-[10px] font-semibold text-emerald-600">
+                        <Check size={8} /> {allowedCount} of {flows.length} allowed
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-red-50 border border-red-200 rounded-full text-[10px] font-semibold text-red-600">
+                        <Lock size={8} /> None allowed
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="divide-y divide-slate-100">
+                    {flows.map((f) => {
+                      const isAllowed = getFlowPerm(f.process_flow_id)?.is_allowed === true;
+
+                      return (
+                        <div
+                          key={f.process_flow_id}
+                          className={`flex items-center gap-3 px-4 py-3 transition-colors ${isAllowed ? 'bg-white hover:bg-slate-50/60' : 'bg-red-50/30'}`}
+                        >
+                          <div className="flex-1 min-w-0 flex items-center gap-2.5">
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-lg text-[10px] font-bold ${isAllowed ? 'bg-emerald-50 text-emerald-600' : 'bg-red-100 text-red-500'}`}>
+                              {isAllowed ? <Check size={11} /> : <X size={11} />}
+                            </span>
+                            <p className={`text-xs font-medium truncate ${isAllowed ? 'text-slate-700' : 'text-slate-500'}`}>
+                              {f.name}
+                            </p>
+                            {f.is_system && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 text-[9px] font-semibold rounded-full shrink-0">
+                                <Lock size={7} /> System
+                              </span>
+                            )}
+                          </div>
+                          <div
+                            onClick={() => !readOnly && onToggle(f.process_flow_id, !isAllowed)}
                             className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
                           >
                             <span className={`text-[11px] font-semibold ${isAllowed ? 'text-emerald-600' : 'text-red-500'}`}>
