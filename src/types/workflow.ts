@@ -11,9 +11,22 @@ export type WorkflowStepType =
   | 'assign_record'
   | 'send_notification'
   | 'create_record'
+  | 'delete_record'
   | 'condition'
   | 'wait'
   | 'webhook';
+
+// Shared targeting for record-mutating steps: act on the record that triggered
+// the workflow, or on the record a lookup field on the trigger record points to.
+export interface RecordTarget {
+  target_mode?: 'trigger' | 'lookup';
+  /** Logical name of a lookup field on the trigger entity (lookup mode). */
+  target_lookup_field?: string;
+  /** Physical table of the related entity, captured when the lookup is picked. */
+  target_entity_table?: string;
+  /** Primary-key column of the related entity. */
+  target_pk_column?: string;
+}
 
 export interface WorkflowTriggerConditions {
   watch_fields?: string[];
@@ -26,7 +39,8 @@ export interface WorkflowTriggerConditions {
 export interface WorkflowFilterCondition {
   id: string;
   field: string;
-  operator: 'eq' | 'neq' | 'contains' | 'gt' | 'lt' | 'is_null' | 'is_not_null';
+  operator: 'eq' | 'neq' | 'contains' | 'gt' | 'lt' | 'in' | 'not_in' | 'is_null' | 'is_not_null';
+  // For `in` / `not_in` this holds a comma-separated list of values.
   value?: string;
 }
 
@@ -69,14 +83,17 @@ export type WorkflowStepConfig =
   | AssignRecordConfig
   | SendNotificationConfig
   | CreateRecordConfig
+  | DeleteRecordConfig
   | ConditionConfig
   | WaitConfig
   | WebhookConfig
   | Record<string, unknown>;
 
-export interface UpdateRecordConfig {
+export interface UpdateRecordConfig extends RecordTarget {
   field_updates: FieldUpdate[];
 }
+
+export type DeleteRecordConfig = RecordTarget;
 
 export interface FieldUpdate {
   id: string;
@@ -175,6 +192,7 @@ export const STEP_META: Record<
   assign_record:     { label: 'Assign Record',       desc: 'Change owner or team assignment',         color: 'text-teal-700',    bg: 'bg-teal-50 border-teal-200',      group: 'Data' },
   send_notification: { label: 'Send Notification',   desc: 'Notify users in-app or by email',         color: 'text-amber-700',   bg: 'bg-amber-50 border-amber-200',    group: 'Notify' },
   create_record:     { label: 'Create Record',       desc: 'Create a new related record',             color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200', group: 'Data' },
+  delete_record:     { label: 'Delete Record',        desc: 'Delete the trigger or a related record',  color: 'text-red-700',     bg: 'bg-red-50 border-red-200',        group: 'Data' },
   condition:         { label: 'Condition (Branch)',  desc: 'Split flow based on a condition',         color: 'text-orange-700',  bg: 'bg-orange-50 border-orange-200',  group: 'Logic' },
   wait:              { label: 'Wait / Delay',        desc: 'Pause workflow for a duration',           color: 'text-slate-700',   bg: 'bg-slate-50 border-slate-300',    group: 'Logic' },
   webhook:           { label: 'Call Webhook',        desc: 'Send HTTP request to external service',   color: 'text-rose-700',    bg: 'bg-rose-50 border-rose-200',      group: 'Integration' },

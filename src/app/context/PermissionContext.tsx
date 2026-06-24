@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 import {
   loadUserPermissions, getEntityPrivilege, getFieldRestriction,
   getSectionRestriction, getActionRestriction, isActionAllowed, isRecordAccessible,
+  getAllowedFormIds, isFormAllowed,
 } from '../services/permissionService';
 import type {
   UserPermissions, EntityPrivilege, FieldRestriction,
@@ -20,6 +21,9 @@ interface PermissionContextValue {
   getActionRestriction: (entityName: string, actionKey: string) => ActionRestriction;
   isActionAllowed: (entityName: string, actionKey: string) => boolean;
   isRecordAccessible: (level: AccessLevel, recordOwnerId: string | null) => boolean;
+  /** Allowed form_ids for an entity, or null = all forms allowed (system admin). */
+  getAllowedFormIds: (entityName: string) => Set<string> | null;
+  isFormAllowed: (entityName: string, formId: string) => boolean;
 }
 
 const DEFAULT_ACCESS_CONTEXT: UserAccessContext = {
@@ -35,6 +39,7 @@ const DEFAULT_PERMISSIONS: UserPermissions = {
   fieldRestrictions: {},
   sectionRestrictions: {},
   actionRestrictions: {},
+  allowedFormIds: {},
   securedFieldAccess: {},
   securedFields: {},
   accessContext: DEFAULT_ACCESS_CONTEXT,
@@ -56,6 +61,8 @@ const PermissionContext = createContext<PermissionContextValue>({
   getActionRestriction: () => ({ is_denied: false }),
   isActionAllowed: () => true,
   isRecordAccessible: () => true,
+  getAllowedFormIds: () => null,
+  isFormAllowed: () => true,
 });
 
 export function PermissionProvider({ userId, children }: { userId: string; children: ReactNode }) {
@@ -91,6 +98,8 @@ export function PermissionProvider({ userId, children }: { userId: string; child
     getActionRestriction: (entityName, actionKey) => getActionRestriction(permissions, entityName, actionKey),
     isActionAllowed: (entityName, actionKey) => isActionAllowed(permissions, entityName, actionKey),
     isRecordAccessible: (level, recordOwnerId) => isRecordAccessible(level, recordOwnerId, ctx),
+    getAllowedFormIds: (entityName) => getAllowedFormIds(permissions, entityName),
+    isFormAllowed: (entityName, formId) => isFormAllowed(permissions, entityName, formId),
   };
 
   return (

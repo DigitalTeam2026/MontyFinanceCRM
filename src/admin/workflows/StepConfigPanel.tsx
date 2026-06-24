@@ -1,8 +1,12 @@
+import { useState, useEffect } from 'react';
 import FilterSelect from '../../app/components/FilterSelect';
 import { Plus, Trash2, X } from 'lucide-react';
 import SearchableSelect from '../../app/components/SearchableSelect';
+import ConditionValueInput from '../../app/components/ConditionValueInput';
 import type { WorkflowStep, WorkflowStepType, WorkflowStepConfig } from '../../types/workflow';
 import type { FieldDefinition } from '../../types/field';
+import type { EntityDefinition } from '../../types/entity';
+import { fetchFieldsForEntity } from '../../services/fieldService';
 import { STEP_META, STEP_ICONS_MAP } from './stepIconsMap';
 
 let ctr = 0;
@@ -11,11 +15,12 @@ const uid = () => `i_${Date.now()}_${ctr++}`;
 interface StepConfigPanelProps {
   step: WorkflowStep;
   fields: FieldDefinition[];
+  entities: EntityDefinition[];
   onUpdate: (step: WorkflowStep) => void;
   onClose: () => void;
 }
 
-export default function StepConfigPanel({ step, fields, onUpdate, onClose }: StepConfigPanelProps) {
+export default function StepConfigPanel({ step, fields, entities, onUpdate, onClose }: StepConfigPanelProps) {
   const meta = STEP_META[step.step_type];
   const setConfig = (cfg: WorkflowStepConfig) => onUpdate({ ...step, config_json: cfg });
   const cfg = step.config_json as Record<string, unknown>;
@@ -84,7 +89,10 @@ export default function StepConfigPanel({ step, fields, onUpdate, onClose }: Ste
       <div className="flex-1 overflow-y-auto p-4">
         <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Configuration</p>
         {step.step_type === 'update_record' && (
-          <UpdateRecordForm config={cfg} fields={fields} onChange={setConfig} />
+          <UpdateRecordForm config={cfg} fields={fields} entities={entities} onChange={setConfig} />
+        )}
+        {step.step_type === 'delete_record' && (
+          <DeleteRecordForm config={cfg} fields={fields} entities={entities} onChange={setConfig} />
         )}
         {step.step_type === 'assign_record' && (
           <AssignRecordForm config={cfg} onChange={setConfig} />
@@ -93,7 +101,7 @@ export default function StepConfigPanel({ step, fields, onUpdate, onClose }: Ste
           <SendNotificationForm config={cfg} onChange={setConfig} />
         )}
         {step.step_type === 'create_record' && (
-          <CreateRecordForm config={cfg} fields={fields} onChange={setConfig} />
+          <CreateRecordForm config={cfg} fields={fields} entities={entities} onChange={setConfig} />
         )}
         {step.step_type === 'condition' && (
           <ConditionForm config={cfg} fields={fields} onChange={setConfig} />
@@ -109,22 +117,114 @@ export default function StepConfigPanel({ step, fields, onUpdate, onClose }: Ste
   );
 }
 
+function relatedPk(ent: EntityDefinition): string {
+  const pk = (ent as unknown as { primary_key_column?: string | null }).primary_key_column;
+  return pk || `${(ent.physical_table_name ?? '').replace(/^crm_/, '')}_id`;
+}
+
+// Shared "which record does this step act on" selector for update_record /
+// delete_record: the triggering record, or the record a lookup field points to.
+function RecordTargetSelector({
+  config,
+  fields,
+  entities,
+  onChange,
+  verb,
+}: {
+  config: Record<string, unknown>;
+  fields: FieldDefinition[];
+  entities: EntityDefinition[];
+  onChange: (c: WorkflowStepConfig) => void;
+  verb: string;
+}) {
+  const targetMode = (config.target_mode as string) ?? 'trigger';
+  const lookupFieldLogical = (config.target_lookup_field as string) ?? '';
+  const lookupFields = fields.filter((f) => f.field_type?.name === 'lookup' && f.lookup_entity_id);
+  const lookupField = fields.find((f) => f.logical_name === lookupFieldLogical) ?? null;
+  const relatedEntity = lookupField?.lookup_entity_id
+    ? entities.find((e) => e.entity_definition_id === lookupField.lookup_entity_id) ?? null
+    : null;
+
+  return (
+    <>
+      <SelectField
+        label={`${verb} Which Record`}
+        value={targetMode}
+        onChange={(v) => onChange({ ...config, target_mode: v, target_lookup_field: '', target_entity_table: '', target_pk_column: '', field_updates: [] })}
+      >
+        <option value="trigger">The record that triggered</option>
+        <option value="lookup">A related record (via lookup)</option>
+      </SelectField>
+      {targetMode === 'lookup' && (
+        <div>
+          <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Lookup Field</label>
+          <FilterSelect
+            value={lookupFieldLogical}
+            forceSearch
+            onChange={(e) => {
+              const f = fields.find((x) => x.logical_name === e.target.value) ?? null;
+              const rel = f?.lookup_entity_id ? entities.find((x) => x.entity_definition_id === f.lookup_entity_id) ?? null : null;
+              onChange({
+                ...config,
+                target_lookup_field: e.target.value,
+                target_entity_table: rel?.physical_table_name ?? '',
+                target_pk_column: rel ? relatedPk(rel) : '',
+                field_updates: [],
+              });
+            }}
+            className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-2 bg-slate-50"
+          >
+            <option value="">Select lookup field…</option>
+            {lookupFields.map((f) => (
+              <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>
+            ))}
+          </FilterSelect>
+          {relatedEntity ? (
+            <p className="text-[10px] text-slate-400 mt-1">Targets the {relatedEntity.display_name} record this field points to.</p>
+          ) : lookupFields.length === 0 ? (
+            <p className="text-[10px] text-amber-500 mt-1">This table has no lookup fields to follow.</p>
+          ) : null}
+        </div>
+      )}
+    </>
+  );
+}
+
 function UpdateRecordForm({
   config,
   fields,
+  entities,
   onChange,
 }: {
   config: Record<string, unknown>;
   fields: FieldDefinition[];
+  entities: EntityDefinition[];
   onChange: (c: WorkflowStepConfig) => void;
 }) {
   type FieldUpdate = { id: string; field_logical_name: string; field_display_name: string; value_type: string; value: string };
   const updates: FieldUpdate[] = (config.field_updates as FieldUpdate[]) ?? [];
+  const targetMode = (config.target_mode as string) ?? 'trigger';
+  const lookupField = fields.find((f) => f.logical_name === (config.target_lookup_field as string)) ?? null;
+  const relatedEntityId = lookupField?.lookup_entity_id ?? null;
+
+  // In lookup mode the field-update options come from the RELATED table.
+  const [relatedFields, setRelatedFields] = useState<FieldDefinition[]>([]);
+  useEffect(() => {
+    if (targetMode !== 'lookup' || !relatedEntityId) { setRelatedFields([]); return; }
+    let cancelled = false;
+    fetchFieldsForEntity(relatedEntityId)
+      .then((f) => { if (!cancelled) setRelatedFields(f); })
+      .catch(() => { if (!cancelled) setRelatedFields([]); });
+    return () => { cancelled = true; };
+  }, [targetMode, relatedEntityId]);
+
+  const activeFields = targetMode === 'lookup' ? relatedFields : fields;
+  const ready = targetMode === 'trigger' || !!relatedEntityId;
 
   const add = () =>
     onChange({
       ...config,
-      field_updates: [...updates, { id: uid(), field_logical_name: fields[0]?.logical_name ?? '', field_display_name: fields[0]?.display_name ?? '', value_type: 'static', value: '' }],
+      field_updates: [...updates, { id: uid(), field_logical_name: '', field_display_name: '', value_type: 'static', value: '' }],
     });
 
   const remove = (id: string) =>
@@ -135,23 +235,56 @@ function UpdateRecordForm({
 
   return (
     <div className="space-y-2">
-      {updates.map((u) => (
-        <div key={u.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
-          <div className="flex items-center gap-1.5">
-            <FieldSelect fields={fields} value={u.field_logical_name} onChange={(ln, dn) => set(u.id, { field_logical_name: ln, field_display_name: dn })} />
-            <button onClick={() => remove(u.id)} className="p-1 text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+      <RecordTargetSelector config={config} fields={fields} entities={entities} onChange={onChange} verb="Update" />
+      {!ready ? null : updates.map((u) => {
+        const fieldDef = activeFields.find((f) => f.logical_name === u.field_logical_name) ?? null;
+        return (
+          <div key={u.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <FieldSelect fields={activeFields} value={u.field_logical_name} onChange={(ln, dn) => set(u.id, { field_logical_name: ln, field_display_name: dn ?? '', value: '' })} />
+              <button onClick={() => remove(u.id)} className="p-1 text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+            </div>
+            <div className="flex gap-1.5">
+              <FilterSelect value={u.value_type} onChange={(e) => set(u.id, { value_type: e.target.value, value: '' })} className="text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none w-24">
+                <option value="static">Static</option>
+                <option value="field_ref">From Field</option>
+                <option value="formula">Formula</option>
+              </FilterSelect>
+              {u.value_type === 'static' ? (
+                <div className="flex-1 min-w-0">
+                  <ConditionValueInput field={fieldDef} value={u.value} onChange={(v) => set(u.id, { value: v })} variant="boxed" />
+                </div>
+              ) : u.value_type === 'field_ref' ? (
+                <FieldSelect fields={fields} value={u.value} onChange={(ln) => set(u.id, { value: ln })} />
+              ) : (
+                <input type="text" value={u.value} onChange={(e) => set(u.id, { value: e.target.value })} placeholder="now() / today() / number…" className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-slate-300" />
+              )}
+            </div>
           </div>
-          <div className="flex gap-1.5">
-            <FilterSelect value={u.value_type} onChange={(e) => set(u.id, { value_type: e.target.value })} className="text-[10px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none w-24">
-              <option value="static">Static</option>
-              <option value="field_ref">From Field</option>
-              <option value="formula">Formula</option>
-            </FilterSelect>
-            <input type="text" value={u.value} onChange={(e) => set(u.id, { value: e.target.value })} placeholder="Value..." className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-slate-300" />
-          </div>
-        </div>
-      ))}
-      <AddButton label="Add Field Update" onClick={add} />
+        );
+      })}
+      {ready && <AddButton label="Add Field Update" onClick={add} />}
+    </div>
+  );
+}
+
+function DeleteRecordForm({
+  config,
+  fields,
+  entities,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  fields: FieldDefinition[];
+  entities: EntityDefinition[];
+  onChange: (c: WorkflowStepConfig) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="bg-red-50 border border-red-200 rounded-xl p-2.5 text-[10px] text-red-600 leading-relaxed">
+        This permanently deletes the selected record when the workflow runs. There is no undo.
+      </div>
+      <RecordTargetSelector config={config} fields={fields} entities={entities} onChange={onChange} verb="Delete" />
     </div>
   );
 }
@@ -246,9 +379,22 @@ function SendNotificationForm({ config, onChange }: { config: Record<string, unk
   );
 }
 
-function CreateRecordForm({ config, fields, onChange }: { config: Record<string, unknown>; fields: FieldDefinition[]; onChange: (c: WorkflowStepConfig) => void }) {
+function CreateRecordForm({ config, fields, entities, onChange }: { config: Record<string, unknown>; fields: FieldDefinition[]; entities: EntityDefinition[]; onChange: (c: WorkflowStepConfig) => void }) {
   type Mapping = { id: string; target_field: string; target_field_display_name: string; source_type: string; source_value: string };
   const mappings: Mapping[] = (config.field_mappings as Mapping[]) ?? [];
+  const targetLogical = (config.target_entity_logical_name as string) ?? '';
+  const targetEntity = entities.find((e) => e.logical_name === targetLogical) ?? null;
+
+  // Target field options come from the SELECTED table, not the trigger table.
+  const [targetFields, setTargetFields] = useState<FieldDefinition[]>([]);
+  useEffect(() => {
+    if (!targetEntity) { setTargetFields([]); return; }
+    let cancelled = false;
+    fetchFieldsForEntity(targetEntity.entity_definition_id)
+      .then((f) => { if (!cancelled) setTargetFields(f); })
+      .catch(() => { if (!cancelled) setTargetFields([]); });
+    return () => { cancelled = true; };
+  }, [targetEntity?.entity_definition_id]);
 
   const addMapping = () =>
     onChange({ ...config, field_mappings: [...mappings, { id: uid(), target_field: '', target_field_display_name: '', source_type: 'static', source_value: '' }] });
@@ -261,34 +407,59 @@ function CreateRecordForm({ config, fields, onChange }: { config: Record<string,
 
   return (
     <div className="space-y-3">
-      <TextField label="Target Entity (logical name)" value={(config.target_entity_logical_name as string) ?? ''} onChange={(v) => onChange({ ...config, target_entity_logical_name: v })} placeholder="e.g. task, follow_up" />
+      <div>
+        <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Target Table</label>
+        <FilterSelect
+          value={targetLogical}
+          forceSearch
+          onChange={(e) => {
+            const ent = entities.find((x) => x.logical_name === e.target.value);
+            onChange({ ...config, target_entity_logical_name: e.target.value, target_entity_display_name: ent?.display_name ?? '' });
+          }}
+          className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-2 bg-slate-50"
+        >
+          <option value="">Select table…</option>
+          {entities.map((ent) => (
+            <option key={ent.entity_definition_id} value={ent.logical_name}>{ent.display_name}</option>
+          ))}
+        </FilterSelect>
+      </div>
       <div>
         <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Field Mappings</label>
-        <div className="space-y-1.5">
-          {mappings.map((m) => (
-            <div key={m.id} className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
-              <div className="flex items-center gap-1.5">
-                <input type="text" value={m.target_field} onChange={(e) => setMapping(m.id, { target_field: e.target.value })} placeholder="Target field..." className="flex-1 text-[10px] border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none" />
-                <button onClick={() => removeMapping(m.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
-              </div>
-              <div className="flex gap-1.5">
-                <FilterSelect value={m.source_type} onChange={(e) => setMapping(m.id, { source_type: e.target.value })} className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none w-24">
-                  <option value="static">Static</option>
-                  <option value="field_ref">From Field</option>
-                  <option value="current_user">Current User</option>
-                </FilterSelect>
-                {m.source_type !== 'current_user' && (
-                  m.source_type === 'field_ref' ? (
-                    <FieldSelect fields={fields} value={m.source_value} onChange={(ln) => setMapping(m.id, { source_value: ln })} />
-                  ) : (
-                    <input type="text" value={m.source_value} onChange={(e) => setMapping(m.id, { source_value: e.target.value })} placeholder="Value..." className="flex-1 text-[10px] border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none placeholder:text-slate-300" />
-                  )
-                )}
-              </div>
+        {!targetEntity ? (
+          <p className="text-[10px] text-slate-400">Pick a target table first to choose its fields.</p>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              {mappings.map((m) => {
+                const tField = targetFields.find((f) => f.logical_name === m.target_field) ?? null;
+                return (
+                  <div key={m.id} className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <FieldSelect fields={targetFields} value={m.target_field} onChange={(ln, dn) => setMapping(m.id, { target_field: ln, target_field_display_name: dn ?? '', source_value: '' })} />
+                      <button onClick={() => removeMapping(m.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <FilterSelect value={m.source_type} onChange={(e) => setMapping(m.id, { source_type: e.target.value, source_value: '' })} className="text-[10px] border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none w-24">
+                        <option value="static">Static</option>
+                        <option value="field_ref">From Field</option>
+                        <option value="current_user">Current User</option>
+                      </FilterSelect>
+                      {m.source_type === 'static' ? (
+                        <div className="flex-1 min-w-0">
+                          <ConditionValueInput field={tField} value={m.source_value} onChange={(v) => setMapping(m.id, { source_value: v })} variant="boxed" />
+                        </div>
+                      ) : m.source_type === 'field_ref' ? (
+                        <FieldSelect fields={fields} value={m.source_value} onChange={(ln) => setMapping(m.id, { source_value: ln })} />
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          ))}
-        </div>
-        <AddButton label="Add Mapping" onClick={addMapping} />
+            <AddButton label="Add Mapping" onClick={addMapping} />
+          </>
+        )}
       </div>
     </div>
   );

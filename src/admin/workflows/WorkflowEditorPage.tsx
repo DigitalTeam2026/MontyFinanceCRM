@@ -21,6 +21,7 @@ import { fetchEntities } from '../../services/entityService';
 import { fetchStepsForWorkflow, saveWorkflow, saveAllSteps } from '../../services/workflowService';
 import FilterSelect from '../../app/components/FilterSelect';
 import FlowCanvas from './FlowCanvas';
+import WorkflowFilterConditions from './WorkflowFilterConditions';
 
 type Tab = 'trigger' | 'flow' | 'settings';
 
@@ -169,6 +170,7 @@ export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflo
             steps={steps}
             workflowId={wf.workflow_id}
             fields={fields}
+            entities={entities}
             onStepsChange={(s) => { setSteps(s); mark(); }}
           />
         )}
@@ -311,6 +313,14 @@ function TriggerPanel({
           <input type="text" value={conds.schedule_cron ?? ''} onChange={(e) => onChange({ ...wf, trigger_conditions: { ...conds, schedule_cron: e.target.value } })} placeholder="e.g. 0 9 * * 1 (every Monday 9am)" className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300" />
           <p className="text-[10px] text-slate-400 mt-1">Uses UTC. Format: minute hour day-of-month month day-of-week</p>
         </div>
+      )}
+
+      {(wf.trigger_type === 'on_create' || wf.trigger_type === 'on_update' || wf.trigger_type === 'on_status_change') && (
+        <WorkflowFilterConditions
+          fields={fields}
+          conditions={conds.filter_conditions ?? []}
+          onChange={(filter_conditions) => onChange({ ...wf, trigger_conditions: { ...conds, filter_conditions } })}
+        />
       )}
     </div>
   );

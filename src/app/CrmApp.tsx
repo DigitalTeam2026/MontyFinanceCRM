@@ -17,6 +17,7 @@ import { PublishedMetadataProvider } from './context/PublishedMetadataProvider';
 import { trackRecentItem } from './services/recentPinsService';
 import type { QuickCreateType } from './components/QuickCreateButton';
 import QuickCreateModal from './components/form/QuickCreateModal';
+import { CreateRecordGate } from './components/form/FormChooserGate';
 import { saveRecord } from './services/recordService';
 import GlobalSearch from './components/GlobalSearch';
 import { fetchCreationControlRules, isCreationBlocked } from './services/lifecycleRuleEngine';
@@ -86,6 +87,9 @@ export default function CrmApp({
     initialView?.type === 'record' ? initialView.tab : undefined
   );
   const [recentRefreshKey, setRecentRefreshKey] = useState(0);
+  // Form to use for the next new record. null = ask via the chooser (pressed New
+  // from a list); a form_id = reuse that form (Save & New keeps the loaded form).
+  const [nextNewFormId, setNextNewFormId] = useState<string | null>(null);
   const [quickCreateType, setQuickCreateType] = useState<QuickCreateType | null>(null);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [creationRules, setCreationRules] = useState<DigitalRule[]>([]);
@@ -250,8 +254,10 @@ export default function CrmApp({
   const entityLogical = ENTITY_LOGICAL_NAME[activeEntity] ?? activeEntity;
   const creationCheck = isCreationBlocked(creationRules, entityLogical);
 
-  const handleNewRecord = () => {
+  const handleNewRecord = (formId?: string | null) => {
     if (creationCheck.blocked) return;
+    // formId provided (Save & New) → reuse that form; otherwise ask via the chooser.
+    setNextNewFormId(formId ?? null);
     setView({ type: 'new' });
   };
   const handleBack = () => setView({ type: 'list' });
@@ -422,29 +428,40 @@ export default function CrmApp({
           )}
 
           {(view.type === 'record' || view.type === 'new') && (
-          <RecordFormPage
-            module={activeModule}
+          <CreateRecordGate
+            key={view.type === 'new' ? `new_${activeEntity}` : 'record'}
+            active={view.type === 'new'}
             entity={activeEntity}
-            recordId={view.type === 'record' ? view.id : null}
-            initialTab={view.type === 'record' ? activeRecordTab : undefined}
-            onTabChange={setActiveRecordTab}
-            onBack={handleBack}
-            onNavigate={(ent, id) => {
-              setActiveEntity(ent);
-              setView({ type: 'record', id });
-            }}
-            userId={session.user.id}
-            onRecordLoaded={(id, label) => {
-              trackRecentItem(session.user.id, activeEntity, activeModule, id, label).then(() => {
-                setRecentRefreshKey((k) => k + 1);
-              });
-            }}
-            onViewAll={handleViewAll}
-            onNewRecord={handleNewRecord}
-            creationBlocked={creationCheck.blocked}
-            creationBlockedMessage={creationCheck.message}
-            creationControlRules={creationRules}
-          />
+            presetFormId={nextNewFormId}
+            onCancel={handleBack}
+          >
+            {(chosenFormId) => (
+            <RecordFormPage
+              module={activeModule}
+              entity={activeEntity}
+              recordId={view.type === 'record' ? view.id : null}
+              formIdOverride={chosenFormId}
+              initialTab={view.type === 'record' ? activeRecordTab : undefined}
+              onTabChange={setActiveRecordTab}
+              onBack={handleBack}
+              onNavigate={(ent, id) => {
+                setActiveEntity(ent);
+                setView({ type: 'record', id });
+              }}
+              userId={session.user.id}
+              onRecordLoaded={(id, label) => {
+                trackRecentItem(session.user.id, activeEntity, activeModule, id, label).then(() => {
+                  setRecentRefreshKey((k) => k + 1);
+                });
+              }}
+              onViewAll={handleViewAll}
+              onNewRecord={handleNewRecord}
+              creationBlocked={creationCheck.blocked}
+              creationBlockedMessage={creationCheck.message}
+              creationControlRules={creationRules}
+            />
+            )}
+          </CreateRecordGate>
           )}
         </div>
       </div>

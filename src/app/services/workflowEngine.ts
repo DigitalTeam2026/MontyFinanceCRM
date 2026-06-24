@@ -124,10 +124,17 @@ function evalFilterCondition(cond: WorkflowFilterCondition, record: Record<strin
     case 'contains':    return val.toLowerCase().includes(cmp.toLowerCase());
     case 'gt':          return Number(val) > Number(cmp);
     case 'lt':          return Number(val) < Number(cmp);
+    case 'in':          return splitList(cmp).includes(val);
+    case 'not_in':      return !splitList(cmp).includes(val);
     case 'is_null':     return raw == null || val === '';
     case 'is_not_null': return raw != null && val !== '';
     default:            return true;
   }
+}
+
+// Comma-separated multi-value list for the `in` / `not_in` operators.
+function splitList(raw: string): string[] {
+  return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
 // Status lives under different physical names across entities; probe the usual ones.
@@ -205,6 +212,7 @@ async function executeStep(step: WorkflowStep, ctx: WorkflowContext): Promise<St
       case 'update_record':     return await execUpdateRecord(step, ctx);
       case 'assign_record':     return await execAssignRecord(step, ctx);
       case 'create_record':     return await execCreateRecord(step, ctx);
+      case 'delete_record':     return await execDeleteRecord(step, ctx);
       case 'condition':         return await execCondition(step, ctx);
       case 'wait':              return await execWait(step, ctx);
       case 'webhook':           return await execWebhook(step, ctx);
@@ -264,14 +272,74 @@ async function execUpdateRecord(step: WorkflowStep, ctx: WorkflowContext): Promi
 
   if (!Object.keys(patch).length) return { status: 'skipped' };
 
+  // Resolve the target row: the trigger record by default, or the record a
+  // lookup field on the trigger record points to (related-record targeting).
+  const target = resolveRecordTarget(config, ctx);
+  if (target.skip) return { status: 'skipped' };
+  if (target.error) return { status: 'failed', error: target.error };
+
+  const writePatch = target.isRelated ? patch : { ...patch, modified_at: new Date().toISOString() };
   const { error } = await supabase
-    .from(ctx.entityName)
-    .update({ ...patch, modified_at: new Date().toISOString() })
-    .eq(`${ctx.entityName}_id`, ctx.recordId);
+    .from(target.table)
+    .update(writePatch)
+    .eq(target.pkColumn, target.recordId);
 
   if (error) return { status: 'failed', error: error.message };
 
-  return { status: 'success', result: { updatedRecord: patch, fields: Object.keys(patch) } };
+  // Only the trigger record is fed back into the running context; a related
+  // record is a different row and must not pollute downstream steps.
+  return target.isRelated
+    ? { status: 'success', result: { updatedRelated: target.table, recordId: target.recordId, fields: Object.keys(patch) } }
+    : { status: 'success', result: { updatedRecord: patch, fields: Object.keys(patch) } };
+}
+
+// ─── delete_record ────────────────────────────────────────────────────────────
+
+async function execDeleteRecord(step: WorkflowStep, ctx: WorkflowContext): Promise<StepResult> {
+  const config = step.config_json as Record<string, unknown>;
+
+  const target = resolveRecordTarget(config, ctx);
+  if (target.skip) return { status: 'skipped' };
+  if (target.error) return { status: 'failed', error: target.error };
+
+  const { error } = await supabase
+    .from(target.table)
+    .delete()
+    .eq(target.pkColumn, target.recordId);
+
+  if (error) return { status: 'failed', error: error.message };
+
+  return { status: 'success', result: { deleted: target.recordId, table: target.table, related: target.isRelated } };
+}
+
+// Resolves which physical row a record-mutating step acts on.
+interface ResolvedTarget {
+  table: string;
+  pkColumn: string;
+  recordId: string;
+  isRelated: boolean;
+  skip?: boolean;
+  error?: string;
+}
+function resolveRecordTarget(config: Record<string, unknown>, ctx: WorkflowContext): ResolvedTarget {
+  const triggerTarget: ResolvedTarget = {
+    table: ctx.entityName,
+    pkColumn: `${ctx.entityName}_id`,
+    recordId: ctx.recordId,
+    isRelated: false,
+  };
+
+  if (config.target_mode !== 'lookup' || !config.target_lookup_field) return triggerTarget;
+
+  const relId = ctx.record[config.target_lookup_field as string];
+  if (relId == null || relId === '') return { ...triggerTarget, skip: true };
+
+  const table = config.target_entity_table as string | undefined;
+  const pkColumn = config.target_pk_column as string | undefined;
+  if (!table || !pkColumn) {
+    return { ...triggerTarget, error: 'Related target not fully configured (missing table or primary key).' };
+  }
+  return { table, pkColumn, recordId: String(relId), isRelated: true };
 }
 
 // ─── assign_record ────────────────────────────────────────────────────────────

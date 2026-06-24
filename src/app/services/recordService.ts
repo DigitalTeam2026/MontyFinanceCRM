@@ -725,6 +725,50 @@ export async function fetchFormById(formId: string): Promise<FormDefinition | nu
   return data as FormDefinition | null;
 }
 
+export interface SelectableForm {
+  form_id: string;
+  name: string;
+  is_default: boolean;
+}
+
+/**
+ * Lists the selectable MAIN forms for an entity (the ones a user picks between
+ * when creating/opening a record). Snapshot-first like fetchDefaultForm, so it
+ * reads the published metadata in the Sales app and falls back to a live query
+ * in Admin Studio. The default form sorts first. Generic — works for any entity.
+ */
+export async function fetchSelectableMainForms(entity: AppEntity): Promise<SelectableForm[]> {
+  const logicalName = ENTITY_FORM_LOGICAL[entity] ?? entity;
+  const entityDefId = await getEntityDefinitionId(logicalName);
+  if (!entityDefId) return [];
+
+  const toSelectable = (rows: { form_id: string; name: string; is_default: boolean }[]): SelectableForm[] =>
+    rows
+      .map((f) => ({ form_id: f.form_id, name: f.name, is_default: f.is_default === true }))
+      .sort((a, b) =>
+        a.is_default === b.is_default ? a.name.localeCompare(b.name) : a.is_default ? -1 : 1);
+
+  const snap = getTable<FormDefinition & { deleted_at: string | null }>('form_definition');
+  if (snap !== null) {
+    return toSelectable(
+      snap.filter((f) =>
+        f.entity_definition_id === entityDefId &&
+        f.form_type === 'main' &&
+        f.deleted_at == null)
+    );
+  }
+
+  const { data, error } = await supabase
+    .from('form_definition')
+    .select('form_id, name, is_default')
+    .eq('entity_definition_id', entityDefId)
+    .eq('form_type', 'main')
+    .eq('is_active', true)
+    .is('deleted_at', null);
+  if (error) throw error;
+  return toSelectable((data ?? []) as { form_id: string; name: string; is_default: boolean }[]);
+}
+
 const entityRulesCache = new Map<string, { data: BusinessRule[]; ts: number }>();
 const RULES_CACHE_TTL = 120_000;
 

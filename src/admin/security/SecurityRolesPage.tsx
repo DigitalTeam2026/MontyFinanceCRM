@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Plus, Trash2, RefreshCw, Search,
   Shield, ShieldCheck, Check, ChevronDown, X, Lock,
-  Copy, Wrench, EyeOff, ShieldAlert, Clock,
+  Copy, Wrench, EyeOff, ShieldAlert, Clock, LayoutTemplate, Star,
 } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
 import type { SecurityRole, RolePrivilege, AccessLevel, PrivilegeKey } from '../../types/security';
@@ -16,16 +16,22 @@ import {
   cloneSecurityRole, fetchFieldPermissionsForRole, saveFieldPermissionsForRole,
   fetchSectionPermissionsForRole, saveSectionPermissionsForRole,
   fetchActionPermissionsForRole, saveActionPermissionsForRole,
+  fetchFormPermissionsForRole, saveFormPermissionsForRole,
   STANDARD_ACTION_KEYS,
 } from '../../services/securityService';
-import type { FieldPermissionRow, SectionPermissionRow, ActionPermissionRow } from '../../services/securityService';
+import type { FieldPermissionRow, SectionPermissionRow, ActionPermissionRow, FormPermissionRow } from '../../services/securityService';
 import { fetchEntities } from '../../services/entityService';
 import { fetchFieldsForEntity } from '../../services/fieldService';
 import { fetchFormsForEntity } from '../../services/formService';
 import type { DesignerSection, DesignerTab } from '../../types/form';
 import ConfirmDialog from '../components/ConfirmDialog';
 
-type Tab = 'details' | 'privileges' | 'field_permissions' | 'section_permissions' | 'action_permissions';
+type Tab = 'details' | 'privileges' | 'field_permissions' | 'section_permissions' | 'action_permissions' | 'form_permissions';
+
+interface EntityForms {
+  entity: EntityDefinition;
+  forms: { form_id: string; name: string; is_default: boolean }[];
+}
 type CategoryFilter = 'all' | 'system' | 'custom';
 type AccessFilter = 'all' | 'has_access' | 'no_access';
 
@@ -92,6 +98,10 @@ export default function SecurityRolesPage() {
   const [actionPerms, setActionPerms] = useState<ActionPermissionRow[]>([]);
   const [actionPermsDirty, setActionPermsDirty] = useState(false);
 
+  const [formPerms, setFormPerms] = useState<FormPermissionRow[]>([]);
+  const [formPermsDirty, setFormPermsDirty] = useState(false);
+  const [allForms, setAllForms] = useState<EntityForms[]>([]);
+
   useEffect(() => {
     Promise.all([fetchSecurityRoles(), fetchEntities()])
       .then(([r, e]) => {
@@ -111,7 +121,8 @@ export default function SecurityRolesPage() {
         Promise.all(
           nonActivityEntities.map((ent: EntityDefinition) =>
             fetchFormsForEntity(ent.entity_definition_id).then((forms) => {
-              const mainForm = forms.find((f) => f.form_type === 'main' && f.layout_json);
+              const mainForms = forms.filter((f) => f.form_type === 'main');
+              const mainForm = mainForms.find((f) => f.layout_json);
               const sections: { id: string; label: string; tabLabel: string }[] = [];
               if (mainForm?.layout_json) {
                 const rawTabs = Array.isArray(mainForm.layout_json) ? mainForm.layout_json : (mainForm.layout_json as { tabs?: DesignerTab[] }).tabs ?? [];
@@ -121,10 +132,16 @@ export default function SecurityRolesPage() {
                   }
                 }
               }
-              return { entity: ent, sections };
-            }).catch(() => ({ entity: ent, sections: [] as { id: string; label: string; tabLabel: string }[] }))
+              const formList = mainForms
+                .map((f) => ({ form_id: f.form_id, name: f.name, is_default: f.is_default === true }))
+                .sort((a, b) => (a.is_default === b.is_default ? a.name.localeCompare(b.name) : a.is_default ? -1 : 1));
+              return { entity: ent, sections, forms: formList };
+            }).catch(() => ({ entity: ent, sections: [] as { id: string; label: string; tabLabel: string }[], forms: [] as EntityForms['forms'] }))
           )
-        ).then(setAllSections);
+        ).then((results) => {
+          setAllSections(results.map(({ entity, sections }) => ({ entity, sections })));
+          setAllForms(results.map(({ entity, forms }) => ({ entity, forms })));
+        });
       })
       .catch((e) => showError(e.message))
       .finally(() => setLoading(false));
@@ -136,11 +153,12 @@ export default function SecurityRolesPage() {
     setTab('details');
     setPrivDirty(false);
     setFieldPermsDirty(false);
-    const [privs, fps, sps, aps] = await Promise.all([
+    const [privs, fps, sps, aps, fmps] = await Promise.all([
       fetchPrivilegesForRole(role.role_id),
       fetchFieldPermissionsForRole(role.role_id),
       fetchSectionPermissionsForRole(role.role_id),
       fetchActionPermissionsForRole(role.role_id),
+      fetchFormPermissionsForRole(role.role_id),
     ]);
     const existingNames = new Set(privs.map((p) => p.entity_name));
     const filled = [...privs];
@@ -165,6 +183,8 @@ export default function SecurityRolesPage() {
     setSectionPermsDirty(false);
     setActionPerms(aps);
     setActionPermsDirty(false);
+    setFormPerms(fmps);
+    setFormPermsDirty(false);
   };
 
   const openCreate = () => {
@@ -356,6 +376,48 @@ export default function SecurityRolesPage() {
     setActionPermsDirty(true);
   }, [selected]);
 
+  const handleSaveFormPerms = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      await saveFormPermissionsForRole(selected.role_id, formPerms.map((fp) => ({
+        entity_name: fp.entity_name,
+        form_id: fp.form_id,
+        is_allowed: fp.is_allowed,
+      })));
+      setFormPermsDirty(false);
+      showSuccess('Form permissions saved');
+    } catch (e: unknown) {
+      showError(e instanceof Error ? e.message : 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const getFormPerm = useCallback((entityName: string, formId: string): FormPermissionRow | undefined =>
+    formPerms.find((fp) => fp.entity_name === entityName && fp.form_id === formId),
+  [formPerms]);
+
+  const toggleFormAllowed = useCallback((entityName: string, formId: string, value: boolean) => {
+    setFormPerms((prev) => {
+      const existing = prev.find((fp) => fp.entity_name === entityName && fp.form_id === formId);
+      if (existing) {
+        // Deny = drop the grant row entirely (absence of a row means denied).
+        if (!value) return prev.filter((fp) => !(fp.entity_name === entityName && fp.form_id === formId));
+        return prev.map((fp) => fp.entity_name === entityName && fp.form_id === formId ? { ...fp, is_allowed: true } : fp);
+      }
+      if (!value) return prev;
+      return [...prev, {
+        form_permission_id: `local_${entityName}_${formId}`,
+        role_id: selected?.role_id ?? '',
+        entity_name: entityName,
+        form_id: formId,
+        is_allowed: true,
+      }];
+    });
+    setFormPermsDirty(true);
+  }, [selected]);
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     await softDeleteSecurityRole(deleteTarget.role_id);
@@ -452,7 +514,7 @@ export default function SecurityRolesPage() {
   });
 
   const isSystemAdminRole = selected?.name === 'System Administrator';
-  const isDirty = privDirty || fieldPermsDirty || sectionPermsDirty || actionPermsDirty;
+  const isDirty = privDirty || fieldPermsDirty || sectionPermsDirty || actionPermsDirty || formPermsDirty;
 
   const saveHandler =
     isSystemAdminRole ? null  // SA role: nothing is saveable from UI
@@ -460,6 +522,7 @@ export default function SecurityRolesPage() {
     : tab === 'field_permissions' && fieldPermsDirty ? handleSaveFieldPerms
     : tab === 'section_permissions' && sectionPermsDirty ? handleSaveSectionPerms
     : tab === 'action_permissions' && actionPermsDirty ? handleSaveActionPerms
+    : tab === 'form_permissions' && formPermsDirty ? handleSaveFormPerms
     : tab === 'details' && !selected?.is_system ? handleSave
     : null;
 
@@ -468,6 +531,7 @@ export default function SecurityRolesPage() {
     : tab === 'field_permissions' ? 'Save Field Permissions'
     : tab === 'section_permissions' ? 'Save Section Permissions'
     : tab === 'action_permissions' ? 'Save Action Permissions'
+    : tab === 'form_permissions' ? 'Save Form Permissions'
     : 'Save';
 
   if (loading) return <div className="flex-1 flex items-center justify-center"><RefreshCw size={20} className="animate-spin text-slate-400" /></div>;
@@ -605,9 +669,9 @@ export default function SecurityRolesPage() {
 
             {/* ── Tab bar (fixed) ── */}
             <div className="flex border-b border-slate-200 bg-white px-5 shrink-0">
-              {(['details', 'privileges', 'field_permissions', 'section_permissions', 'action_permissions'] as Tab[]).map((t) => (
+              {(['details', 'privileges', 'field_permissions', 'section_permissions', 'action_permissions', 'form_permissions'] as Tab[]).map((t) => (
                 <button key={t} onClick={() => setTab(t)} className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-                  {t === 'details' ? 'Details' : t === 'privileges' ? 'Privileges' : t === 'field_permissions' ? 'Field Perms' : t === 'section_permissions' ? 'Section Perms' : 'Action Perms'}
+                  {t === 'details' ? 'Details' : t === 'privileges' ? 'Privileges' : t === 'field_permissions' ? 'Field Perms' : t === 'section_permissions' ? 'Section Perms' : t === 'action_permissions' ? 'Action Perms' : 'Form Perms'}
                 </button>
               ))}
               {isDirty && <span className="ml-auto self-center text-[10px] text-amber-500 font-medium">Unsaved changes</span>}
@@ -676,6 +740,14 @@ export default function SecurityRolesPage() {
                   entities={entities}
                   getActionPerm={getActionPerm}
                   onToggle={toggleActionDenied}
+                  readOnly={isSystemAdminRole}
+                />
+              )}
+              {tab === 'form_permissions' && (
+                <FormPermissionsMatrix
+                  allForms={allForms}
+                  getFormPerm={getFormPerm}
+                  onToggle={toggleFormAllowed}
                   readOnly={isSystemAdminRole}
                 />
               )}
@@ -1204,6 +1276,148 @@ function ActionPermissionsMatrix({
                             </span>
                             <div className={`relative w-9 h-5 rounded-full transition-colors ${isDenied ? 'bg-red-500' : 'bg-emerald-500'}`}>
                               <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${isDenied ? 'left-[1px]' : 'left-[19px]'}`} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────
+ * Form Permissions Matrix
+ *
+ * Controls which forms a role may use per entity. Deny-by-default: a form is
+ * available only when explicitly allowed. Fully generic — driven by the entity's
+ * main forms loaded from metadata, so new entities/forms appear automatically.
+ * ───────────────────────────────────────────────────────── */
+
+function FormPermissionsMatrix({
+  allForms, getFormPerm, onToggle, readOnly = false,
+}: {
+  allForms: EntityForms[];
+  getFormPerm: (entityName: string, formId: string) => FormPermissionRow | undefined;
+  onToggle: (entityName: string, formId: string, value: boolean) => void;
+  readOnly?: boolean;
+}) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [accessFilter, setAccessFilter] = useState<AccessFilter>('all');
+
+  const entitiesWithForms = useMemo(
+    () => allForms.filter(({ forms }) => forms.length > 0),
+    [allForms]
+  );
+
+  const entityHasAccess = useCallback(({ entity, forms }: EntityForms) => {
+    return forms.some((f) => getFormPerm(entity.logical_name, f.form_id)?.is_allowed === true);
+  }, [getFormPerm]);
+
+  const counts = useMemo(() => {
+    const has = entitiesWithForms.filter(entityHasAccess).length;
+    return { all: entitiesWithForms.length, has_access: has, no_access: entitiesWithForms.length - has };
+  }, [entitiesWithForms, entityHasAccess]);
+
+  const filtered = useMemo(() => {
+    return entitiesWithForms.filter((item) => {
+      if (searchTerm) {
+        const q = searchTerm.toLowerCase();
+        if (!item.entity.display_name.toLowerCase().includes(q) && !item.entity.logical_name.toLowerCase().includes(q)) return false;
+      }
+      if (accessFilter === 'has_access') return entityHasAccess(item);
+      if (accessFilter === 'no_access') return !entityHasAccess(item);
+      return true;
+    });
+  }, [entitiesWithForms, searchTerm, accessFilter, entityHasAccess]);
+
+  return (
+    <div className="flex flex-col">
+      <div className="px-5 pt-4 pb-3 space-y-3 bg-[#f3f4f6]">
+        <div className="flex items-start gap-2 p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
+          <LayoutTemplate size={13} className="text-indigo-500 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-indigo-700 leading-relaxed">
+            Choose which forms this role can use for each entity. <strong>Allow wins</strong> — a user gets every form granted by any of their roles. When more than one form is allowed, users pick which to use from a chooser card. Forms left off are hidden from this role. System Admins always see every form.
+          </p>
+        </div>
+        <SearchFilterBar
+          search={searchTerm}
+          onSearch={setSearchTerm}
+          accessFilter={accessFilter}
+          onAccessFilter={setAccessFilter}
+          counts={counts}
+        />
+      </div>
+
+      <div className="px-5 pb-4">
+        {filtered.length === 0 ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="text-center">
+              <LayoutTemplate size={24} className="text-slate-200 mx-auto mb-2" />
+              <p className="text-xs text-slate-400">No entities with forms found.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map(({ entity, forms }) => {
+              const allowedCount = forms.filter((f) => getFormPerm(entity.logical_name, f.form_id)?.is_allowed === true).length;
+
+              return (
+                <div key={entity.entity_definition_id} className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                  <div className="flex items-center gap-3 px-4 py-3 bg-slate-50">
+                    <LayoutTemplate size={13} className="text-slate-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-semibold text-slate-700">{entity.display_name}</span>
+                      <span className="ml-2 text-[10px] text-slate-400 font-mono">{entity.logical_name}</span>
+                    </div>
+                    {allowedCount > 0 ? (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full text-[10px] font-semibold text-emerald-600">
+                        <Check size={8} /> {allowedCount} of {forms.length} allowed
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 px-2 py-0.5 bg-red-50 border border-red-200 rounded-full text-[10px] font-semibold text-red-600">
+                        <Lock size={8} /> None allowed
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="divide-y divide-slate-100">
+                    {forms.map((f) => {
+                      const isAllowed = getFormPerm(entity.logical_name, f.form_id)?.is_allowed === true;
+
+                      return (
+                        <div
+                          key={f.form_id}
+                          className={`flex items-center gap-3 px-4 py-3 transition-colors ${isAllowed ? 'bg-white hover:bg-slate-50/60' : 'bg-red-50/30'}`}
+                        >
+                          <div className="flex-1 min-w-0 flex items-center gap-2.5">
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-lg text-[10px] font-bold ${isAllowed ? 'bg-emerald-50 text-emerald-600' : 'bg-red-100 text-red-500'}`}>
+                              {isAllowed ? <Check size={11} /> : <X size={11} />}
+                            </span>
+                            <p className={`text-xs font-medium truncate ${isAllowed ? 'text-slate-700' : 'text-slate-500'}`}>
+                              {f.name}
+                            </p>
+                            {f.is_default && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 text-[9px] font-semibold rounded-full shrink-0">
+                                <Star size={7} /> Default
+                              </span>
+                            )}
+                          </div>
+                          <div
+                            onClick={() => !readOnly && onToggle(entity.logical_name, f.form_id, !isAllowed)}
+                            className={`flex items-center gap-2 select-none ${readOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                          >
+                            <span className={`text-[11px] font-semibold ${isAllowed ? 'text-emerald-600' : 'text-red-500'}`}>
+                              {isAllowed ? 'Allowed' : 'Denied'}
+                            </span>
+                            <div className={`relative w-9 h-5 rounded-full transition-colors ${isAllowed ? 'bg-emerald-500' : 'bg-red-500'}`}>
+                              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${isAllowed ? 'left-[19px]' : 'left-[1px]'}`} />
                             </div>
                           </div>
                         </div>

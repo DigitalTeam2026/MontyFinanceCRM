@@ -41,6 +41,7 @@ import {
   Radio,
   Package,
   Boxes,
+  LayoutTemplate,
 } from 'lucide-react';
 import type { AppEntity, AppModule } from '../types';
 import { ENTITY_LOGICAL_NAME } from '../types';
@@ -52,6 +53,7 @@ import {
   fetchRecord,
   fetchDefaultForm,
   fetchFormById,
+  fetchSelectableMainForms,
   fetchEntityRules,
   fetchTimelineItems,
   saveRecord,
@@ -61,7 +63,8 @@ import {
   getDefaultStatusForState,
   getEntityDefinitionId,
 } from '../services/recordService';
-import type { TimelineItem } from '../services/recordService';
+import type { TimelineItem, SelectableForm } from '../services/recordService';
+import { getAllowedFormIds } from '../services/permissionService';
 import { evaluateRules, applyRuleStateToValues, getRuleMessages } from '../services/businessRulesEngine';
 import type { ProcessRuleContext } from '../services/businessRulesEngine';
 import { mergeStageVisibilityIntoRuleState } from '../services/stageValidationService';
@@ -779,6 +782,12 @@ interface RecordFormPageProps {
   entity: AppEntity;
   recordId: string | null;
   userId: string;
+  /**
+   * Form to load instead of the entity's default. Set by the create flow's form
+   * chooser (and by the in-page switcher). When null, the default-form resolution
+   * applies. Honoured only outside of an active process flow.
+   */
+  formIdOverride?: string | null;
   /** Tab to reopen on mount (restored from the URL after a refresh). */
   initialTab?: string;
   /** Fired whenever the active tab changes, so the URL can track it. */
@@ -787,7 +796,8 @@ interface RecordFormPageProps {
   onNavigate?: (entity: AppEntity, id: string) => void;
   onRecordLoaded?: (id: string, label: string) => void;
   onViewAll?: (entitySlug: string, fkColumn: string, parentId: string, contextLabel: string) => void;
-  onNewRecord?: () => void;
+  /** Start a new record. Pass a form_id to reuse it (Save & New keeps the loaded form). */
+  onNewRecord?: (formId?: string | null) => void;
   creationBlocked?: boolean;
   creationBlockedMessage?: string | null;
   creationControlRules?: import('../../types/digitalRule').DigitalRule[];
@@ -985,6 +995,7 @@ export default function RecordFormPage({
   entity,
   recordId,
   userId,
+  formIdOverride = null,
   initialTab,
   onTabChange,
   onBack,
@@ -1089,6 +1100,9 @@ export default function RecordFormPage({
   const [entityDefId, setEntityDefId] = useState<string | null>(null);
   const [availableFlows, setAvailableFlows] = useState<ProcessFlow[]>([]);
   const [activeFormId, setActiveFormId] = useState<string | null>(null);
+  // Main forms this user is allowed to use for the entity — powers the in-page
+  // form switcher when editing/viewing an existing record (loaded below).
+  const [selectableForms, setSelectableForms] = useState<SelectableForm[]>([]);
   const [savedNewRecordId, setSavedNewRecordId] = useState<string | null>(null);
   // committedInsertIdRef holds the PK from a successful INSERT and is NEVER cleared
   // on re-renders. This prevents a second Save from running as INSERT after a first
@@ -1323,7 +1337,7 @@ export default function RecordFormPage({
       const entityLogical = ENTITY_LOGICAL_NAME[entity] ?? entity;
       const resolvedEntityDefId = await getEntityDefinitionId(entityLogical);
       const [formDef, rulesData, usersData, currencyList, base, fieldDefsRes, entityRelationships] = await Promise.all([
-        fetchDefaultForm(entity),
+        formIdOverride ? fetchFormById(formIdOverride) : fetchDefaultForm(entity),
         fetchEntityRules(entity),
         fetchCrmUsers(),
         fetchCurrencies(),
@@ -1435,7 +1449,9 @@ export default function RecordFormPage({
       if (!recordId) {
         const pf = await resolveProcessFlowForRecord(entityLogical, null);
         setProcessFlow(pf);
-        await applyFlowForm(pf);
+        // The user's explicit form choice (from the chooser) wins over a flow's
+        // default form; only fall back to the flow form when no override is set.
+        if (!formIdOverride) await applyFlowForm(pf);
         // Resolve the default Status + Status Reason for a brand-new record so both are
         // populated and selectable immediately on the New form — no save or "activate"
         // step required. State value 1 is the first active state for every entity
@@ -1560,7 +1576,7 @@ export default function RecordFormPage({
       // Only the most recent load controls the spinner
       if (gen === loadGenRef.current) setLoading(false);
     }
-  }, [entity, recordId]);
+  }, [entity, recordId, formIdOverride]);
 
   useEffect(() => {
     // Do not run ANY data/metadata load (incl. fetchRecord) before authorization
@@ -1576,6 +1592,34 @@ export default function RecordFormPage({
   useEffect(() => {
     if (activeTabId) onTabChange?.(activeTabId);
   }, [activeTabId, onTabChange]);
+
+  // Load the forms this user may switch between while creating/viewing/editing a
+  // record. Only the entity's MAIN forms allowed by the user's role(s) qualify.
+  useEffect(() => {
+    if (!permissionsReady) { setSelectableForms([]); return; }
+    let cancelled = false;
+    fetchSelectableMainForms(entity)
+      .then((forms) => {
+        if (cancelled) return;
+        const allowedSet = getAllowedFormIds(permissions, entity); // null = all (system admin)
+        setSelectableForms(allowedSet === null ? forms : forms.filter((f) => allowedSet.has(f.form_id)));
+      })
+      .catch(() => { if (!cancelled) setSelectableForms([]); });
+    return () => { cancelled = true; };
+  }, [entity, recordId, permissionsReady, permissions]);
+
+  // Switch the visible form layout in place (existing record only). Swaps the
+  // layout/active form without reloading record data.
+  const handleSwitchForm = useCallback(async (formId: string) => {
+    if (!formId || formId === activeFormId) return;
+    const fd = await fetchFormById(formId);
+    if (!fd?.layout_json) return;
+    const normalized = normalizeLayout(fd.layout_json);
+    if (!normalized) return;
+    setLayout(normalized);
+    setActiveFormId(fd.form_id ?? null);
+    if (normalized.tabs.length > 0) setActiveTabId(FORM_TAB_PREFIX + normalized.tabs[0].id);
+  }, [activeFormId]);
 
   // Detect whether the Documents tab is enabled for this entity (Admin Studio toggle).
   useEffect(() => {
@@ -2221,7 +2265,9 @@ export default function RecordFormPage({
       if (closeAfter) {
         setTimeout(() => onBack(), 600);
       } else if (newAfter && onNewRecord) {
-        setTimeout(() => onNewRecord(), 600);
+        // Save & New reuses the currently loaded form (no chooser re-prompt).
+        const keepFormId = activeFormIdRef.current;
+        setTimeout(() => onNewRecord(keepFormId), 600);
       } else {
         if (!isNew && pk) {
           fetchTimelineItems(entity, pk).then(setTimeline).catch(() => {});
@@ -2740,6 +2786,9 @@ export default function RecordFormPage({
       assignBtnRef={assignBtnRef}
       formTabs={formTabs}
       activeTabId={activeTabId}
+      selectableForms={selectableForms}
+      activeFormId={activeFormId}
+      onSwitchForm={handleSwitchForm}
       currentFormTab={currentFormTab}
       isFormTab={isFormTab}
       isHistoryTab={isHistoryTab}
@@ -2998,6 +3047,9 @@ interface RecordFormInnerProps {
   assignBtnRef: React.RefObject<HTMLDivElement>;
   formTabs: DesignerTab[];
   activeTabId: string;
+  selectableForms: SelectableForm[];
+  activeFormId: string | null;
+  onSwitchForm: (formId: string) => void;
   currentFormTab: DesignerTab | undefined;
   isFormTab: boolean;
   isHistoryTab: boolean;
@@ -3067,7 +3119,7 @@ interface RecordFormInnerProps {
   subgridRelDefMap: Map<string, string>;
   onLookupLabelChange: (fieldLogicalName: string, label: string) => void;
   lookupEntitySlugMap: Record<string, string>;
-  onNewRecord?: () => void;
+  onNewRecord?: (formId?: string | null) => void;
   onDelete?: () => void;
   onRefresh?: () => void;
   subgridRefreshCounter: number;
@@ -3160,7 +3212,7 @@ function RecordFormInner({
   entity, recordId, recordLoaded, formReadonly, canCreate, canWrite, canDelete, canAssign, canShare, canCloseWon, canCloseLost, canQualify, canResolve,
   values, saveStatus, isDirty,
   isPinned, crmUsers, showAssignPopover, assignBtnRef, formTabs,
-  activeTabId, currentFormTab, isFormTab, isHistoryTab, showDocumentsTab, activeRelatedKey,
+  activeTabId, selectableForms, activeFormId, onSwitchForm, currentFormTab, isFormTab, isHistoryTab, showDocumentsTab, activeRelatedKey,
   relatedSubgrids, ruleState, validationErrors, timeline, userId, entityName,
   onBack, onSave, onSaveAndClose, onSaveAndNew, onQualify, onQualifyFromStageBar, onDisqualifyLead, onDisqualifyLeadClick, onReopenLead, onCloseWon, onCloseLost, onReopenOpportunity, onConvertProspect, lifecycleRules,
   onTogglePin, onAssign, onSetShowAssignPopover, onChangeTab,
@@ -3481,6 +3533,26 @@ function RecordFormInner({
                     </span>
                   );
                 })()}
+              </div>
+            )}
+
+            {/* Form switcher — shown (create or edit) when more than one form is allowed */}
+            {selectableForms.length > 1 && activeFormId && (
+              <div
+                className="flex items-center gap-1.5 pl-2 pr-1 h-7 rounded-md border border-[#e7eaf1] bg-white"
+                title="Switch form"
+              >
+                <LayoutTemplate size={12} className="shrink-0 text-[#9ca3af]" />
+                <FilterSelect
+                  value={activeFormId ?? ''}
+                  onChange={(e) => onSwitchForm(e.target.value)}
+                  matchTriggerWidth
+                  className="text-[11px] font-medium text-[#374151] bg-transparent border-0 focus:outline-none appearance-none pr-4 cursor-pointer"
+                >
+                  {selectableForms.map((f) => (
+                    <option key={f.form_id} value={f.form_id}>{f.name}</option>
+                  ))}
+                </FilterSelect>
               </div>
             )}
 

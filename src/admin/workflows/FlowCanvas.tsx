@@ -1,17 +1,21 @@
 import { Plus } from 'lucide-react';
 import type { WorkflowStep, WorkflowStepType } from '../../types/workflow';
 import type { FieldDefinition } from '../../types/field';
+import type { EntityDefinition } from '../../types/entity';
 import StepNode from './StepNode';
 import StepConfigPanel from './StepConfigPanel';
 
-let stepCtr = 0;
-const newStepId = () => `step_${Date.now()}_${stepCtr++}`;
+// workflow_step.workflow_step_id is a uuid PK in the DB, so client-side ids must
+// be real UUIDs — a "step_<ts>_<n>" string makes the insert fail with
+// "invalid input syntax for type uuid" (HTTP 400).
+const newStepId = () => crypto.randomUUID();
 
 const DEFAULT_STEP_NAMES: Record<WorkflowStepType, string> = {
   update_record:     'Update Record',
   assign_record:     'Assign Record',
   send_notification: 'Send Notification',
   create_record:     'Create Record',
+  delete_record:     'Delete Record',
   condition:         'Condition',
   wait:              'Wait',
   webhook:           'Call Webhook',
@@ -21,10 +25,11 @@ interface FlowCanvasProps {
   steps: WorkflowStep[];
   workflowId: string;
   fields: FieldDefinition[];
+  entities: EntityDefinition[];
   onStepsChange: (steps: WorkflowStep[]) => void;
 }
 
-export default function FlowCanvas({ steps, workflowId, fields, onStepsChange }: FlowCanvasProps) {
+export default function FlowCanvas({ steps, workflowId, fields, entities, onStepsChange }: FlowCanvasProps) {
 
   const handleSelectStep = (stepId: string | null) => {
     onStepsChange(steps.map((s) => ({ ...s, _selected: s.workflow_step_id === stepId } as WorkflowStep)));
@@ -47,13 +52,19 @@ export default function FlowCanvas({ steps, workflowId, fields, onStepsChange }:
       position_x: 0,
       position_y: (afterIndex + 1) * 120,
     };
+    // Add the step AND select it in a single update. (Selecting via a deferred
+    // setTimeout->handleSelectStep closed over the stale pre-add `steps`, which
+    // re-emitted the old array and silently dropped the new step.)
     const updated = [
       ...steps.slice(0, afterIndex + 1),
       newStep,
       ...steps.slice(afterIndex + 1),
-    ].map((s, i) => ({ ...s, step_order: i }));
+    ].map((s, i) => ({
+      ...s,
+      step_order: i,
+      _selected: s.workflow_step_id === newStep.workflow_step_id,
+    } as WorkflowStep));
     onStepsChange(updated);
-    setTimeout(() => handleSelectStep(newStep.workflow_step_id), 10);
   };
 
   const deleteStep = (stepId: string) => {
@@ -112,6 +123,7 @@ export default function FlowCanvas({ steps, workflowId, fields, onStepsChange }:
         <StepConfigPanel
           step={selectedStep}
           fields={fields}
+          entities={entities}
           onUpdate={(updated) => updateStep(updated)}
           onClose={() => handleSelectStep(null)}
         />
