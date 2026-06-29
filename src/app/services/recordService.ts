@@ -4,7 +4,7 @@ import { ENTITY_DEFINITION_ID } from '../types';
 import type { FormDefinition } from '../../types/form';
 import type { BusinessRule } from '../../types/businessRule';
 import { createNotification } from './notificationService';
-import { runWorkflowsForEvent } from './workflowEngine';
+import { runFlowsV2ForEvent } from './workflowDispatchV2';
 import { provisionRecordStorage } from '../../services/documentService';
 import {
   hasNonNullMonetaryValue,
@@ -559,7 +559,7 @@ export async function saveRecord(
       }).catch(() => {});
     }
 
-    runWorkflowsForEvent(entitySlug, 'on_update', id, saved, userId, prevRecord).catch(() => {});
+    runFlowsV2ForEvent(entitySlug, 'on_update', id, saved, prevRecord).catch(() => {});
 
     return saved;
   } else {
@@ -614,7 +614,7 @@ export async function saveRecord(
       }
     }
 
-    runWorkflowsForEvent(entitySlug, 'on_create', created[pk] as string, created, userId).catch(() => {});
+    runFlowsV2ForEvent(entitySlug, 'on_create', created[pk] as string, created, null).catch(() => {});
 
     // Eagerly provision the record's storage folder (best-effort; no-op when the
     // entity has no Document Location configured or the file server is offline).

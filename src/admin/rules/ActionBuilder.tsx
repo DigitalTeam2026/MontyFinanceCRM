@@ -555,15 +555,18 @@ function PropertiesPanel({
           <PropRow label="Value Type">
             <ToggleButtons
               options={[
-                { value: 'static', label: 'Static Value' },
-                { value: 'field',  label: 'Field(s)' },
+                { value: 'static',       label: 'Static Value' },
+                { value: 'field',        label: 'Field(s)' },
+                { value: 'current_user', label: 'Current User' },
               ]}
               value={action.value_type ?? 'static'}
-              onChange={(v) => onChange({ ...action, value_type: v as 'static' | 'field', value: '', value_field: undefined, value_fields: [] })}
+              onChange={(v) => onChange({ ...action, value_type: v as 'static' | 'field' | 'current_user', value: '', value_field: undefined, value_fields: [] })}
               activeClass="bg-blue-600 text-white"
             />
           </PropRow>
-          {action.value_type !== 'field' ? (
+          {action.value_type === 'current_user' ? (
+            <CurrentUserHint />
+          ) : action.value_type !== 'field' ? (
             <PropRow label="Value">
               <FieldValueInput
                 fieldType={fieldTypeName}
@@ -590,15 +593,18 @@ function PropertiesPanel({
           <PropRow label="Value Type">
             <ToggleButtons
               options={[
-                { value: 'static', label: 'Static Value' },
-                { value: 'field',  label: 'Field(s)' },
+                { value: 'static',       label: 'Static Value' },
+                { value: 'field',        label: 'Field(s)' },
+                { value: 'current_user', label: 'Current User' },
               ]}
               value={action.value_type ?? 'static'}
-              onChange={(v) => onChange({ ...action, value_type: v as 'static' | 'field', value: '', value_field: undefined, value_fields: [] })}
+              onChange={(v) => onChange({ ...action, value_type: v as 'static' | 'field' | 'current_user', value: '', value_field: undefined, value_fields: [] })}
               activeClass="bg-blue-600 text-white"
             />
           </PropRow>
-          {action.value_type !== 'field' ? (
+          {action.value_type === 'current_user' ? (
+            <CurrentUserHint />
+          ) : action.value_type !== 'field' ? (
             <PropRow label="Value">
               <FieldValueInput
                 fieldType={fieldTypeName}
@@ -1212,6 +1218,20 @@ function FormulaBuilder({
 }
 
 // ─── Reusable UI primitives ───────────────────────────────────────────────────
+// Shown when an action's value is "Current User": no value to configure — the
+// engine stamps the field with whoever is filling the form at runtime.
+function CurrentUserHint() {
+  return (
+    <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2.5">
+      <p className="text-[11px] text-blue-700">
+        The field will be set to the <span className="font-semibold">logged-in user</span> when this
+        action runs — their name for a text field, or their record for a User lookup field. Use it on an
+        “Approved By” field to capture who made the change.
+      </p>
+    </div>
+  );
+}
+
 function PropRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">

@@ -7,6 +7,7 @@ import {
   getEntityTable, getEntityPK, getTableColumns,
   filterToExistingColumns, saveRecord,
 } from './recordService';
+import { normalizeFieldType } from './viewColumnState';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -123,9 +124,14 @@ export async function resolveImportColumns(
     const physCol = fd.physical_column_name ?? col.field_physical_column ?? col.key;
     const typeName = ((fd.field_type as any)?.name ?? col.type ?? 'text').toLowerCase();
 
-    const isReadonly = READONLY_FIELDS.has(physCol)
+    // legacy_id is a migration key the user fills in — never treat it as a
+    // system/FK id even though it ends in "_id".
+    const isLegacyId = physCol === 'legacy_id' || col.key === 'legacy_id';
+    const isReadonly = !isLegacyId && (
+      READONLY_FIELDS.has(physCol)
       || READONLY_FIELDS.has(col.key)
-      || physCol.endsWith('_id') && (col.key === 'id' || col.key.endsWith('_id') && !col.lookup_table && typeName !== 'lookup');
+      || physCol.endsWith('_id') && (col.key === 'id' || col.key.endsWith('_id') && !col.lookup_table && typeName !== 'lookup')
+    );
 
     const meta: ImportColumnMeta = {
       key: col.key,
@@ -163,12 +169,108 @@ export async function resolveImportColumns(
 }
 
 // ---------------------------------------------------------------------------
+// Build ColumnState[] from ALL active fields of any entity (not view-bound).
+//
+// Lets the central importer target any table — including 1:N child / relation
+// tables (e.g. POS Location → Opportunity) — without depending on a saved view.
+// The parent relationship is simply one of the entity's lookup fields, resolved
+// by name or legacy ID like any other lookup.
+// ---------------------------------------------------------------------------
+
+export async function resolveAllEntityColumnStates(
+  entityLogicalName: string,
+): Promise<ColumnState[]> {
+  const { data: eDef } = await supabase
+    .from('entity_definition')
+    .select('entity_definition_id')
+    .eq('logical_name', entityLogicalName)
+    .maybeSingle();
+  if (!eDef) return [];
+
+  const { data: fields } = await supabase
+    .from('field_definition')
+    .select(`
+      field_definition_id, logical_name, display_name, physical_column_name,
+      config_json, lookup_entity_id,
+      field_type:field_type_id(name),
+      lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name)
+    `)
+    .eq('entity_definition_id', eDef.entity_definition_id)
+    .eq('is_active', true)
+    .order('display_name', { ascending: true });
+
+  if (!fields) return [];
+
+  // Some lookup fields encode their target only in config_json (e.g.
+  // originating_lead_id → {lookupEntity:"leads"}) and never got a lookup_entity_id
+  // FK. Resolve those slugs → physical table + primary field so the link column
+  // still imports.
+  const slugs = new Set<string>();
+  for (const f of fields as Record<string, unknown>[]) {
+    const type = normalizeFieldType((f.field_type as { name?: string } | null)?.name ?? null);
+    const cfg = f.config_json as { lookupEntity?: string } | null;
+    if ((type === 'lookup' || type === 'owner') && !f.lookup_entity && cfg?.lookupEntity) {
+      slugs.add(String(cfg.lookupEntity));
+    }
+  }
+  const slugMap = new Map<string, { table: string; primaryField: string }>();
+  if (slugs.size > 0) {
+    const { data: ents } = await supabase
+      .from('entity_definition')
+      .select('logical_name, physical_table_name, primary_field_name');
+    const byLogical = new Map<string, any>();
+    const byTable = new Map<string, any>();
+    for (const e of (ents ?? []) as Record<string, unknown>[]) {
+      byLogical.set(e.logical_name as string, e);
+      byTable.set(e.physical_table_name as string, e);
+    }
+    const lookupSlug = (slug: string) =>
+      byLogical.get(slug) ?? byTable.get(slug)
+      ?? byLogical.get(slug.replace(/s$/, '')) ?? byTable.get(slug.replace(/s$/, ''));
+    for (const slug of slugs) {
+      const e = lookupSlug(slug);
+      if (e) slugMap.set(slug, {
+        table: e.physical_table_name as string,
+        primaryField: (e.primary_field_name as string) ?? 'name',
+      });
+    }
+  }
+
+  return (fields as Record<string, unknown>[]).map((f): ColumnState => {
+    const ft = (f.field_type as { name?: string } | null)?.name ?? null;
+    const lookupEntity = f.lookup_entity as { physical_table_name?: string; primary_field_name?: string } | null;
+    const cfg = f.config_json as { lookupEntity?: string; option_set_name?: string } | null;
+    const type = normalizeFieldType(ft);
+    const cs: ColumnState = {
+      key: (f.physical_column_name as string) ?? (f.logical_name as string),
+      label: (f.display_name as string) ?? (f.logical_name as string),
+      visible: true,
+      type,
+      field_definition_id: f.field_definition_id as string,
+      field_physical_column: (f.physical_column_name as string) ?? undefined,
+    };
+    if (type === 'lookup' || type === 'owner') {
+      if (lookupEntity?.physical_table_name) {
+        cs.lookup_table = lookupEntity.physical_table_name;
+        cs.lookup_label_field = lookupEntity.primary_field_name ?? 'name';
+      } else if (cfg?.lookupEntity && slugMap.has(cfg.lookupEntity)) {
+        const m = slugMap.get(cfg.lookupEntity)!;
+        cs.lookup_table = m.table;
+        cs.lookup_label_field = m.primaryField;
+      }
+    }
+    if (cfg?.option_set_name) cs.option_set_name = cfg.option_set_name;
+    return cs;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Fetch reference data for dropdowns in template
 // ---------------------------------------------------------------------------
 
 interface RefData {
   optionSets: Record<string, { value: string; label: string }[]>;
-  lookupRecords: Record<string, { id: string; label: string }[]>;
+  lookupRecords: Record<string, { id: string; label: string; legacy?: string }[]>;
   stateCodeMap: Record<string, { value: number; label: string }[]>;
   statusReasonMap: Record<number, { value: number; label: string }[]>;
 }
@@ -176,6 +278,7 @@ interface RefData {
 export async function fetchReferenceData(
   columns: ImportColumnMeta[],
   _entity: AppEntity,
+  lookupLimit = 20000,
 ): Promise<RefData> {
   const optionSets: RefData['optionSets'] = {};
   const lookupRecords: RefData['lookupRecords'] = {};
@@ -212,14 +315,20 @@ export async function fetchReferenceData(
     const table = col.lookupTable!;
     const labelField = col.lookupLabelField!;
     const pk = col.lookupPk ?? `${table.replace(/^crm_/, '')}_id`;
-    let qb = supabase.from(table).select(`${pk}, ${labelField}`).limit(2000);
+    // Include legacy_id (old-CRM key) as an alternate match key when present.
+    const tableCols = await getTableColumns(table);
+    const hasLegacy = tableCols.has('legacy_id');
+    const selectCols = [...new Set([pk, labelField, ...(hasLegacy ? ['legacy_id'] : [])])];
+    let qb = supabase.from(table).select(selectCols.join(', ')).limit(lookupLimit);
     if (table === 'crm_user') qb = (qb as any).eq('is_active', true);
     const { data } = await qb;
     if (data) {
       lookupRecords[col.key] = (data as any[]).map((r) => ({
         id: String(r[pk]),
         label: String(r[labelField] ?? ''),
-      })).filter((r) => r.label);
+        legacy: hasLegacy && r.legacy_id != null && String(r.legacy_id).trim() !== ''
+          ? String(r.legacy_id) : undefined,
+      })).filter((r) => r.label || r.legacy);
     }
   });
 
@@ -306,6 +415,7 @@ export function generateTemplate(
   XLSX.utils.book_append_sheet(wb, instrSheet, 'Instructions');
 
   // --- Reference Data sheet ---
+  const REF_LIST_CAP = 500; // keep the template file small for large lookup tables
   const refRows: string[][] = [['Column', 'Valid Values']];
   for (const col of importable) {
     if (col.optionSetName && refData.optionSets[col.optionSetName]) {
@@ -314,8 +424,12 @@ export function generateTemplate(
       }
     }
     if (refData.lookupRecords[col.key]) {
-      for (const r of refData.lookupRecords[col.key]) {
+      const recs = refData.lookupRecords[col.key];
+      for (const r of recs.slice(0, REF_LIST_CAP)) {
         refRows.push([col.label, r.label]);
+      }
+      if (recs.length > REF_LIST_CAP) {
+        refRows.push([col.label, `… and ${recs.length - REF_LIST_CAP} more — type the exact name or legacy ID`]);
       }
     }
   }
@@ -509,6 +623,9 @@ export async function validateAndResolve(
   mode: ImportMode,
   matchColumn: string | null,
   entity: AppEntity,
+  // Migration mode: when false, rows are NOT blocked just because a field marked
+  // required is empty/absent (the DB still rejects true NOT NULL columns at insert).
+  enforceRequired = true,
 ): Promise<ImportPreviewRow[]> {
   const importable = columns.filter((c) => !c.isReadonly);
 
@@ -519,13 +636,17 @@ export async function validateAndResolve(
   }
 
   const lookupCaches = new Map<string, Map<string, string>>();
+  const legacyCaches = new Map<string, Map<string, string>>();
   for (const col of importable) {
     if (refData.lookupRecords[col.key]) {
       const m = new Map<string, string>();
+      const lm = new Map<string, string>();
       for (const r of refData.lookupRecords[col.key]) {
-        m.set(r.label.toLowerCase(), r.id);
+        if (r.label) m.set(r.label.toLowerCase(), r.id);
+        if (r.legacy) lm.set(r.legacy.toLowerCase(), r.id);
       }
       lookupCaches.set(col.key, m);
+      legacyCaches.set(col.key, lm);
     }
   }
 
@@ -571,7 +692,7 @@ export async function validateAndResolve(
 
       const val = rawVal == null || String(rawVal).trim() === '' ? null : rawVal;
 
-      if (col.isRequired && val == null) {
+      if (enforceRequired && col.isRequired && val == null) {
         errors.push({ row: i + 1, column: col.label, message: 'Required field is empty' });
         continue;
       }
@@ -625,18 +746,28 @@ export async function validateAndResolve(
         case 'lookup': case 'owner': {
           const cache = lookupCaches.get(col.key);
           if (!cache) {
+            // Migration mode: don't block on a lookup we can't resolve — leave it blank.
+            if (!enforceRequired) { resolved[col.physicalColumn] = null; break; }
             errors.push({ row: i + 1, column: col.label, message: 'Cannot resolve lookup values' });
             break;
           }
-          const match = cache.get(strVal.toLowerCase());
+          const needle = strVal.toLowerCase();
+          const legacy = legacyCaches.get(col.key);
+          const match = cache.get(needle);
           if (match) {
             resolved[col.physicalColumn] = match;
+          } else if (legacy?.get(needle)) {
+            // Fall back to matching the related record's legacy (old-CRM) ID.
+            resolved[col.physicalColumn] = legacy.get(needle);
           } else {
-            const partialMatches = [...cache.entries()].filter(([k]) => k.includes(strVal.toLowerCase()));
+            const partialMatches = [...cache.entries()].filter(([k]) => k.includes(needle));
             if (partialMatches.length === 1) {
               resolved[col.physicalColumn] = partialMatches[0][1];
             } else if (partialMatches.length > 1) {
-              errors.push({ row: i + 1, column: col.label, message: `Multiple matches found for "${strVal}". Please use the exact name.` });
+              errors.push({ row: i + 1, column: col.label, message: `Multiple matches found for "${strVal}". Use the exact name or the legacy ID.` });
+            } else if (!enforceRequired) {
+              // Migration mode: unresolved link is left blank rather than failing the row.
+              resolved[col.physicalColumn] = null;
             } else {
               errors.push({ row: i + 1, column: col.label, message: `No matching record found for "${strVal}"` });
             }
@@ -653,6 +784,8 @@ export async function validateAndResolve(
           const mapped = labelMap.get(strVal.toLowerCase());
           if (mapped !== undefined) {
             resolved[col.physicalColumn] = mapped;
+          } else if (!enforceRequired) {
+            resolved[col.physicalColumn] = null;
           } else {
             errors.push({ row: i + 1, column: col.label, message: `"${strVal}" is not a valid option. Check the Reference Data sheet.` });
           }
@@ -665,7 +798,7 @@ export async function validateAndResolve(
     }
 
     // Required column check — only for create mode (update only patches provided fields)
-    if (mode === 'create') {
+    if (enforceRequired && mode === 'create') {
       for (const col of importable) {
         if (col.isRequired && !(col.key in data)) {
           const headerVariant = `${col.label} *`;

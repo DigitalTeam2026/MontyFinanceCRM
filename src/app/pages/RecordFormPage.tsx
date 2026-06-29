@@ -66,7 +66,8 @@ import {
 import type { TimelineItem, SelectableForm } from '../services/recordService';
 import { getAllowedFormIds, isFlowAllowed } from '../services/permissionService';
 import { evaluateRules, applyRuleStateToValues, getRuleMessages } from '../services/businessRulesEngine';
-import type { ProcessRuleContext } from '../services/businessRulesEngine';
+import type { ProcessRuleContext, RuleRuntime } from '../services/businessRulesEngine';
+import { useCurrentUserName } from '../hooks/useCurrentUserName';
 import { mergeStageVisibilityIntoRuleState } from '../services/stageValidationService';
 import { runStageAutomations } from '../services/stageAutomationService';
 import { resolveProcessFlowForRecord, loadProcessFlowById, invalidateFlowCacheById, resolveRuntimePath, filterLoadedFlowForEntity, getEntityFormIdForFlow } from '../services/processFlowEngine';
@@ -1089,6 +1090,9 @@ export default function RecordFormPage({
   const [fieldOptionSetMap, setFieldOptionSetMap] = useState<Record<string, string>>({});
   const [fieldInlineChoicesMap, setFieldInlineChoicesMap] = useState<Record<string, { value: string; label: string }[]>>({});
   const [fieldTypeMap, setFieldTypeMap] = useState<Record<string, string>>({});
+  // Logged-in user's display name, for the `current_user` business-rule value
+  // source when it targets a text field (falls back to their email).
+  const currentUserDisplayName = useCurrentUserName(userId);
   const [fieldRequiredMap, setFieldRequiredMap] = useState<Record<string, boolean>>({});
   const [fieldConfigMap, setFieldConfigMap] = useState<Record<string, Record<string, unknown>>>({});
   // Maps field logical_name -> entity slug for lookup fields (built from DB on load)
@@ -1148,6 +1152,7 @@ export default function RecordFormPage({
   const rulesRef = useRef<BusinessRule[]>([]);
   const activeFormIdRef = useRef<string | null>(null);
   const processFlowRef = useRef<LoadedProcessFlow | null>(null);
+  const ruleRuntimeRef = useRef<RuleRuntime>({});
   const skipNextLoadAllRef = useRef(false);
   const suppressNextLoadingRef = useRef(false);
   // Monotonic load generation — discards results from a stale loadAll when the
@@ -1264,11 +1269,19 @@ export default function RecordFormPage({
     };
   }, [processFlow, values]);
 
-  const ruleState: FormRuleState = useMemo(
-    () => mergeStageVisibilityIntoRuleState(entity, values, evaluateRules(rules, values, activeFormId, processContext, lookupLabels), processFlow),
-    [entity, rules, values, processFlow, activeFormId, processContext, lookupLabels]
+  // Runtime values the engine resolves at evaluation time (current user, field
+  // types) — used by the `current_user` value source.
+  const ruleRuntime: RuleRuntime = useMemo(
+    () => ({ currentUserId: userId, currentUserName: currentUserDisplayName, fieldTypes: fieldTypeMap }),
+    [userId, currentUserDisplayName, fieldTypeMap]
   );
 
+  const ruleState: FormRuleState = useMemo(
+    () => mergeStageVisibilityIntoRuleState(entity, values, evaluateRules(rules, values, activeFormId, processContext, lookupLabels, ruleRuntime), processFlow),
+    [entity, rules, values, processFlow, activeFormId, processContext, lookupLabels, ruleRuntime]
+  );
+
+  ruleRuntimeRef.current = ruleRuntime;
   ruleStateRef.current = ruleState;
   lookupLabelsRef.current = lookupLabels;
   layoutRef.current = layout;
@@ -1303,14 +1316,14 @@ export default function RecordFormPage({
 
         const currentLookupLabels = lookupLabelsRef.current;
         const freshRuleState = mergeStageVisibilityIntoRuleState(
-          entity, prev, evaluateRules(currentRules, prev, currentActiveFormId, buildCtx(prev), currentLookupLabels), currentProcessFlow,
+          entity, prev, evaluateRules(currentRules, prev, currentActiveFormId, buildCtx(prev), currentLookupLabels, ruleRuntimeRef.current), currentProcessFlow,
         );
         const protectedStageFields = currentProcessFlow ? [currentProcessFlow.flow.stage_field] : undefined;
         const patch1 = applyRuleStateToValues(freshRuleState, prev, protectedStageFields);
         if (!patch1) return prev;
 
         const cascadeState = mergeStageVisibilityIntoRuleState(
-          entity, patch1, evaluateRules(currentRules, patch1, currentActiveFormId, buildCtx(patch1), currentLookupLabels), currentProcessFlow,
+          entity, patch1, evaluateRules(currentRules, patch1, currentActiveFormId, buildCtx(patch1), currentLookupLabels, ruleRuntimeRef.current), currentProcessFlow,
         );
         const patch2 = applyRuleStateToValues(cascadeState, patch1, protectedStageFields);
         return patch2 ?? patch1;
@@ -1821,14 +1834,14 @@ export default function RecordFormPage({
       };
       const currentLookupLabels = lookupLabelsRef.current;
       const pass1State = mergeStageVisibilityIntoRuleState(
-        entity, next, evaluateRules(rules, next, activeFormId, buildCtx(next), currentLookupLabels), processFlow,
+        entity, next, evaluateRules(rules, next, activeFormId, buildCtx(next), currentLookupLabels, ruleRuntimeRef.current), processFlow,
       );
       const protectedStageFields = processFlow ? [processFlow.flow.stage_field] : undefined;
       const patch1 = applyRuleStateToValues(pass1State, next, protectedStageFields);
       if (patch1) {
         next = patch1;
         const pass2State = mergeStageVisibilityIntoRuleState(
-          entity, next, evaluateRules(rules, next, activeFormId, buildCtx(next), currentLookupLabels), processFlow,
+          entity, next, evaluateRules(rules, next, activeFormId, buildCtx(next), currentLookupLabels, ruleRuntimeRef.current), processFlow,
         );
         const patch2 = applyRuleStateToValues(pass2State, next, protectedStageFields);
         if (patch2) next = patch2;

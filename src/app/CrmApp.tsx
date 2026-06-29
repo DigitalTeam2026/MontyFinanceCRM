@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import AppSidebar from './components/AppSidebar';
@@ -6,7 +6,9 @@ import AppHeader from './components/AppHeader';
 import { useCurrentUserName } from './hooks/useCurrentUserName';
 import EntityListPage from './pages/EntityListPage';
 import RecordFormPage from './pages/RecordFormPage';
-import DashboardViewer from './components/dashboard/DashboardViewer';
+// DashboardViewer pulls in echarts (~1MB). Lazy-load it so the much more common
+// list/record views don't pay for the charting library on initial load.
+const DashboardViewer = lazy(() => import('./components/dashboard/DashboardViewer'));
 import type { AppEntity, AppModule } from './types';
 import { ENTITY_LOGICAL_NAME } from './types';
 import LoginPage from '../LoginPage';
@@ -42,6 +44,14 @@ interface CrmAppProps {
   initialViewId?: string;
   /** Keyword search for an initial list view. */
   initialSearch?: string;
+  /**
+   * Session resolved by the top-level App during auth bootstrap. When supplied,
+   * CrmApp seeds its state from it instead of re-running getSession() and the
+   * crm_user admin-flag query — avoiding a duplicate round-trip on every load.
+   */
+  initialSession?: Session | null;
+  /** is_system_admin resolved by App, passed down to skip a duplicate query. */
+  initialIsSystemAdmin?: boolean;
 }
 
 /** Map a URL-serialized view onto CrmApp's internal view state. */
@@ -72,9 +82,15 @@ export default function CrmApp({
   initialView,
   initialViewId,
   initialSearch,
+  initialSession,
+  initialIsSystemAdmin,
 }: CrmAppProps = {}) {
-  const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
+  // Seed from the session App already resolved (undefined only when CrmApp is
+  // mounted standalone without a prior bootstrap).
+  const [session, setSession] = useState<Session | null | undefined>(
+    initialSession !== undefined ? initialSession : undefined
+  );
+  const [isSystemAdmin, setIsSystemAdmin] = useState(initialIsSystemAdmin ?? false);
   const userName = useCurrentUserName(session?.user?.id);
   const [activeModule, setActiveModule] = useState<AppModule>(initialModule ?? 'sales');
   const [activeEntity, setActiveEntity] = useState<AppEntity>(initialEntity ?? 'accounts');
@@ -104,18 +120,25 @@ export default function CrmApp({
   }, []);
 
   useEffect(() => {
-    // getSession() returns the stored session and auto-refreshes it when expired
-    // (autoRefreshToken is on). Do NOT call refreshSession() here too — a second
-    // concurrent refresh reuses an already-rotated token and gets a 400.
-    supabase.auth.getSession().then(({ data }) => {
-      const s = data.session ?? null;
-      setSession(s);
-      if (s) loadAdminFlag(s.user.id);
-    }).catch((err) => {
-      // Never leave the app stuck on the loading spinner if session bootstrap throws
-      console.error('[CrmApp] session bootstrap failed:', err);
-      setSession(null);
-    });
+    // When App already resolved the session (the normal path) we skip the initial
+    // getSession() + admin-flag query entirely — those would be a duplicate of the
+    // work App just did. We still subscribe to onAuthStateChange for sign-out and
+    // token refresh. Only when mounted standalone (no initialSession) do we
+    // bootstrap the session ourselves.
+    if (initialSession === undefined) {
+      // getSession() returns the stored session and auto-refreshes it when expired
+      // (autoRefreshToken is on). Do NOT call refreshSession() here too — a second
+      // concurrent refresh reuses an already-rotated token and gets a 400.
+      supabase.auth.getSession().then(({ data }) => {
+        const s = data.session ?? null;
+        setSession(s);
+        if (s) loadAdminFlag(s.user.id);
+      }).catch((err) => {
+        // Never leave the app stuck on the loading spinner if session bootstrap throws
+        console.error('[CrmApp] session bootstrap failed:', err);
+        setSession(null);
+      });
+    }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
@@ -123,7 +146,7 @@ export default function CrmApp({
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [initialSession]);
 
   useEffect(() => {
     if (session) {
@@ -405,7 +428,15 @@ export default function CrmApp({
         <div key={metadataEpoch} className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Sales Dashboard — renders the org-wide default dashboard (is_default = true)
               for every user. Admins set the default in Admin Studio → Dashboards. */}
-          {view.type === 'dashboard' && <DashboardViewer />}
+          {view.type === 'dashboard' && (
+            <Suspense fallback={
+              <div className="flex-1 flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-[var(--navy-accent)] border-t-transparent rounded-full animate-spin" />
+              </div>
+            }>
+              <DashboardViewer />
+            </Suspense>
+          )}
 
           {(view.type === 'list' || view.type === 'filtered-list') && (
             <EntityListPage

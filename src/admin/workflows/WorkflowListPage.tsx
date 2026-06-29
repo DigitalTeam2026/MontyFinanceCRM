@@ -1,19 +1,20 @@
 import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState } from 'react';
 import {
-  Plus, RefreshCw, Zap, Pencil, Trash2, ToggleLeft, ToggleRight, AlertCircle, PlayCircle, CheckCircle2, PlusCircle, Clock, Play, GitBranch, Shield, Wrench, Copy, Lock, Search, LayoutGrid, User } from 'lucide-react';
+  Plus, RefreshCw, Zap, Pencil, Trash2, ToggleLeft, ToggleRight, AlertCircle, PlayCircle, CheckCircle2, PlusCircle, Clock, Play, GitBranch, Database, Shield, Wrench, Copy, Lock, Search, LayoutGrid, User, ScrollText, X } from 'lucide-react';
 import type { EntityDefinition } from '../../types/entity';
 import type { WorkflowDefinition, WorkflowTriggerType } from '../../types/workflow';
 import { TRIGGER_META } from '../../types/workflow';
 import { fetchEntities } from '../../services/entityService';
 import {
-  fetchWorkflowsForEntity,
+  fetchAllWorkflows,
   createWorkflow,
   softDeleteWorkflow,
   toggleWorkflowActive,
   cloneWorkflow,
 } from '../../services/workflowService';
 import ConfirmDialog from '../components/ConfirmDialog';
+import WorkflowRunsPanel from './WorkflowRuns';
 
 const TRIGGER_ICONS: Record<WorkflowTriggerType, React.ReactNode> = {
   on_create:        <PlusCircle size={10} />,
@@ -23,6 +24,14 @@ const TRIGGER_ICONS: Record<WorkflowTriggerType, React.ReactNode> = {
   scheduled:        <Clock size={10} />,
   manual:           <Play size={10} />,
 };
+
+// Top-level flow types for the create modal — the specific change type
+// (Added/Modified/Deleted) and table are chosen inside the trigger afterwards.
+const CREATE_FLOW_TYPES: { id: string; label: string; desc: string; trigger: WorkflowTriggerType; icon: React.ReactNode }[] = [
+  { id: 'record_change', label: 'Record Change (Dataverse)', desc: 'Added, modified, or deleted', trigger: 'on_update', icon: <Database size={14} /> },
+  { id: 'scheduled',     label: 'Scheduled',                 desc: 'Recurring schedule',          trigger: 'scheduled', icon: <Clock size={14} /> },
+  { id: 'manual',        label: 'Manual',                    desc: 'On demand by a user',         trigger: 'manual',    icon: <Play size={14} /> },
+];
 
 type CategoryTab = 'all' | 'system' | 'custom';
 
@@ -41,32 +50,25 @@ export default function WorkflowListPage({ onOpen }: WorkflowListPageProps) {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
-  const [newTrigger, setNewTrigger] = useState<WorkflowTriggerType>('on_create');
+  const [newTrigger, setNewTrigger] = useState<WorkflowTriggerType>('on_update');
   const [categoryTab, setCategoryTab] = useState<CategoryTab>('all');
   const [search, setSearch] = useState('');
   const [cloneTarget, setCloneTarget] = useState<WorkflowDefinition | null>(null);
   const [cloneName, setCloneName] = useState('');
   const [cloning, setCloning] = useState(false);
+  const [logsTarget, setLogsTarget] = useState<WorkflowDefinition | null>(null);
 
   useEffect(() => {
-    fetchEntities()
-      .then((ents) => {
+    // Flows are no longer entity-scoped: load every workflow plus the entity list
+    // (the dropdown becomes an optional filter, and provides table-name badges).
+    Promise.all([fetchEntities(), fetchAllWorkflows()])
+      .then(([ents, wfs]) => {
         setEntities(ents);
-        if (ents.length > 0) setSelectedEntityId(ents[0].entity_definition_id);
+        setWorkflows(wfs);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
-
-  useEffect(() => {
-    if (!selectedEntityId) return;
-    setWfLoading(true);
-    setError(null);
-    fetchWorkflowsForEntity(selectedEntityId)
-      .then(setWorkflows)
-      .catch((e) => setError(e.message))
-      .finally(() => setWfLoading(false));
-  }, [selectedEntityId]);
 
   const systemCount = workflows.filter((w) => w.is_system).length;
   const customCount = workflows.filter((w) => !w.is_system).length;
@@ -80,17 +82,20 @@ export default function WorkflowListPage({ onOpen }: WorkflowListPageProps) {
       categoryTab === 'all' ||
       (categoryTab === 'system' && w.is_system) ||
       (categoryTab === 'custom' && !w.is_system);
-    return matchSearch && matchCat;
+    const matchEntity = !selectedEntityId || w.entity_definition_id === selectedEntityId;
+    return matchSearch && matchCat && matchEntity;
   });
 
   const activeFiltered = filtered.filter((w) => w.is_active);
   const draftFiltered = filtered.filter((w) => !w.is_active);
 
   const handleCreate = async () => {
-    if (!newName.trim() || !selectedEntityId) return;
+    if (!newName.trim()) return;
     try {
+      // Create without a table — the entity is chosen inside the trigger. If a
+      // table filter is active, pre-fill it as a convenience.
       const wf = await createWorkflow({
-        entity_definition_id: selectedEntityId,
+        entity_definition_id: selectedEntityId || null,
         name: newName.trim(),
         trigger_type: newTrigger,
       });
@@ -167,9 +172,11 @@ export default function WorkflowListPage({ onOpen }: WorkflowListPageProps) {
         <div className="relative">
           <FilterSelect
             value={selectedEntityId}
+            forceSearch
             onChange={(e) => { setSelectedEntityId(e.target.value); setCategoryTab('all'); setSearch(''); }}
             className="appearance-none pl-2.5 pr-7 py-1.5 text-[12px] font-medium border border-slate-300 rounded bg-white focus:outline-none focus:border-blue-400 text-slate-700"
           >
+            <option value="">All tables</option>
             {entities.map((e) => (
               <option key={e.entity_definition_id} value={e.entity_definition_id}>{e.display_name}</option>
             ))}
@@ -180,7 +187,6 @@ export default function WorkflowListPage({ onOpen }: WorkflowListPageProps) {
 
         <button
           onClick={() => setCreating(true)}
-          disabled={!selectedEntityId}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-medium rounded transition-colors disabled:opacity-40"
         >
           <Plus size={13} /> New Custom Workflow
@@ -257,6 +263,7 @@ export default function WorkflowListPage({ onOpen }: WorkflowListPageProps) {
                 onDelete={setDeleteTarget}
                 onToggle={handleToggle}
                 onClone={openCloneModal}
+                onLogs={setLogsTarget}
               />
             )}
             {draftFiltered.length > 0 && (
@@ -267,6 +274,7 @@ export default function WorkflowListPage({ onOpen }: WorkflowListPageProps) {
                 onDelete={setDeleteTarget}
                 onToggle={handleToggle}
                 onClone={openCloneModal}
+                onLogs={setLogsTarget}
                 muted
               />
             )}
@@ -293,25 +301,29 @@ export default function WorkflowListPage({ onOpen }: WorkflowListPageProps) {
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Trigger</label>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Flow Type</label>
                 <div className="space-y-1.5">
-                  {(Object.entries(TRIGGER_META) as [WorkflowTriggerType, typeof TRIGGER_META[WorkflowTriggerType]][]).map(([type, meta]) => (
-                    <button
-                      key={type}
-                      onClick={() => setNewTrigger(type)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[12px] text-left transition-all border-2 ${
-                        newTrigger === type ? meta.color : 'border-slate-100 bg-white text-slate-600 hover:border-slate-200'
-                      }`}
-                    >
-                      <span>{TRIGGER_ICONS[type]}</span>
-                      <div className="flex-1">
-                        <span className="font-semibold">{meta.label}</span>
-                        <span className="text-[10px] text-slate-400 ml-2">{meta.desc}</span>
-                      </div>
-                      {newTrigger === type && <div className="w-2 h-2 rounded-full bg-current shrink-0" />}
-                    </button>
-                  ))}
+                  {CREATE_FLOW_TYPES.map((c) => {
+                    const selected = newTrigger === c.trigger;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => setNewTrigger(c.trigger)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[12px] text-left transition-all border-2 ${
+                          selected ? 'border-blue-300 bg-blue-50 text-slate-800' : 'border-slate-100 bg-white text-slate-600 hover:border-slate-200'
+                        }`}
+                      >
+                        <span className="text-blue-600">{c.icon}</span>
+                        <div className="flex-1">
+                          <span className="font-semibold">{c.label}</span>
+                          <span className="text-[10px] text-slate-400 ml-2">{c.desc}</span>
+                        </div>
+                        {selected && <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
+                      </button>
+                    );
+                  })}
                 </div>
+                <p className="text-[10px] text-slate-400 mt-1.5">You'll pick the table and the exact change type inside the trigger.</p>
               </div>
             </div>
             <div className="flex gap-2 mt-5">
@@ -350,6 +362,28 @@ export default function WorkflowListPage({ onOpen }: WorkflowListPageProps) {
         </div>
       )}
 
+      {/* Logs Modal — view run history without opening the flow */}
+      {logsTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setLogsTarget(null)} />
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-200 shrink-0">
+              <ScrollText size={15} className="text-blue-500" />
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-slate-800 truncate">{logsTarget.name}</p>
+                <p className="text-[10px] text-slate-400">Run history</p>
+              </div>
+              <button onClick={() => setLogsTarget(null)} className="ml-auto p-1 text-slate-400 hover:text-slate-700 rounded">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto">
+              <WorkflowRunsPanel workflowId={logsTarget.workflow_id} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {deleteTarget && (
         <ConfirmDialog
           title="Delete Custom Workflow"
@@ -371,6 +405,7 @@ function WfSection({
   onDelete,
   onToggle,
   onClone,
+  onLogs,
   muted,
 }: {
   title: string;
@@ -379,6 +414,7 @@ function WfSection({
   onDelete: (w: WorkflowDefinition) => void;
   onToggle: (w: WorkflowDefinition) => void;
   onClone: (w: WorkflowDefinition) => void;
+  onLogs: (w: WorkflowDefinition) => void;
   muted?: boolean;
 }) {
   return (
@@ -395,6 +431,7 @@ function WfSection({
             onDelete={() => onDelete(wf)}
             onToggle={() => onToggle(wf)}
             onClone={() => onClone(wf)}
+            onLogs={() => onLogs(wf)}
             muted={muted}
           />
         ))}
@@ -409,6 +446,7 @@ function WfCard({
   onDelete,
   onToggle,
   onClone,
+  onLogs,
   muted,
 }: {
   wf: WorkflowDefinition;
@@ -416,6 +454,7 @@ function WfCard({
   onDelete: () => void;
   onToggle: () => void;
   onClone: () => void;
+  onLogs: () => void;
   muted?: boolean;
 }) {
   const isSystem = wf.is_system;
@@ -506,6 +545,13 @@ function WfCard({
               : <ToggleLeft size={15} />}
           </button>
         )}
+        <button
+          onClick={onLogs}
+          title="View run logs"
+          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+        >
+          <ScrollText size={12} />
+        </button>
         <button
           onClick={onClone}
           title="Clone this workflow"

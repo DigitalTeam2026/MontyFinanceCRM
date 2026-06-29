@@ -26,6 +26,22 @@ export interface Recommendation {
   description: string;
 }
 
+/**
+ * Runtime values injected by the host (the form) that rules can resolve at
+ * evaluation time but that aren't part of the record itself — e.g. the
+ * logged-in user, used by the `current_user` value source to stamp fields like
+ * "Approved By" with whoever is filling the form.
+ *
+ * `current_user` writes the user's id into a lookup field (so it resolves to
+ * their name) and their display name into a text field — `fieldTypes` (logical
+ * name → field type) lets the engine tell which it's targeting.
+ */
+export interface RuleRuntime {
+  currentUserId?: string | null;
+  currentUserName?: string | null;
+  fieldTypes?: Record<string, string>;
+}
+
 export interface FormRuleState {
   fields: Record<string, FieldRuleState>;
   recommendations: Recommendation[];
@@ -163,7 +179,19 @@ function resolveNewActionValue(
   action: RuleAction,
   currentValues: RecordData,
   lookupLabels: Record<string, string>,
+  runtime?: RuleRuntime,
 ): unknown {
+  // current_user: stamp the field with the logged-in user. A lookup field gets
+  // the user's id (which resolves to their name for display); any other field
+  // (text, etc.) gets the display name directly. Null when no user is in context
+  // (e.g. the rule preview), so the field is simply left unset.
+  if (action.value_type === 'current_user') {
+    const isLookup = action.target_field
+      ? runtime?.fieldTypes?.[action.target_field] === 'lookup'
+      : false;
+    if (isLookup) return runtime?.currentUserId ?? null;
+    return runtime?.currentUserName ?? runtime?.currentUserId ?? null;
+  }
   if (action.value_type === 'field') {
     // Multiple fields: concatenate using separator (default space)
     if (action.value_fields && action.value_fields.length > 0) {
@@ -200,6 +228,7 @@ function applyActions(
   state: FormRuleState,
   currentValues: RecordData,
   lookupLabels: Record<string, string>,
+  runtime?: RuleRuntime,
 ) {
   for (const action of actions) {
     const field = action.target_field;
@@ -230,7 +259,7 @@ function applyActions(
     if (action.action_type === 'set_field_value') {
       if (!field) continue;
       if (!state.fields[field]) state.fields[field] = defaultFieldState();
-      state.fields[field].forcedValue = resolveNewActionValue(action, currentValues, lookupLabels);
+      state.fields[field].forcedValue = resolveNewActionValue(action, currentValues, lookupLabels, runtime);
       state.fields[field].clearValue = false;
       continue;
     }
@@ -238,7 +267,7 @@ function applyActions(
     if (action.action_type === 'set_default_value') {
       if (!field) continue;
       if (!state.fields[field]) state.fields[field] = defaultFieldState();
-      state.fields[field].defaultValue = resolveNewActionValue(action, currentValues, lookupLabels);
+      state.fields[field].defaultValue = resolveNewActionValue(action, currentValues, lookupLabels, runtime);
       continue;
     }
 
@@ -263,7 +292,7 @@ function applyActions(
     if (action.action_type === 'advanced_formula_value') {
       if (!field) continue;
       if (!state.fields[field]) state.fields[field] = defaultFieldState();
-      state.fields[field].forcedValue = resolveNewActionValue(action, currentValues, lookupLabels);
+      state.fields[field].forcedValue = resolveNewActionValue(action, currentValues, lookupLabels, runtime);
       state.fields[field].clearValue = false;
       continue;
     }
@@ -334,6 +363,7 @@ export function evaluateRules(
   activeFormId?: string | null,
   context?: ProcessRuleContext,
   lookupLabels?: Record<string, string>,
+  runtime?: RuleRuntime,
 ): FormRuleState {
   const labels = lookupLabels ?? {};
   const state: FormRuleState = {
@@ -365,9 +395,9 @@ export function evaluateRules(
         : true;
 
       if (conditionMet) {
-        applyActions(block.if_actions ?? [], state, values, labels);
+        applyActions(block.if_actions ?? [], state, values, labels, runtime);
       } else {
-        applyActions(block.else_actions ?? [], state, values, labels);
+        applyActions(block.else_actions ?? [], state, values, labels, runtime);
       }
     }
   }

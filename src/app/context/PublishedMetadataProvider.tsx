@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import {
   refreshPublishedSnapshot,
   fetchLatestPublishedVersion,
+  hydrateFromCache,
 } from '../services/metadata/snapshotService';
 import { getSnapshotVersion } from '../services/metadata/metadataStore';
 
@@ -63,15 +64,25 @@ export function PublishedMetadataProvider({ children }: { children: React.ReactN
     }
   }, [applyRefresh]);
 
-  // Initial load — block first paint so loaders read the snapshot, not drafts.
+  // Initial load. Warm path: a per-tab cache lets us hydrate the store and paint
+  // immediately, then revalidate the version in the background. Cold path (no
+  // cache): block first paint until the snapshot downloads, so loaders read the
+  // published config rather than the live draft tables.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      await applyRefresh(true);
-      if (!cancelled) setReady(true);
+      const cachedVersion = hydrateFromCache();
+      if (cachedVersion !== null) {
+        setVersion(cachedVersion);
+        setReady(true);
+        await checkForUpdates(); // background revalidate; re-hydrates only if newer
+      } else {
+        await applyRefresh(true);
+        if (!cancelled) setReady(true);
+      }
     })();
     return () => { cancelled = true; };
-  }, [applyRefresh]);
+  }, [applyRefresh, checkForUpdates]);
 
   // Realtime: a new publication arrives -> refresh immediately.
   useEffect(() => {

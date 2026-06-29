@@ -1,10 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import LoginPage from './LoginPage';
-import AdminStudio from './admin/AdminStudio';
-import CrmApp from './app/CrmApp';
 import { parseRoute } from './lib/appRoute';
+
+// Admin Studio is admin-only and pulls in a large designer surface (entity/form/
+// workflow/dashboard editors). Lazy-load it so regular users never download it,
+// and the CRM app loads independently of the admin bundle.
+const AdminStudio = lazy(() => import('./admin/AdminStudio'));
+const CrmApp = lazy(() => import('./app/CrmApp'));
+
+/** Minimal full-screen spinner shown while a lazy surface chunk downloads. */
+function FullScreenSpinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 export function buildRecordUrl(entitySlug: string, id: string): string {
   return `${window.location.pathname}${window.location.search}#/record/${entitySlug}/${id}`;
@@ -83,22 +96,27 @@ export default function App() {
 
   // Admin + studio route
   if (isSystemAdmin && route.surface === 'studio') {
-    return <AdminStudio />;
-  }
-
-  // CRM app (all users). A non-admin landing on a studio hash falls through to
-  // the CRM default rather than being shown a blank screen.
-  if (route.surface === 'crm') {
     return (
-      <CrmApp
-        initialModule={route.module}
-        initialEntity={route.entity}
-        initialView={route.view}
-        initialViewId={route.viewId}
-        initialSearch={route.search}
-      />
+      <Suspense fallback={<FullScreenSpinner />}>
+        <AdminStudio />
+      </Suspense>
     );
   }
 
-  return <CrmApp />;
+  // CRM app (all users). A non-admin landing on a studio hash falls through to
+  // the CRM default rather than being shown a blank screen. Session and admin
+  // status are passed down so CrmApp does not re-run the auth bootstrap.
+  return (
+    <Suspense fallback={<FullScreenSpinner />}>
+      <CrmApp
+        initialSession={session}
+        initialIsSystemAdmin={isSystemAdmin}
+        initialModule={route.surface === 'crm' ? route.module : undefined}
+        initialEntity={route.surface === 'crm' ? route.entity : undefined}
+        initialView={route.surface === 'crm' ? route.view : undefined}
+        initialViewId={route.surface === 'crm' ? route.viewId : undefined}
+        initialSearch={route.surface === 'crm' ? route.search : undefined}
+      />
+    </Suspense>
+  );
 }

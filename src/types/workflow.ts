@@ -12,20 +12,45 @@ export type WorkflowStepType =
   | 'send_notification'
   | 'create_record'
   | 'delete_record'
+  | 'variable'
   | 'condition'
   | 'wait'
   | 'webhook';
 
-// Shared targeting for record-mutating steps: act on the record that triggered
-// the workflow, or on the record a lookup field on the trigger record points to.
+// Power-Automate-style variable action. One step type covers all operations.
+export interface VariableConfig {
+  operation: 'initialize' | 'set' | 'increment' | 'append';
+  var_name: string;
+  /** Only for `initialize`. */
+  var_type?: 'string' | 'number' | 'boolean' | 'array' | 'object';
+  /** Literal or token string (supports {{field}} and {{var.name}}). */
+  value?: string;
+}
+
+// A single row-match clause used by the `match` targeting mode. The value is
+// either a literal (static) or pulled from a field on the trigger record.
+export interface MatchCondition {
+  id: string;
+  field: string;
+  operator: 'eq' | 'neq' | 'contains' | 'gt' | 'lt' | 'in' | 'is_null' | 'is_not_null';
+  value_source?: 'static' | 'trigger_field';
+  value?: string;
+}
+
+// Shared targeting for record-mutating steps:
+//   trigger → the record that fired the workflow
+//   lookup  → the record a lookup field on the trigger record points to
+//   match   → any rows in a freely-chosen table that match the conditions
 export interface RecordTarget {
-  target_mode?: 'trigger' | 'lookup';
+  target_mode?: 'trigger' | 'lookup' | 'match';
   /** Logical name of a lookup field on the trigger entity (lookup mode). */
   target_lookup_field?: string;
-  /** Physical table of the related entity, captured when the lookup is picked. */
+  /** Physical table of the related/target entity, captured when picked. */
   target_entity_table?: string;
-  /** Primary-key column of the related entity. */
+  /** Primary-key column of the related/target entity. */
   target_pk_column?: string;
+  /** Row-match clauses for `match` mode (ALL must hold; at least one required). */
+  match_conditions?: MatchCondition[];
 }
 
 export interface WorkflowTriggerConditions {
@@ -34,6 +59,8 @@ export interface WorkflowTriggerConditions {
   status_to?: string;
   filter_conditions?: WorkflowFilterCondition[];
   schedule_cron?: string;
+  /** Power-Automate-style change types a record-change trigger listens to. */
+  change_types?: ('create' | 'update' | 'delete')[];
 }
 
 export interface WorkflowFilterCondition {
@@ -46,7 +73,7 @@ export interface WorkflowFilterCondition {
 
 export interface WorkflowDefinition {
   workflow_id: string;
-  entity_definition_id: string;
+  entity_definition_id: string | null;
   name: string;
   description: string | null;
   trigger_type: WorkflowTriggerType;
@@ -61,6 +88,8 @@ export interface WorkflowDefinition {
   created_by: string | null;
   created_at: string;
   modified_at: string;
+  /** Engine v2: the whole nested flow ({ enabled, trigger, steps }). Null = legacy flat steps. */
+  definition?: Record<string, unknown> | null;
 }
 
 export interface WorkflowStep {
@@ -84,6 +113,7 @@ export type WorkflowStepConfig =
   | SendNotificationConfig
   | CreateRecordConfig
   | DeleteRecordConfig
+  | VariableConfig
   | ConditionConfig
   | WaitConfig
   | WebhookConfig
@@ -193,6 +223,7 @@ export const STEP_META: Record<
   send_notification: { label: 'Send Notification',   desc: 'Notify users in-app or by email',         color: 'text-amber-700',   bg: 'bg-amber-50 border-amber-200',    group: 'Notify' },
   create_record:     { label: 'Create Record',       desc: 'Create a new related record',             color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200', group: 'Data' },
   delete_record:     { label: 'Delete Record',        desc: 'Delete the trigger or a related record',  color: 'text-red-700',     bg: 'bg-red-50 border-red-200',        group: 'Data' },
+  variable:          { label: 'Variable',             desc: 'Initialize, set, increment or append',    color: 'text-purple-700',  bg: 'bg-purple-50 border-purple-200',  group: 'Logic' },
   condition:         { label: 'Condition (Branch)',  desc: 'Split flow based on a condition',         color: 'text-orange-700',  bg: 'bg-orange-50 border-orange-200',  group: 'Logic' },
   wait:              { label: 'Wait / Delay',        desc: 'Pause workflow for a duration',           color: 'text-slate-700',   bg: 'bg-slate-50 border-slate-300',    group: 'Logic' },
   webhook:           { label: 'Call Webhook',        desc: 'Send HTTP request to external service',   color: 'text-rose-700',    bg: 'bg-rose-50 border-rose-200',      group: 'Integration' },

@@ -29,6 +29,7 @@ import ColumnSecurityPage from './columnsecurity/ColumnSecurityPage';
 import DigitalRulesPage from './digitalrules/DigitalRulesPage';
 import RelationshipListPage from './relationships/RelationshipListPage';
 import RelationshipEditorPage from './relationships/RelationshipEditorPage';
+import ImportRelationsPage from './relationimport/ImportRelationsPage';
 import DatabaseValidationPage from './validation/DatabaseValidationPage';
 import SystemHealthPage from './system/SystemHealthPage';
 import ApiIntegrationsPage from './integrations/ApiIntegrationsPage';
@@ -329,6 +330,9 @@ export default function AdminStudio() {
     if (activeModule === 'dbvalidation') {
       return { title: 'Database Validation', subtitle: 'Scan all entity field definitions and verify physical database columns exist and are correctly mapped' };
     }
+    if (activeModule === 'relationimport') {
+      return { title: 'Import Relations', subtitle: 'Bulk-import N:N relation (junction) records from Excel — links existing records by name or legacy ID' };
+    }
     if (activeModule === 'systemhealth') {
       return { title: 'System Health', subtitle: 'Detect and repair drift between CRM metadata and the physical database — missing tables, columns, forms, views, privileges, and stale API schema cache' };
     }
@@ -480,6 +484,7 @@ export default function AdminStudio() {
     if (activeModule === 'merges') return <MergeCenterPage />;
     if (activeModule === 'columnsecurity') return <ColumnSecurityPage />;
     if (activeModule === 'dbvalidation') return <DatabaseValidationPage />;
+    if (activeModule === 'relationimport') return <ImportRelationsPage />;
     if (activeModule === 'systemhealth') return <SystemHealthPage />;
     if (activeModule === 'integrations') return <ApiIntegrationsPage />;
     if (activeModule === 'companyprofile') return <CompanyProfilePage />;

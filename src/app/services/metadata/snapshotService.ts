@@ -14,6 +14,44 @@ export interface LatestSnapshot {
   snapshot: Record<string, unknown[]>;
 }
 
+// Per-tab cache of the last published snapshot. Lets a reload paint instantly
+// from the previously-fetched config instead of blocking on a fresh full
+// download; the provider revalidates the version in the background and only
+// re-downloads when an admin has published a newer version.
+const SNAPSHOT_CACHE_KEY = 'mf.published_snapshot.v1';
+
+function readSnapshotCache(): LatestSnapshot | null {
+  try {
+    const raw = sessionStorage.getItem(SNAPSHOT_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LatestSnapshot;
+    if (typeof parsed?.version !== 'number' || !parsed.snapshot) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeSnapshotCache(snap: LatestSnapshot): void {
+  try {
+    sessionStorage.setItem(SNAPSHOT_CACHE_KEY, JSON.stringify(snap));
+  } catch {
+    // Storage full or unavailable (private mode) — caching is best-effort.
+  }
+}
+
+/**
+ * Synchronously hydrate the in-memory store from the per-tab cache, if present.
+ * Returns the cached version (so the app can paint immediately) or null when no
+ * cache exists and a blocking fetch is required.
+ */
+export function hydrateFromCache(): number | null {
+  const cached = readSnapshotCache();
+  if (!cached) return null;
+  hydrateSnapshot(cached.snapshot, cached.version);
+  return cached.version;
+}
+
 /** Fetch the latest published snapshot, or null if none exists yet. */
 export async function fetchLatestPublishedSnapshot(): Promise<LatestSnapshot | null> {
   const { data, error } = await supabase
@@ -66,6 +104,7 @@ export async function refreshPublishedSnapshot(force = false): Promise<number | 
   if (!force && getSnapshotVersion() === latest.version) return latest.version;
 
   hydrateSnapshot(latest.snapshot, latest.version);
+  writeSnapshotCache(latest);
   invalidateAllMetadataCaches();
   return latest.version;
 }

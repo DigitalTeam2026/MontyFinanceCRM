@@ -1,5 +1,5 @@
 import FilterSelect from '../components/FilterSelect';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import {
   ChevronUp,
   ChevronDown,
@@ -43,10 +43,12 @@ import ColumnFilterDropdown from '../components/ColumnFilterDropdown';
 import { resolveGridValues } from '../services/gridResolver';
 import { renderListCell } from '../components/list/renderListCell';
 import { buildColumnState, buildColumnStatesFromViewColumns } from '../services/viewColumnState';
-import ImportFromExcelModal from '../components/ImportFromExcelModal';
 import { fetchSharedRecordIds } from '../services/recordShareService';
-import * as XLSX from 'xlsx';
-import { downloadWorkbook } from '../services/importEngine';
+import { exportSheetsToXlsx } from '../services/xlsxExport';
+
+// The import modal pulls in the xlsx parsing/template engine; load it on demand
+// the first time a user opens Import rather than on every list view.
+const ImportFromExcelModal = lazy(() => import('../components/ImportFromExcelModal'));
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
 type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
@@ -820,7 +822,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                 </CmdBtn>
               )}
               {canExportExcel && (
-                <CmdBtn onClick={() => {
+                <CmdBtn onClick={async () => {
                   if (rows.length === 0) return;
                   const cols = visibleColumns;
                   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -841,11 +843,11 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                       return s;
                     }),
                   ]);
-                  const wb = XLSX.utils.book_new();
-                  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-                  ws['!cols'] = headers.map((h, i) => ({ wch: i === 0 ? 38 : Math.max(h.length + 4, 14) }));
-                  XLSX.utils.book_append_sheet(wb, ws, 'Export');
-                  downloadWorkbook(wb, `${entity}-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
+                  const colWidths = headers.map((h, i) => (i === 0 ? 38 : Math.max(h.length + 4, 14)));
+                  await exportSheetsToXlsx(
+                    [{ name: 'Export', rows: [headers, ...dataRows], colWidths }],
+                    `${entity}-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+                  );
                 }}>
                   <Download size={14} />
                   <span>Export</span>
@@ -1286,15 +1288,17 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
       )}
 
       {showImportModal && (
-        <ImportFromExcelModal
-          entity={entity}
-          entityLabel={entityName.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-          viewName={activeView?.name ?? 'Default View'}
-          viewColumns={columnStates}
-          userId={userId ?? ''}
-          onClose={() => setShowImportModal(false)}
-          onImportComplete={() => { load(); showSuccess('Import completed. Grid refreshed.'); }}
-        />
+        <Suspense fallback={null}>
+          <ImportFromExcelModal
+            entity={entity}
+            entityLabel={entityName.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+            viewName={activeView?.name ?? 'Default View'}
+            viewColumns={columnStates}
+            userId={userId ?? ''}
+            onClose={() => setShowImportModal(false)}
+            onImportComplete={() => { load(); showSuccess('Import completed. Grid refreshed.'); }}
+          />
+        </Suspense>
       )}
 
       {/* Combined sort + filter panel for column headers */}

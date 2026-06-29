@@ -73,7 +73,7 @@ export interface RuleAction {
   // generic value (boolean, string, etc. depending on action_type)
   value?: string | boolean;
   // set_field_value / set_default_value
-  value_type?: 'static' | 'field';
+  value_type?: 'static' | 'field' | 'current_user';
   value_field?: string;       // legacy single field (kept for backwards compat)
   value_fields?: string[];    // ordered list of fields to concatenate
   value_fields_separator?: string; // separator between fields, default ' '

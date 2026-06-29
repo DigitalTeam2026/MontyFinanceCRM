@@ -9,6 +9,7 @@ import {
   type MetadataHealthReport,
 } from '../../services/schemaService';
 import { fetchEntities, repairEntityTable } from '../../services/entityService';
+import { recreateFieldColumn, deleteFieldById } from '../../services/fieldService';
 import { bootstrapEntity } from '../../services/bootstrapEntityService';
 import { invalidateAllMetadataCaches } from '../../app/services/metadata/cacheBus';
 import { supabase } from '../../lib/supabase';
@@ -76,6 +77,44 @@ export default function SystemHealthPage() {
       if (rpcErr) throw rpcErr;
     }, 'Administrator privileges synced');
 
+  const handleRecreateColumn = (fieldId: string) =>
+    withBusy(`col:${fieldId}`, () => recreateFieldColumn(fieldId), 'Database column created');
+
+  const handleDeleteField = (fieldId: string) =>
+    withBusy(`field:${fieldId}`, () => deleteFieldById(fieldId), 'Field removed');
+
+  // ── Per-section "Fix all": run the safe auto-fix for every row in a section ──────
+  const handleFixAllTables = () =>
+    withBusy('fixall:tables', async () => {
+      for (const t of (report?.missing_tables ?? []).filter((x) => x.is_custom)) {
+        await repairEntityTable(t.entity_definition_id);
+      }
+      await reloadPostgrestSchema();
+    }, 'Tables created');
+
+  const handleFixAllDefaults = (entities: MetadataHealthReport['entities_missing_main_form']) =>
+    async () => {
+      const all = await fetchEntities();
+      for (const e of entities) {
+        const ent = all.find((x) => x.entity_definition_id === e.entity_definition_id) as
+          | EntityDefinition
+          | undefined;
+        if (ent) await bootstrapEntity(ent);
+      }
+    };
+
+  const handleFixAllForms = () =>
+    withBusy('fixall:forms', handleFixAllDefaults(report?.entities_missing_main_form ?? []), 'Default forms created');
+
+  const handleFixAllViews = () =>
+    withBusy('fixall:views', handleFixAllDefaults(report?.entities_missing_active_view ?? []), 'Default views created');
+
+  const handleFixAllPrivileges = () =>
+    withBusy('fixall:priv', async () => {
+      const { error: rpcErr } = await supabase.rpc('sync_system_admin_privileges');
+      if (rpcErr) throw rpcErr;
+    }, 'Administrator privileges synced');
+
   const issueCount = report ? countHealthIssues(report) : 0;
 
   return (
@@ -139,9 +178,14 @@ export default function SystemHealthPage() {
               hint="The entity metadata exists but its database table does not. Opening these entities errors."
               items={report.missing_tables}
               render={(t) => `${t.display_name} (${t.physical_table_name})`}
-              action={(t) =>
+              actions={(t) =>
                 t.is_custom
-                  ? { label: 'Create table', onClick: () => handleRepairTable(t.entity_definition_id), busyKey: `table:${t.entity_definition_id}` }
+                  ? [{ label: 'Create table', onClick: () => handleRepairTable(t.entity_definition_id), busyKey: `table:${t.entity_definition_id}` }]
+                  : []
+              }
+              fixAll={
+                report.missing_tables.some((t) => t.is_custom)
+                  ? { label: 'Create all', onClick: handleFixAllTables, busyKey: 'fixall:tables' }
                   : null
               }
               busy={busy}
@@ -150,10 +194,13 @@ export default function SystemHealthPage() {
             <HealthSection<typeof report.missing_columns[number]>
               icon={<Columns3 size={14} />}
               title="Fields with no database column"
-              hint="A field maps to a column the table lacks. Saving this field is blocked with a clear error. Try reloading the schema cache first; if it persists the column must be re-created."
+              hint="A field maps to a column the table lacks. Try reloading the schema cache first. If it persists, either re-create the column (for a real field) or delete the field (for a malformed one). This is per-row on purpose — recreating a column is additive, deleting a field is destructive."
               items={report.missing_columns}
               render={(c) => `${c.entity_display_name}.${c.field_display_name} → ${c.physical_table_name}.${c.physical_column_name}`}
-              action={() => null}
+              actions={(c) => [
+                { label: 'Recreate column', onClick: () => handleRecreateColumn(c.field_definition_id), busyKey: `col:${c.field_definition_id}` },
+                { label: 'Delete field', onClick: () => handleDeleteField(c.field_definition_id), busyKey: `field:${c.field_definition_id}`, danger: true },
+              ]}
               busy={busy}
             />
 
@@ -163,7 +210,8 @@ export default function SystemHealthPage() {
               hint="Records can't be created/edited without a form. Create the default forms."
               items={report.entities_missing_main_form}
               render={(e) => e.display_name}
-              action={(e) => ({ label: 'Create defaults', onClick: () => handleCreateDefaults(e.entity_definition_id), busyKey: `defaults:${e.entity_definition_id}` })}
+              actions={(e) => [{ label: 'Create defaults', onClick: () => handleCreateDefaults(e.entity_definition_id), busyKey: `defaults:${e.entity_definition_id}` }]}
+              fixAll={{ label: 'Create all', onClick: handleFixAllForms, busyKey: 'fixall:forms' }}
               busy={busy}
             />
 
@@ -173,7 +221,8 @@ export default function SystemHealthPage() {
               hint="The list page needs at least one view. Create the default views."
               items={report.entities_missing_active_view}
               render={(e) => e.display_name}
-              action={(e) => ({ label: 'Create defaults', onClick: () => handleCreateDefaults(e.entity_definition_id), busyKey: `defaults:${e.entity_definition_id}` })}
+              actions={(e) => [{ label: 'Create defaults', onClick: () => handleCreateDefaults(e.entity_definition_id), busyKey: `defaults:${e.entity_definition_id}` }]}
+              fixAll={{ label: 'Create all', onClick: handleFixAllViews, busyKey: 'fixall:views' }}
               busy={busy}
             />
 
@@ -183,7 +232,8 @@ export default function SystemHealthPage() {
               hint="System Administrator has no privilege row for these entities. Sync privileges."
               items={report.entities_missing_admin_privilege}
               render={(e) => e.display_name}
-              action={(e) => ({ label: 'Grant', onClick: () => handleGrantPrivileges(e.entity_definition_id), busyKey: `priv:${e.entity_definition_id}` })}
+              actions={(e) => [{ label: 'Grant', onClick: () => handleGrantPrivileges(e.entity_definition_id), busyKey: `priv:${e.entity_definition_id}` }]}
+              fixAll={{ label: 'Grant all', onClick: handleFixAllPrivileges, busyKey: 'fixall:priv' }}
               busy={busy}
             />
           </>
@@ -197,6 +247,24 @@ interface ActionSpec {
   label: string;
   onClick: () => void;
   busyKey: string;
+  danger?: boolean;
+}
+
+function FixButton({ spec, busy }: { spec: ActionSpec; busy: string | null }) {
+  return (
+    <button
+      onClick={spec.onClick}
+      disabled={busy !== null}
+      className={`flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border disabled:opacity-50 shrink-0 ${
+        spec.danger
+          ? 'border-red-300 text-red-600 hover:bg-red-50'
+          : 'border-[#d1d5db] text-[#374151] hover:bg-[#f9fafb]'
+      }`}
+    >
+      <Wrench size={11} className={busy === spec.busyKey ? 'animate-pulse' : ''} />
+      {spec.label}
+    </button>
+  );
 }
 
 function HealthSection<T>(props: {
@@ -205,16 +273,27 @@ function HealthSection<T>(props: {
   hint: string;
   items: T[];
   render: (item: T) => string;
-  action: (item: T) => ActionSpec | null;
+  actions: (item: T) => ActionSpec[];
+  fixAll?: ActionSpec | null;
   busy: string | null;
 }) {
-  const { icon, title, hint, items, render, action, busy } = props;
+  const { icon, title, hint, items, render, actions, fixAll, busy } = props;
   const ok = items.length === 0;
   return (
     <div className="bg-white border border-[#e5e7eb] rounded-lg overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#f1f5f9]">
         <span className={ok ? 'text-green-600' : 'text-amber-600'}>{icon}</span>
         <span className="text-[12px] font-semibold text-[#1e293b]">{title}</span>
+        {!ok && fixAll && (
+          <button
+            onClick={fixAll.onClick}
+            disabled={busy !== null}
+            className="ml-2 flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Wrench size={11} className={busy === fixAll.busyKey ? 'animate-pulse' : ''} />
+            {fixAll.label}
+          </button>
+        )}
         <span className={`ml-auto text-[11px] font-medium px-1.5 py-0.5 rounded ${ok ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
           {ok ? 'OK' : `${items.length} issue${items.length === 1 ? '' : 's'}`}
         </span>
@@ -224,20 +303,13 @@ function HealthSection<T>(props: {
           <p className="px-4 pt-2 text-[11px] text-[#6b7280]">{hint}</p>
           <ul className="px-4 py-2 space-y-1.5">
             {items.map((item, i) => {
-              const spec = action(item);
+              const specs = actions(item);
               return (
                 <li key={i} className="flex items-center gap-2 text-[12px] text-[#374151]">
                   <span className="font-mono text-[11px] text-[#475569] flex-1 truncate">{render(item)}</span>
-                  {spec && (
-                    <button
-                      onClick={spec.onClick}
-                      disabled={busy !== null}
-                      className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border border-[#d1d5db] text-[#374151] hover:bg-[#f9fafb] disabled:opacity-50 shrink-0"
-                    >
-                      <Wrench size={11} className={busy === spec.busyKey ? 'animate-pulse' : ''} />
-                      {spec.label}
-                    </button>
-                  )}
+                  {specs.map((spec) => (
+                    <FixButton key={spec.busyKey} spec={spec} busy={busy} />
+                  ))}
                 </li>
               );
             })}

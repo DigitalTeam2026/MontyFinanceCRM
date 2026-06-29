@@ -32,6 +32,7 @@ export default function ImportFromExcelModal({
   const [step, setStep] = useState<Step>('options');
   const [mode, setMode] = useState<ImportMode>('create');
   const [matchColumn, setMatchColumn] = useState<string | null>(null);
+  const [allowMissingRequired, setAllowMissingRequired] = useState(false);
   const [columns, setColumns] = useState<ImportColumnMeta[]>([]);
   const [preview, setPreview] = useState<ImportPreviewRow[]>([]);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -88,7 +89,7 @@ export default function ImportFromExcelModal({
         return;
       }
 
-      const validated = await validateAndResolve(rows, cols, refData, mode, matchColumn, entity);
+      const validated = await validateAndResolve(rows, cols, refData, mode, matchColumn, entity, !allowMissingRequired);
       setPreview(validated);
       setPreviewPage(0);
       setStep('preview');
@@ -99,7 +100,7 @@ export default function ImportFromExcelModal({
       setLoading(false);
       if (fileRef.current) fileRef.current.value = '';
     }
-  }, [entity, viewColumns, mode, matchColumn]);
+  }, [entity, viewColumns, mode, matchColumn, allowMissingRequired]);
 
   const handleImport = useCallback(async () => {
     setStep('importing');
@@ -264,6 +265,19 @@ export default function ImportFromExcelModal({
                     )}
                   </div>
                 )}
+
+                {/* Migration option: don't block rows on missing required fields */}
+                <label className="flex items-center gap-2 mb-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={allowMissingRequired}
+                    onChange={(e) => setAllowMissingRequired(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span className="text-[11px] text-[var(--ink-600)]">
+                    Allow rows with missing required fields (migration mode)
+                  </span>
+                </label>
 
                 <label
                   className={`flex items-center gap-2 px-3 py-2 border-2 border-dashed rounded-lg transition-colors ${

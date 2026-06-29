@@ -9,21 +9,18 @@ import {
   PlayCircle,
   PauseCircle,
   Database,
-  X,
+  Braces,
+  ScrollText,
 } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
-import type { WorkflowDefinition, WorkflowStep, WorkflowTriggerType, WorkflowTriggerConditions } from '../../types/workflow';
-import { TRIGGER_META } from '../../types/workflow';
-import type { FieldDefinition } from '../../types/field';
+import type { WorkflowDefinition } from '../../types/workflow';
 import type { EntityDefinition } from '../../types/entity';
-import { fetchFieldsForEntity } from '../../services/fieldService';
 import { fetchEntities } from '../../services/entityService';
-import { fetchStepsForWorkflow, saveWorkflow, saveAllSteps } from '../../services/workflowService';
-import FilterSelect from '../../app/components/FilterSelect';
-import FlowCanvas from './FlowCanvas';
-import WorkflowFilterConditions from './WorkflowFilterConditions';
+import { saveWorkflow } from '../../services/workflowService';
+import FlowBuilder from './FlowBuilder';
+import WorkflowRunsPanel from './WorkflowRuns';
 
-type Tab = 'trigger' | 'flow' | 'settings';
+type Tab = 'designer' | 'json' | 'runs' | 'settings';
 
 interface WorkflowEditorPageProps {
   workflow: WorkflowDefinition;
@@ -34,46 +31,39 @@ interface WorkflowEditorPageProps {
 export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflowUpdate }: WorkflowEditorPageProps) {
   const { showSuccess, showError } = useToast();
   const [wf, setWf] = useState<WorkflowDefinition>(initWf);
-  const [steps, setSteps] = useState<WorkflowStep[]>([]);
-  const [fields, setFields] = useState<FieldDefinition[]>([]);
   const [entities, setEntities] = useState<EntityDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('flow');
+  const [activeTab, setActiveTab] = useState<Tab>('designer');
 
   useEffect(() => {
-    Promise.all([
-      fetchFieldsForEntity(wf.entity_definition_id),
-      fetchStepsForWorkflow(wf.workflow_id),
-      fetchEntities().catch(() => [] as EntityDefinition[]),
-    ])
-      .then(([f, s, ents]) => {
-        setFields(f);
-        setSteps(s);
-        setEntities(ents);
-      })
+    fetchEntities()
+      .then((ents) => setEntities(ents))
       .catch((e) => showError(e.message))
       .finally(() => setLoading(false));
-  }, [wf.workflow_id, wf.entity_definition_id]);
+  }, []);
 
   const mark = () => setDirty(true);
   const entity = entities.find((e) => e.entity_definition_id === wf.entity_definition_id) ?? null;
 
+  // In the v2 model the table and step count live inside the flow definition.
+  const def = (wf.definition ?? null) as { trigger?: { entity?: string }; steps?: unknown[] } | null;
+  const triggerEntity = def?.trigger?.entity || entity?.logical_name || '';
+  const stepCount = def?.steps?.length ?? 0;
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      const [updated] = await Promise.all([
-        saveWorkflow(wf.workflow_id, {
-          name: wf.name,
-          description: wf.description,
-          entity_definition_id: wf.entity_definition_id,
-          trigger_type: wf.trigger_type,
-          trigger_conditions: wf.trigger_conditions,
-          is_active: wf.is_active,
-        }),
-        saveAllSteps(wf.workflow_id, cleanSteps(steps)),
-      ]);
+      const updated = await saveWorkflow(wf.workflow_id, {
+        name: wf.name,
+        description: wf.description,
+        entity_definition_id: wf.entity_definition_id,
+        trigger_type: wf.trigger_type,
+        trigger_conditions: wf.trigger_conditions,
+        is_active: wf.is_active,
+        definition: wf.definition ?? null,
+      });
       setWf(updated);
       onWorkflowUpdate(updated);
       setDirty(false);
@@ -86,9 +76,10 @@ export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflo
   };
 
   const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'trigger',  label: 'Trigger',  icon: <Zap size={13} /> },
-    { id: 'flow',     label: 'Flow',     icon: <PlayCircle size={13} /> },
-    { id: 'settings', label: 'Settings', icon: <Settings size={13} /> },
+    { id: 'designer', label: 'Designer',    icon: <Braces size={13} /> },
+    { id: 'json',     label: 'Flow JSON',   icon: <Braces size={13} /> },
+    { id: 'runs',     label: 'Run history', icon: <ScrollText size={13} /> },
+    { id: 'settings', label: 'Settings',    icon: <Settings size={13} /> },
   ];
 
   if (loading) {
@@ -120,11 +111,11 @@ export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflo
           {wf.is_active ? 'Active' : 'Draft'}
         </div>
         <div
-          className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${entity ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-600'}`}
-          title={entity ? `This workflow runs on the ${entity.display_name} table` : 'No table is bound to this workflow'}
+          className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${triggerEntity ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}
+          title={triggerEntity ? `Trigger table: ${triggerEntity}` : 'No trigger table set — choose one in the Designer'}
         >
           <Database size={10} />
-          {entity ? entity.display_name : 'No table bound'}
+          {triggerEntity || 'No trigger table'}
         </div>
         <div className="ml-auto flex items-center gap-3">
           {dirty && <span className="text-[10px] text-amber-500">Unsaved changes</span>}
@@ -155,24 +146,36 @@ export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflo
           </button>
         ))}
         <div className="ml-auto flex items-center gap-1.5 py-1.5">
-          <span className="text-[10px] text-slate-400">{steps.length} step{steps.length !== 1 ? 's' : ''}</span>
+          <span className="text-[10px] text-slate-400">{stepCount} step{stepCount !== 1 ? 's' : ''}</span>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden">
-        {activeTab === 'trigger' && (
-          <div className="h-full overflow-y-auto p-6 max-w-lg mx-auto w-full">
-            <TriggerPanel wf={wf} fields={fields} entities={entities} onChange={(w) => { setWf(w); mark(); }} />
+        {activeTab === 'designer' && (
+          <div className="h-full overflow-y-auto p-6">
+            <FlowBuilder
+              entityName={entity?.logical_name ?? ''}
+              entities={entities}
+              definition={wf.definition ?? null}
+              onChange={(def) => { setWf((w) => ({ ...w, definition: def })); mark(); }}
+            />
           </div>
         )}
-        {activeTab === 'flow' && (
-          <FlowCanvas
-            steps={steps}
-            workflowId={wf.workflow_id}
-            fields={fields}
-            entities={entities}
-            onStepsChange={(s) => { setSteps(s); mark(); }}
-          />
+        {activeTab === 'json' && (
+          <div className="h-full overflow-y-auto p-6">
+            <FlowJsonEditor
+              entityName={entity?.logical_name ?? ''}
+              definition={wf.definition ?? null}
+              onChange={(def) => { setWf((w) => ({ ...w, definition: def })); mark(); }}
+            />
+          </div>
+        )}
+        {activeTab === 'runs' && (
+          <div className="h-full overflow-y-auto p-6">
+            <div className="max-w-3xl mx-auto">
+              <WorkflowRunsPanel workflowId={wf.workflow_id} />
+            </div>
+          </div>
         )}
         {activeTab === 'settings' && (
           <div className="h-full overflow-y-auto p-6 max-w-lg mx-auto w-full">
@@ -184,143 +187,75 @@ export default function WorkflowEditorPage({ workflow: initWf, onBack, onWorkflo
   );
 }
 
-function TriggerPanel({
-  wf,
-  fields,
-  entities,
+function FlowJsonEditor({
+  entityName,
+  definition,
   onChange,
 }: {
-  wf: WorkflowDefinition;
-  fields: FieldDefinition[];
-  entities: EntityDefinition[];
-  onChange: (w: WorkflowDefinition) => void;
+  entityName: string;
+  definition: Record<string, unknown> | null;
+  onChange: (def: Record<string, unknown> | null) => void;
 }) {
-  const triggers = Object.entries(TRIGGER_META) as [WorkflowTriggerType, (typeof TRIGGER_META)[WorkflowTriggerType]][];
-  const conds: WorkflowTriggerConditions = wf.trigger_conditions ?? {};
-  const watchFields = conds.watch_fields ?? [];
-  // Only fields not already watched are offered in the "add" picker.
-  const availableFields = fields.filter((f) => !watchFields.includes(f.logical_name));
+  const [text, setText] = useState(() => (definition ? JSON.stringify(definition, null, 2) : ''));
+  const [error, setError] = useState<string | null>(null);
+
+  const apply = (raw: string) => {
+    setText(raw);
+    if (!raw.trim()) { setError(null); onChange(null); return; }
+    try {
+      const parsed = JSON.parse(raw);
+      setError(null);
+      onChange(parsed);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Invalid JSON');
+    }
+  };
+
+  const insertTemplate = () => {
+    const tpl = {
+      enabled: true,
+      trigger: { type: 'record.updated', entity: entityName || 'opportunity', conditions: [{ field: 'stage', op: 'changed' }] },
+      steps: [
+        { type: 'initialize_variable', name: 'count', varType: 'Integer', value: 0 },
+        { type: 'action', id: 'rows', action: 'list_records', params: { entity: 'lead', filters: [], limit: 50 } },
+        {
+          type: 'apply_to_each', id: 'each', items: '{{steps.rows}}',
+          do: [
+            { type: 'increment_variable', name: 'count', by: 1 },
+            { type: 'action', id: 'mail', action: 'send_email', params: { recipientId: "@{item('owner_id')}", subject: "Please review: @{item('lastname')}", body: 'A record needs your attention.' } },
+          ],
+        },
+        { type: 'terminate', status: 'Succeeded', message: "Notified owners of @{variables('count')} records" },
+      ],
+    };
+    apply(JSON.stringify(tpl, null, 2));
+  };
 
   return (
-    <div className="space-y-5">
-      <div>
-        <label className="block text-xs font-bold text-slate-600 mb-2">Which table?</label>
-        <FilterSelect
-          value={wf.entity_definition_id}
-          forceSearch
-          onChange={(e) => {
-            const newId = e.target.value;
-            if (newId === wf.entity_definition_id) return;
-            // Switching tables invalidates field-scoped settings; clear watch fields
-            // (steps that reference old fields are left for the user to review).
-            onChange({ ...wf, entity_definition_id: newId, trigger_conditions: { ...conds, watch_fields: [] } });
-          }}
-          className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white"
-        >
-          {entities.map((ent) => (
-            <option key={ent.entity_definition_id} value={ent.entity_definition_id}>{ent.display_name}</option>
-          ))}
-        </FilterSelect>
-        <p className="text-[10px] text-slate-400 mt-1">The record events that fire this workflow come from this table.</p>
-      </div>
-
-      <div>
-        <p className="text-xs font-bold text-slate-600 mb-3">When should this workflow run?</p>
-        <div className="space-y-2">
-          {triggers.map(([type, meta]) => (
-            <div
-              key={type}
-              onClick={() => onChange({ ...wf, trigger_type: type })}
-              className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
-                wf.trigger_type === type
-                  ? `${meta.color} ring-2 ring-offset-1 ring-blue-300`
-                  : 'border-slate-200 bg-white hover:border-slate-300'
-              }`}
-            >
-              <div className={`w-4 h-4 rounded-full border-2 mt-0.5 shrink-0 flex items-center justify-center ${wf.trigger_type === type ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`}>
-                {wf.trigger_type === type && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-800">{meta.label}</p>
-                <p className="text-[10px] text-slate-400">{meta.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {wf.trigger_type === 'on_update' && (
+    <div className="max-w-3xl mx-auto">
+      <div className="flex items-center justify-between mb-2">
         <div>
-          <label className="block text-xs font-bold text-slate-600 mb-2">Watch Fields <span className="font-normal text-slate-400">(leave empty = any field)</span></label>
-
-          {watchFields.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {watchFields.map((logical) => {
-                const f = fields.find((x) => x.logical_name === logical);
-                return (
-                  <span key={logical} className="inline-flex items-center gap-1 text-[11px] bg-blue-50 text-blue-700 border border-blue-200 rounded-full pl-2.5 pr-1 py-0.5">
-                    {f?.display_name ?? logical}
-                    <button
-                      type="button"
-                      onClick={() => onChange({ ...wf, trigger_conditions: { ...conds, watch_fields: watchFields.filter((w) => w !== logical) } })}
-                      className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-200 text-blue-500"
-                    >
-                      <X size={9} />
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-          )}
-
-          <FilterSelect
-            value=""
-            forceSearch
-            placeholder={availableFields.length ? 'Add a field to watch…' : 'All fields added'}
-            disabled={availableFields.length === 0}
-            onChange={(e) => {
-              const logical = e.target.value;
-              if (!logical) return;
-              onChange({ ...wf, trigger_conditions: { ...conds, watch_fields: [...watchFields, logical] } });
-            }}
-            className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white"
-          >
-            <option value="">Add a field to watch…</option>
-            {availableFields.map((f) => (
-              <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>
-            ))}
-          </FilterSelect>
-          <p className="text-[10px] text-slate-400 mt-1">The workflow fires only when one of these fields changes. Leave empty to fire on any change.</p>
+          <p className="text-xs font-bold text-slate-600">Flow JSON</p>
+          <p className="text-[10px] text-slate-400">Nested flow {'{ enabled, trigger, steps }'} — the same definition the Designer edits. Save to persist; toggle Active in Settings.</p>
         </div>
-      )}
-
-      {wf.trigger_type === 'on_status_change' && (
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-bold text-slate-600 mb-1.5">From Status</label>
-            <input type="text" value={conds.status_from ?? ''} onChange={(e) => onChange({ ...wf, trigger_conditions: { ...conds, status_from: e.target.value } })} placeholder="Any status..." className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300" />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-600 mb-1.5">To Status</label>
-            <input type="text" value={conds.status_to ?? ''} onChange={(e) => onChange({ ...wf, trigger_conditions: { ...conds, status_to: e.target.value } })} placeholder="e.g. closed" className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300" />
-          </div>
-        </div>
-      )}
-
-      {wf.trigger_type === 'scheduled' && (
-        <div>
-          <label className="block text-xs font-bold text-slate-600 mb-1.5">Cron Expression</label>
-          <input type="text" value={conds.schedule_cron ?? ''} onChange={(e) => onChange({ ...wf, trigger_conditions: { ...conds, schedule_cron: e.target.value } })} placeholder="e.g. 0 9 * * 1 (every Monday 9am)" className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300" />
-          <p className="text-[10px] text-slate-400 mt-1">Uses UTC. Format: minute hour day-of-month month day-of-week</p>
-        </div>
-      )}
-
-      {(wf.trigger_type === 'on_create' || wf.trigger_type === 'on_update' || wf.trigger_type === 'on_status_change') && (
-        <WorkflowFilterConditions
-          fields={fields}
-          conditions={conds.filter_conditions ?? []}
-          onChange={(filter_conditions) => onChange({ ...wf, trigger_conditions: { ...conds, filter_conditions } })}
-        />
+        {!text.trim() && (
+          <button type="button" onClick={insertTemplate} className="text-[11px] font-medium text-blue-600 hover:underline shrink-0">Insert starter template</button>
+        )}
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => apply(e.target.value)}
+        spellCheck={false}
+        rows={24}
+        placeholder='{ "enabled": true, "trigger": { "type": "record.updated", "entity": "opportunity" }, "steps": [] }'
+        className={`w-full font-mono text-[11px] border rounded-xl px-3 py-2.5 bg-slate-50 focus:outline-none focus:ring-1 resize-y ${error ? 'border-rose-300 focus:ring-rose-400' : 'border-slate-200 focus:ring-blue-400'}`}
+      />
+      {error ? (
+        <p className="text-[11px] text-rose-600 mt-1">JSON error: {error}</p>
+      ) : text.trim() ? (
+        <p className="text-[11px] text-emerald-600 mt-1">Valid JSON — Save to apply.</p>
+      ) : (
+        <p className="text-[11px] text-slate-400 mt-1">Empty = no flow configured on this workflow.</p>
       )}
     </div>
   );
@@ -386,10 +321,3 @@ function SettingsPanel({ wf, onChange }: { wf: WorkflowDefinition; onChange: (w:
   );
 }
 
-function cleanSteps(steps: WorkflowStep[]): WorkflowStep[] {
-  return steps.map((s) => {
-    const clean = { ...s };
-    delete (clean as Record<string, unknown>)['_selected'];
-    return clean;
-  });
-}

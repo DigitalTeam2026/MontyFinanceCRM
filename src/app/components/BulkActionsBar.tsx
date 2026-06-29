@@ -17,11 +17,10 @@ import {
   Plus,
   Share2,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import type { AppEntity } from '../types';
 import type { ListRow } from '../services/listService';
 import { bulkUpdateRows } from '../services/listService';
-import { downloadWorkbook } from '../services/importEngine';
+import { exportSheetsToXlsx } from '../services/xlsxExport';
 import { removeRecentItem, removePinnedRecord } from '../services/recentPinsService';
 import { checkDeleteRules, executeDelete } from '../services/deleteService';
 import { fetchFieldsForEntity } from '../../services/fieldService';
@@ -123,7 +122,7 @@ function formatExportCurrency(val: unknown, currencyCode?: string | null): strin
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: currencyCode ?? 'USD', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(num); } catch { return String(num); }
 }
 
-function exportToXlsx(entity: AppEntity, rows: ListRow[], ids: Set<string>, columns?: ColumnState[]) {
+async function exportToXlsx(entity: AppEntity, rows: ListRow[], ids: Set<string>, columns?: ColumnState[]) {
   const selected = rows.filter((r) => ids.has(r.id));
   if (selected.length === 0) return;
 
@@ -161,11 +160,11 @@ function exportToXlsx(entity: AppEntity, rows: ListRow[], ids: Set<string>, colu
     ]);
   }
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
-  ws['!cols'] = headers.map((h, i) => ({ wch: i === 0 ? 38 : Math.max(h.length + 4, 14) }));
-  XLSX.utils.book_append_sheet(wb, ws, 'Export');
-  downloadWorkbook(wb, `${entity}-export-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  const colWidths = headers.map((h, i) => (i === 0 ? 38 : Math.max(h.length + 4, 14)));
+  await exportSheetsToXlsx(
+    [{ name: 'Export', rows: [headers, ...dataRows], colWidths }],
+    `${entity}-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+  );
 }
 
 /* ------------------------------------------------------------------ */

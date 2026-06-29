@@ -226,7 +226,7 @@ async function checkColumnInBusinessRules(
 ) {
   const { data: rules } = await supabase
     .from('business_rule')
-    .select('rule_id, name, trigger_json, action_json')
+    .select('business_rule_id, name, trigger_json, action_json')
     .eq('entity_definition_id', entityDefinitionId)
     .is('deleted_at', null);
 
@@ -243,7 +243,7 @@ async function checkColumnInBusinessRules(
         name: rule.name,
         location: 'Trigger condition (watched fields)',
         reason: `Field "${fieldLogicalName}" is watched in the rule trigger`,
-        recordId: rule.rule_id,
+        recordId: rule.business_rule_id,
       });
     } else if (inAction) {
       deps.push({
@@ -251,7 +251,7 @@ async function checkColumnInBusinessRules(
         name: rule.name,
         location: 'Rule action',
         reason: `Field "${fieldLogicalName}" is referenced in the rule actions`,
-        recordId: rule.rule_id,
+        recordId: rule.business_rule_id,
       });
     }
   }
@@ -262,50 +262,55 @@ async function checkColumnInProcessFlows(
   fieldLogicalName: string,
   deps: Dependency[],
 ) {
-  // Check process_stage_fields by joining to process_stage → process_flow
-  const { data: stageFields } = await supabase
-    .from('process_stage_fields')
-    .select('field_logical_name, process_stage(name, process_flow(name))')
-    .eq('field_logical_name', fieldLogicalName);
-
-  // Also filter by entity — join path: stage_fields → stage → flow → entity
+  // Restrict to this entity's flows. process_stage_fields and
+  // process_flow_transition both carry a direct process_flow_id, so we resolve
+  // names from this map instead of fragile nested embeds (process_flow_transition
+  // has two FKs to process_stage, which makes a process_stage embed ambiguous).
   const { data: flows } = await supabase
     .from('process_flow')
-    .select('flow_id, name')
+    .select('process_flow_id, name')
     .eq('entity_definition_id', entityDefinitionId)
     .is('deleted_at', null);
 
-  const flowIds = new Set((flows ?? []).map((f: { flow_id: string }) => f.flow_id));
+  const flowNameById = new Map(
+    (flows ?? []).map((f: { process_flow_id: string; name: string }) => [f.process_flow_id, f.name]),
+  );
+
+  // Check process_stage_fields (stage visible/required fields)
+  const { data: stageFields } = await supabase
+    .from('process_stage_fields')
+    .select('process_flow_id, field_logical_name, process_stage(name)')
+    .eq('field_logical_name', fieldLogicalName);
 
   for (const sf of stageFields ?? []) {
-    const stage = sf.process_stage as { name?: string; process_flow?: { name?: string; flow_id?: string } } | null;
-    const flow = stage?.process_flow;
-    if (!flow?.flow_id || !flowIds.has(flow.flow_id)) continue;
+    const flowId = sf.process_flow_id as string | null;
+    if (!flowId || !flowNameById.has(flowId)) continue;
+    const stage = sf.process_stage as { name?: string } | null;
     deps.push({
       type: 'process_flow',
-      name: flow.name ?? 'Unknown Flow',
+      name: flowNameById.get(flowId) ?? 'Unknown Flow',
       location: `Stage: ${stage?.name ?? 'Unknown'}`,
       reason: `Field "${fieldLogicalName}" is required/visible in this stage`,
-      recordId: flow.flow_id,
+      recordId: flowId,
     });
   }
 
   // Check requires_fields in process_flow_transition
   const { data: transitions } = await supabase
     .from('process_flow_transition')
-    .select('transition_id, requires_fields, process_stage(name, process_flow(name, flow_id))')
+    .select('transition_id, requires_fields, process_flow_id, from_stage:process_stage!from_stage_id(name)')
     .contains('requires_fields', [fieldLogicalName]);
 
   for (const tr of transitions ?? []) {
-    const stage = tr.process_stage as { name?: string; process_flow?: { name?: string; flow_id?: string } } | null;
-    const flow = stage?.process_flow;
-    if (!flow?.flow_id || !flowIds.has(flow.flow_id)) continue;
+    const flowId = tr.process_flow_id as string | null;
+    if (!flowId || !flowNameById.has(flowId)) continue;
+    const stage = tr.from_stage as { name?: string } | null;
     deps.push({
       type: 'process_flow',
-      name: flow.name ?? 'Unknown Flow',
+      name: flowNameById.get(flowId) ?? 'Unknown Flow',
       location: `Stage transition from: ${stage?.name ?? 'Unknown'}`,
       reason: `Field "${fieldLogicalName}" is required before stage transition`,
-      recordId: flow.flow_id,
+      recordId: flowId,
     });
   }
 }
@@ -529,7 +534,7 @@ async function checkEntityInProcessFlows(
 ) {
   const { data: flows } = await supabase
     .from('process_flow')
-    .select('flow_id, name')
+    .select('process_flow_id, name')
     .eq('entity_definition_id', entityDefinitionId)
     .is('deleted_at', null);
 

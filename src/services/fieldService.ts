@@ -37,6 +37,8 @@ export async function fetchFieldTypes(): Promise<FieldType[]> {
 }
 
 export async function fetchFieldsForEntity(entityId: string): Promise<FieldDefinition[]> {
+  // No entity bound yet (e.g. a flow whose table is picked later) → no fields.
+  if (!entityId) return [];
   const { data, error } = await supabase
     .from('field_definition')
     .select('*, field_type(*), lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name, primary_key_column)')
@@ -341,6 +343,67 @@ export async function softDeleteField(field: FieldDefinition): Promise<void> {
     .update({ deleted_at: new Date().toISOString(), is_active: false })
     .eq('field_definition_id', field.field_definition_id);
   if (error) throw error;
+}
+
+/**
+ * System Health repair — re-create the physical database column for a field whose
+ * metadata exists but whose column is missing ("Fields with no database column").
+ * The column type is taken from the field's own type, then the API schema cache is
+ * reloaded. Additive and safe to re-run (add_custom_field_column is IF NOT EXISTS).
+ */
+export async function recreateFieldColumn(fieldId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('field_definition')
+    .select('physical_column_name, entity_definition_id, field_type:field_type(name)')
+    .eq('field_definition_id', fieldId)
+    .single();
+  if (error) throw error;
+  const field = data as {
+    physical_column_name: string | null;
+    entity_definition_id: string;
+    field_type: { name: string } | null;
+  };
+  const phys = field.physical_column_name;
+  if (!phys || phys.includes('.')) {
+    throw new Error('Field has no physical column to create (JSONB or unmapped)');
+  }
+  const table = await resolveEntityTable(field.entity_definition_id);
+  if (!table) throw new Error('Could not resolve entity table');
+  // Calculated columns need a concrete result type; fall back to text for safety.
+  const typeName = field.field_type?.name === 'calculated' ? 'text' : field.field_type?.name ?? 'text';
+  await addPhysicalColumn(table, phys, typeName);
+}
+
+/**
+ * System Health repair — remove a broken field_definition whose physical column is
+ * missing (typically a malformed field whose column was never created). Best-effort
+ * drops the column if it somehow exists, then soft-deletes the metadata so the orphan
+ * field disappears from the CRM (deleted_at keeps a same-named field re-creatable).
+ */
+export async function deleteFieldById(fieldId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('field_definition')
+    .select('physical_column_name, entity_definition_id')
+    .eq('field_definition_id', fieldId)
+    .single();
+  if (error) throw error;
+  const field = data as { physical_column_name: string | null; entity_definition_id: string };
+  const phys = field.physical_column_name;
+  if (phys && !phys.includes('.')) {
+    const table = await resolveEntityTable(field.entity_definition_id);
+    if (table) await dropPhysicalColumn(table, phys); // best-effort; column may not exist
+  }
+  const { data: updated, error: delErr } = await supabase
+    .from('field_definition')
+    .update({ deleted_at: new Date().toISOString(), is_active: false })
+    .eq('field_definition_id', fieldId)
+    .select('field_definition_id');
+  if (delErr) throw delErr;
+  // No error but no row returned means RLS filtered the update (e.g. the session is
+  // not a system admin). Surface it instead of a misleading success toast.
+  if (!updated || updated.length === 0) {
+    throw new Error('Field was not deleted — you may not have administrator permission.');
+  }
 }
 
 function buildPayload(form: FieldFormData, inlineChoices: ChoiceOption[]) {
