@@ -1,3 +1,4 @@
+import { uuid } from '../../../lib/uuid';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Database, Palette, Settings2, Plus, Trash2 } from 'lucide-react';
 import type {
@@ -909,7 +910,7 @@ function KpiCustomItems({ visual, fields, entityName, setData, ops }: {
     <div className="border-t border-slate-700/60 pt-2">
       <div className="flex items-center justify-between mb-1">
         <span className="text-slate-400 text-[11px] font-medium">Custom rows</span>
-        <button onClick={() => setData({ customBreakdownItems: [...items, { id: crypto.randomUUID(), label: '', filters: [{ field: fields[0]?.physical_column_name ?? '', op: 'eq', value: '' }] }] })}
+        <button onClick={() => setData({ customBreakdownItems: [...items, { id: uuid(), label: '', filters: [{ field: fields[0]?.physical_column_name ?? '', op: 'eq', value: '' }] }] })}
           className="text-blue-400 hover:text-blue-300"><Plus size={13} /></button>
       </div>
       <div className="space-y-2">

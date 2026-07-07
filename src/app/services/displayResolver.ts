@@ -20,22 +20,27 @@ interface EntityMeta {
 
 const entityMetaCache = new Map<string, EntityMeta | null>();
 
-async function resolveEntityMeta(entityLogical: string): Promise<EntityMeta | null> {
-  if (entityMetaCache.has(entityLogical)) return entityMetaCache.get(entityLogical)!;
-  const singular = entityLogical.replace(/s$/, '');
+async function resolveEntityMeta(entitySlugOrTable: string): Promise<EntityMeta | null> {
+  if (entityMetaCache.has(entitySlugOrTable)) return entityMetaCache.get(entitySlugOrTable)!;
+  const singular = entitySlugOrTable.replace(/s$/, '');
+  // Callers pass either a logical name (e.g. "leadsource") or a physical table
+  // name (e.g. "crm_leadsource" — labelResolver hands us lookup_entity.physical_
+  // table_name). Match on both so prefixed tables (crm_*/timeline_*) resolve.
   const { data } = await supabase
     .from('entity_definition')
-    .select('physical_table_name, primary_field_name, logical_name')
-    .or(`logical_name.eq.${entityLogical},logical_name.eq.${singular}`)
+    .select('physical_table_name, primary_field_name, primary_key_column, logical_name')
+    .or(`logical_name.eq.${entitySlugOrTable},logical_name.eq.${singular},physical_table_name.eq.${entitySlugOrTable}`)
     .maybeSingle();
-  if (!data) { entityMetaCache.set(entityLogical, null); return null; }
+  if (!data) { entityMetaCache.set(entitySlugOrTable, null); return null; }
   const table = data.physical_table_name;
   const meta: EntityMeta = {
     table,
-    pk: PK_OVERRIDES[table] ?? `${table}_id`,
+    // Prefer the authoritative PK column; the ${table}_id convention breaks when
+    // the table is prefixed (crm_leadsource → leadsource_id, not crm_leadsource_id).
+    pk: data.primary_key_column ?? PK_OVERRIDES[table] ?? `${table}_id`,
     labelField: data.primary_field_name ?? 'name',
   };
-  entityMetaCache.set(entityLogical, meta);
+  entityMetaCache.set(entitySlugOrTable, meta);
   return meta;
 }
 
@@ -180,17 +185,19 @@ export async function resolveStatusReasonLabel(
   let map = statusReasonCache.get(entityDefId);
   if (!map) {
     map = {};
+    // Resolve labels regardless of is_active — some seeds (lead/opportunity) inserted
+    // reason rows without setting is_active; filtering on it would leave the map empty
+    // and leak raw codes. Mirrors resolveStatusReasonLabels in listService.ts.
     const snap = getTable<{ reason_value: string; display_label: string; entity_definition_id: string; is_active: boolean }>('status_reason_definition');
     if (snap !== null) {
-      for (const r of snap.filter((r) => r.entity_definition_id === entityDefId && r.is_active === true)) {
+      for (const r of snap.filter((r) => r.entity_definition_id === entityDefId)) {
         map[String(r.reason_value)] = r.display_label;
       }
     } else {
       const { data } = await supabase
         .from('status_reason_definition')
         .select('reason_value, display_label')
-        .eq('entity_definition_id', entityDefId)
-        .eq('is_active', true);
+        .eq('entity_definition_id', entityDefId);
       for (const r of (data ?? []) as { reason_value: string; display_label: string }[]) {
         map[String(r.reason_value)] = r.display_label;
       }

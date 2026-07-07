@@ -233,7 +233,6 @@ export default function ColumnFilterDropdown({
           .from('status_reason_definition')
           .select('reason_value, display_label')
           .eq('entity_definition_id', edId)
-          .eq('is_active', true)
           .order('sort_order', { ascending: true });
         setChoiceOptions(
           (data ?? []).map((r) => ({ value: String(r.reason_value), label: r.display_label }))

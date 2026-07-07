@@ -1,3 +1,4 @@
+import { uuid } from '../../../lib/uuid';
 import FilterSelect from '../../../app/components/FilterSelect';
 import { useMemo, useState } from 'react';
 import { Plus, Trash2, ArrowRight, Code2, Info, FlaskConical, Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
@@ -59,7 +60,7 @@ export default function InboundMapping({
   function addField(field: EntityFieldInfo) {
     const isLookup = field.field_type?.name === 'lookup' || !!field.lookup_entity;
     patchFields([...config.fields, {
-      id: crypto.randomUUID(),
+      id: uuid(),
       json_path: field.logical_name,
       field_definition_id: field.field_definition_id,
       target_physical_column: field.physical_column_name,

@@ -127,6 +127,34 @@ export interface DesignerSection {
   controls: DesignerControl[];
 }
 
+/**
+ * Configuration for a read-only "borrowed" field pulled from a related entity.
+ * Only set when a control displays a column that lives on another entity, reached
+ * via an N:1 relationship from THIS entity (e.g. show Lead.product on the
+ * Opportunity form via opportunity.originating_lead_id). The value is resolved at
+ * render time by following the FK — it is never written back to this entity.
+ */
+export interface BorrowedFieldConfig {
+  /** relationship_definition_id of the N:1 relationship (this entity → related entity) */
+  relationship_definition_id: string;
+  /** entity_definition_id of the related entity the field is borrowed from */
+  related_entity_id: string;
+  /** Physical table of the related entity (e.g. "lead") — the table to read from */
+  related_table_name: string;
+  /** Primary-key column of the related table (e.g. "lead_id") */
+  related_pk: string;
+  /** Physical FK column on THIS entity that points at the related record (e.g. "originating_lead_id") */
+  fk_physical_column: string;
+  /** field_definition_id of the borrowed field on the related entity */
+  field_definition_id: string;
+  /** Logical name of the borrowed field on the related entity */
+  field_logical_name: string;
+  /** Physical column of the borrowed field on the related table */
+  field_physical_column: string;
+  /** Field type of the borrowed field (for render hints) */
+  field_type_name: string | null;
+}
+
 /** Configuration stored per lookup field on the form designer. */
 export interface LookupConfig {
   /** entity_definition_id of the target entity (e.g. Contact's ID) */
@@ -162,6 +190,11 @@ export interface DesignerControl {
   lookup_entity_slug?: string | null;
   /** Lookup-specific configuration. Only set when field_type_name === 'lookup'. */
   lookup_config?: LookupConfig | null;
+  /**
+   * Read-only borrowed-field configuration. Only set when this control displays a
+   * column from a related entity (control_type stays 'field'; is_readonly is forced).
+   */
+  borrowed_field_config?: BorrowedFieldConfig | null;
   /** Field definition config_json — enriched at runtime for calculated fields. */
   config_json?: Record<string, unknown> | null;
 }

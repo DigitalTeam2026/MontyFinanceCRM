@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { RefreshCw, Info, X } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
 import { supabase } from '../../lib/supabase';
-import type { FormDefinition, SubgridConfig } from '../../types/form';
+import type { FormDefinition, SubgridConfig, BorrowedFieldConfig } from '../../types/form';
 import type { FormScript, FormEventHandler } from '../../types/form';
 import type { FieldDefinition, FieldFormData, FieldType, ChoiceOption } from '../../types/field';
 import type { EntityDefinition } from '../../types/entity';
@@ -35,6 +35,7 @@ import PropertiesPanel from './PropertiesPanel';
 import FormTreeView from './FormTreeView';
 import FieldEditorPanel from '../fields/FieldEditorPanel';
 import SubgridPickerModal from './SubgridPickerModal';
+import RelatedFieldPickerModal from './RelatedFieldPickerModal';
 import RuleEditorPage from '../rules/RuleEditorPage';
 
 interface FormDesignerPageProps {
@@ -67,6 +68,7 @@ export default function FormDesignerPage({
   const [activeSectionId, setActiveSectionId] = useState('');
   const [showNewColumn, setShowNewColumn] = useState(false);
   const [showSubgridPicker, setShowSubgridPicker] = useState(false);
+  const [showRelatedFieldPicker, setShowRelatedFieldPicker] = useState(false);
   const [formUsageInfo, setFormUsageInfo] = useState<string[]>([]);
   const [ruleEditorRule, setRuleEditorRule] = useState<BusinessRule | null>(null);
 
@@ -350,6 +352,26 @@ export default function FormDesignerPage({
     setShowSubgridPicker(false);
   };
 
+  const handleAddRelatedField = (config: BorrowedFieldConfig, label: string) => {
+    if (!activeTabId || !activeSectionId) return;
+    store.addControl(activeTabId, activeSectionId, {
+      id: uid(),
+      control_type: 'field',
+      field_definition_id: config.field_definition_id,
+      field_logical_name: config.field_logical_name,
+      field_display_name: label,
+      field_type_name: config.field_type_name,
+      label_override: label,
+      column_span: 1,
+      is_visible: true,
+      is_readonly: true,
+      is_required_override: false,
+      subgrid_config: null,
+      borrowed_field_config: config,
+    });
+    setShowRelatedFieldPicker(false);
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -414,6 +436,7 @@ export default function FormDesignerPage({
             fieldsInForm={fieldsInForm}
             onNewColumn={() => setShowNewColumn(true)}
             onAddSubgrid={() => setShowSubgridPicker(true)}
+            onAddRelatedField={() => setShowRelatedFieldPicker(true)}
           />
         </div>
 
@@ -504,6 +527,14 @@ export default function FormDesignerPage({
           entityId={entityId}
           onConfirm={handleAddSubgrid}
           onClose={() => setShowSubgridPicker(false)}
+        />
+      )}
+
+      {showRelatedFieldPicker && (
+        <RelatedFieldPickerModal
+          entityId={entityId}
+          onConfirm={handleAddRelatedField}
+          onClose={() => setShowRelatedFieldPicker(false)}
         />
       )}
 

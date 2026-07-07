@@ -167,7 +167,7 @@ export default function DashboardViewer() {
         <div
           ref={canvasRef}
           className="relative mx-auto"
-          style={{ width: '100%', maxWidth: MAX_W, height: canvasHeight }}
+          style={{ width: '100%', maxWidth: '100%', height: canvasHeight }}
         >
           {pageVisuals.map((v) => (
             <div

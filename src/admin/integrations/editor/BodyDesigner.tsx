@@ -1,3 +1,4 @@
+import { uuid } from '../../../lib/uuid';
 import FilterSelect from '../../../app/components/FilterSelect';
 import { useMemo, useState } from 'react';
 import {
@@ -59,7 +60,7 @@ export default function BodyDesigner({
   function addField(field: EntityFieldInfo) {
     const isLookup = field.field_type?.name === 'lookup' || !!field.lookup_entity;
     const mapping: BodyFieldMapping = {
-      id: crypto.randomUUID(),
+      id: uuid(),
       json_key: field.logical_name,
       value_type: 'field',
       field_definition_id: field.field_definition_id,
@@ -80,13 +81,13 @@ export default function BodyDesigner({
 
   function addStatic() {
     patch([...config.fields, {
-      id: crypto.randomUUID(), json_key: 'value', value_type: 'static', static_value: '', is_required: false,
+      id: uuid(), json_key: 'value', value_type: 'static', static_value: '', is_required: false,
     }]);
   }
 
   function addRaw(kind: 'object' | 'array') {
     patch([...config.fields, {
-      id: crypto.randomUUID(),
+      id: uuid(),
       json_key: kind === 'object' ? 'data' : 'items',
       value_type: 'raw',
       static_value: kind === 'object' ? '{\n  \n}' : '[\n  \n]',

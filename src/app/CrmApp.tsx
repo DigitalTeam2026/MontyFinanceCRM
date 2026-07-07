@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
-import type { Session } from '@supabase/supabase-js';
+import type { Session } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import AppSidebar from './components/AppSidebar';
 import AppHeader from './components/AppHeader';
@@ -279,8 +279,11 @@ export default function CrmApp({
 
   const handleNewRecord = (formId?: string | null) => {
     if (creationCheck.blocked) return;
-    // formId provided (Save & New) → reuse that form; otherwise ask via the chooser.
-    setNextNewFormId(formId ?? null);
+    // formId is only meaningful when it's a real id string (Save & New reuses the
+    // current form). When this handler is wired directly as an onClick, React
+    // passes the click event as the first arg — ignore anything that isn't a
+    // string so we correctly fall back to the form chooser / default form.
+    setNextNewFormId(typeof formId === 'string' ? formId : null);
     setView({ type: 'new' });
   };
   const handleBack = () => setView({ type: 'list' });

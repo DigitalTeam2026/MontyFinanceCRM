@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
 import type { CrmDocument } from '../types/documentLocation';
 
-const FILE_SERVER_URL = (import.meta.env.VITE_FILE_SERVER_URL as string | undefined) ?? 'http://localhost:4000';
+import { FILE_SERVER_URL } from './fileServerUrl';
 
 async function authToken(): Promise<string> {
   const { data } = await supabase.auth.getSession();

@@ -12,6 +12,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // When the account has two-factor auth, the first submit swaps the form to a
+  // one-time-code step (email + password are kept to re-submit with the code).
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [code, setCode] = useState('');
   // Instant first paint from the cached branding, then refresh from the database.
   const [brand, setBrand] = useState<CompanyProfile>(() => getCachedCompanyProfile());
 
@@ -25,13 +29,33 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: signInError, mfaRequired: needsCode } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      code: mfaRequired ? code.trim() : undefined,
+    });
     setLoading(false);
+    if (needsCode) {
+      // First step passed (password OK) — now collect the authenticator code.
+      setMfaRequired(true);
+      setError('');
+      return;
+    }
     if (signInError) {
-      setError('Invalid email or password. Please try again.');
+      setError(
+        mfaRequired
+          ? 'Invalid authentication code. Please try again.'
+          : 'Invalid email or password. Please try again.',
+      );
     } else {
       onLogin();
     }
+  };
+
+  const backToPassword = () => {
+    setMfaRequired(false);
+    setCode('');
+    setError('');
   };
 
   return (
@@ -137,56 +161,91 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           </section>
 
           <section className="card" aria-label="Sign in">
-            <h2>Welcome back</h2>
-            <p className="sub">Sign in to your workspace to continue.</p>
+            <h2>{mfaRequired ? 'Two-step verification' : 'Welcome back'}</h2>
+            <p className="sub">
+              {mfaRequired
+                ? 'Enter the 6-digit code from your authenticator app.'
+                : 'Sign in to your workspace to continue.'}
+            </p>
 
             {error && <div className="err">{error}</div>}
 
             <form onSubmit={handleSubmit}>
-              <label htmlFor="mf-email">Email</label>
-              <div className="field">
-                <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></svg>
-                <input
-                  id="mf-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  autoFocus
-                  placeholder="you@company.com"
-                  autoComplete="email"
-                />
-              </div>
+              {!mfaRequired ? (
+                <>
+                  <label htmlFor="mf-email">Email</label>
+                  <div className="field">
+                    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></svg>
+                    <input
+                      id="mf-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      autoFocus
+                      placeholder="you@company.com"
+                      autoComplete="email"
+                    />
+                  </div>
 
-              <label htmlFor="mf-password">Password</label>
-              <div className="field">
-                <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
-                <input
-                  id="mf-password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  placeholder="••••••••••"
-                  autoComplete="current-password"
-                />
-                <button
-                  className="toggle"
-                  type="button"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></svg>
-                </button>
-              </div>
+                  <label htmlFor="mf-password">Password</label>
+                  <div className="field">
+                    <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+                    <input
+                      id="mf-password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      placeholder="••••••••••"
+                      autoComplete="current-password"
+                    />
+                    <button
+                      className="toggle"
+                      type="button"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></svg>
+                    </button>
+                  </div>
 
-              <button type="button" className="forgot">Forgot password?</button>
+                  <button type="button" className="forgot">Forgot password?</button>
+                </>
+              ) : (
+                <>
+                  <label htmlFor="mf-code">Authentication code</label>
+                  <div className="field">
+                    <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+                    <input
+                      id="mf-code"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      required
+                      autoFocus
+                      placeholder="123456"
+                      autoComplete="one-time-code"
+                      style={{ letterSpacing: '0.4em', textAlign: 'center', fontSize: '18px' }}
+                    />
+                  </div>
+
+                  <button type="button" className="forgot" onClick={backToPassword}>← Back to sign in</button>
+                </>
+              )}
 
               <button className="signin" type="submit" disabled={loading}>
                 {loading ? (
                   <>
                     <span className="spin" />
-                    Signing in...
+                    {mfaRequired ? 'Verifying...' : 'Signing in...'}
+                  </>
+                ) : mfaRequired ? (
+                  <>
+                    Verify <span className="arrow">→</span>
                   </>
                 ) : (
                   <>

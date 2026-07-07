@@ -1,3 +1,4 @@
+import { uuid } from '../../../lib/uuid';
 import { useState, useEffect } from 'react';
 import {
   Plus, Trash2, Copy, ChevronUp, ChevronDown, ChevronRight, GripVertical, Sparkles,
@@ -71,10 +72,10 @@ export function FunnelStageData({ visual, entities, theme, siblings, setData }: 
   const update = (i: number, patch: Partial<FunnelStage>) =>
     writeStages(stages.map((s, j) => (j === i ? { ...s, ...patch } : s)));
   const add = () => writeStages([...stages, {
-    id: crypto.randomUUID(), label: `Stage ${stages.length + 1}`, measure: 'count', interaction: 'filter',
+    id: uuid(), label: `Stage ${stages.length + 1}`, measure: 'count', interaction: 'filter',
   }]);
   const duplicate = (i: number) => {
-    const copy: FunnelStage = { ...stages[i], id: crypto.randomUUID(), label: `${stages[i].label} (copy)` };
+    const copy: FunnelStage = { ...stages[i], id: uuid(), label: `${stages[i].label} (copy)` };
     writeStages([...stages.slice(0, i + 1), copy, ...stages.slice(i + 1)]);
   };
   const remove = (i: number) => writeStages(stages.filter((_, j) => j !== i));
@@ -99,7 +100,7 @@ export function FunnelStageData({ visual, entities, theme, siblings, setData }: 
       return e?.logical_name;
     };
     writeStages(EXAMPLE_STAGES.map(({ match, ...rest }) => ({
-      ...rest, id: crypto.randomUUID(), entity: resolve(match), interaction: 'filter' as StageInteraction,
+      ...rest, id: uuid(), entity: resolve(match), interaction: 'filter' as StageInteraction,
     })));
   };
 
@@ -384,7 +385,7 @@ function StageCustomRows({ stage, fields, entityName, onUpdate }: {
     <div className="border-t border-slate-700/50 pt-1.5">
       <div className="flex items-center justify-between mb-1">
         <span className="text-slate-400 text-[10px] font-medium uppercase tracking-wide">Custom rows</span>
-        <button onClick={() => onUpdate({ customBreakdownItems: [...items, { id: crypto.randomUUID(), label: '', filters: [{ field: fields[0]?.physical_column_name ?? '', op: 'eq', value: '' }] }] })}
+        <button onClick={() => onUpdate({ customBreakdownItems: [...items, { id: uuid(), label: '', filters: [{ field: fields[0]?.physical_column_name ?? '', op: 'eq', value: '' }] }] })}
           className="text-blue-400 hover:text-blue-300"><Plus size={12} /></button>
       </div>
       <div className="space-y-2">

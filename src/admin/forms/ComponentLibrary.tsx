@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   Search, Type, Hash, Calendar, ToggleLeft, Mail, Phone, Globe, Link,
   List, AlignLeft, DollarSign, Clock, File, Image, Table2, Minus, Space,
-  Tag, ChevronDown, ChevronRight, Plus, CheckCircle2, AlertCircle,
+  Tag, ChevronDown, ChevronRight, Plus, CheckCircle2, AlertCircle, Link2,
 } from 'lucide-react';
 import type { FieldDefinition } from '../../types/field';
 import type { EntityDefinition } from '../../types/entity';
@@ -75,6 +75,7 @@ interface ComponentLibraryProps {
   fieldsInForm: Set<string>;
   onNewColumn: () => void;
   onAddSubgrid: () => void;
+  onAddRelatedField: () => void;
 }
 
 export default function ComponentLibrary({
@@ -88,6 +89,7 @@ export default function ComponentLibrary({
   fieldsInForm,
   onNewColumn,
   onAddSubgrid,
+  onAddRelatedField,
 }: ComponentLibraryProps) {
   const [search, setSearch] = useState('');
   const [onFormExpanded, setOnFormExpanded] = useState(false);
@@ -163,14 +165,25 @@ export default function ComponentLibrary({
       <div className="px-3 pt-3 pb-2 border-b border-slate-100 shrink-0">
         <div className="flex items-center justify-between mb-2.5">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Columns</p>
-          <button
-            onClick={onNewColumn}
-            title="Create a new column for this entity"
-            className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-          >
-            <Plus size={11} />
-            New
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onAddRelatedField}
+              disabled={!canAdd}
+              title={canAdd ? 'Add a read-only field from a related table' : 'Select a section first'}
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors"
+            >
+              <Link2 size={11} />
+              Related
+            </button>
+            <button
+              onClick={onNewColumn}
+              title="Create a new column for this entity"
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+            >
+              <Plus size={11} />
+              New
+            </button>
+          </div>
         </div>
         <div className="relative">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />

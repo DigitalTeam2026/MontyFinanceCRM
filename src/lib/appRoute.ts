@@ -80,7 +80,13 @@ export interface StudioRoute {
   dashboardView?: StudioDashboardView; // sub-view within the dashboards module
 }
 
-export type AppRoute = CrmRoute | StudioRoute;
+// The login page is a real, addressable route (#/login) so the URL reflects the
+// auth gate. It carries no sub-state — the auth layer decides what renders.
+export interface LoginRoute {
+  surface: 'login';
+}
+
+export type AppRoute = CrmRoute | StudioRoute | LoginRoute;
 
 const DEFAULT_CRM: CrmRoute = {
   surface: 'crm',
@@ -115,6 +121,10 @@ function splitHash(): { segs: string[]; query: URLSearchParams } {
 export function parseRoute(): AppRoute {
   const { segs, query } = splitHash();
   const head = segs[0];
+
+  if (head === 'login') {
+    return { surface: 'login' };
+  }
 
   if (head === 'studio') {
     const entityView = query.get('ev');

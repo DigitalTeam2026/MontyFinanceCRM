@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Session } from '@supabase/supabase-js';
+import type { Session } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import { ToastProvider } from '../app/context/ToastContext';
 import LoginPage from '../LoginPage';

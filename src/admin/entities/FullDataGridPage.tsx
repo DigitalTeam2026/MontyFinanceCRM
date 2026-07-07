@@ -1,3 +1,4 @@
+import { uuid } from '../../lib/uuid';
 import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
@@ -290,7 +291,7 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
   };
 
   const addNewRow = () => {
-    setNewRows((prev) => [...prev, { localId: crypto.randomUUID(), data: {} }]);
+    setNewRows((prev) => [...prev, { localId: uuid(), data: {} }]);
   };
 
   const updateNewRow = (localId: string, fieldId: string, value: unknown) => {

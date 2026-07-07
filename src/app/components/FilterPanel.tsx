@@ -1,3 +1,4 @@
+import { uuid } from '../../lib/uuid';
 import FilterSelect from './FilterSelect';
 import { useState, useEffect } from 'react';
 import {
@@ -11,6 +12,7 @@ import {
   deleteSavedFilter,
 } from '../services/listService';
 import { fetchFieldsForEntity } from '../../services/fieldService';
+import { resolveStateCodeLabel, resolveStatusReasonLabel } from '../services/displayResolver';
 import { supabase } from '../../lib/supabase';
 
 interface FilterPanelProps {
@@ -85,6 +87,15 @@ const SKIP_FILTER_COLUMNS = new Set([
   'deleted_at', 'is_deleted', 'created_by', 'modified_by',
 ]);
 
+// A condition sourced from a saved view carries the *logical* field name
+// (statecode / statusreason), but buildFilterableFields keys its options by the
+// *physical* column (state_code / status_reason). Alias the two so a chip's value
+// resolves to its label ("Active") regardless of which surface created the filter.
+const LOGICAL_STATUS_ALIAS: Record<string, string> = {
+  statecode: 'state_code',
+  statusreason: 'status_reason',
+};
+
 function defaultOperator(type: FieldType): FilterOperator {
   return OPERATORS_BY_TYPE[type][0].value;
 }
@@ -117,11 +128,13 @@ async function loadStatecodeOptions(entityDefId: string): Promise<{ value: strin
 }
 
 async function loadStatusReasonOptions(entityDefId: string): Promise<{ value: string; label: string }[]> {
+  // Resolve labels regardless of is_active — some seeds (lead/opportunity) inserted
+  // reason rows without setting is_active, which would otherwise leave the map empty
+  // and leak raw codes (1/2/3). Mirrors the grid resolver in listService.ts.
   const { data } = await supabase
     .from('status_reason_definition')
     .select('reason_value, display_label')
     .eq('entity_definition_id', entityDefId)
-    .eq('is_active', true)
     .order('sort_order');
   return (data ?? []).map((r) => ({ value: String(r.reason_value), label: r.display_label }));
 }
@@ -133,11 +146,12 @@ async function loadOptionSetOptions(osName: string): Promise<{ value: string; la
     .eq('name', osName)
     .maybeSingle();
   if (!os) return [];
+  // Resolve labels regardless of is_active so option values seeded without an
+  // is_active flag still map to their labels instead of leaking the raw code.
   const { data } = await supabase
     .from('option_set_value')
     .select('value, display_label')
     .eq('option_set_id', os.option_set_id)
-    .eq('is_active', true)
     .order('sort_order');
   return (data ?? []).map((r) => ({ value: r.value, label: r.display_label }));
 }
@@ -361,6 +375,10 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
   const [saving, setSaving] = useState(false);
   const [savedTab, setSavedTab] = useState<'active' | 'saved'>('active');
   const [matchMode, setMatchMode] = useState<'all' | 'any'>('all');
+  // Labels resolved from the DB for applied conditions whose value can't be
+  // resolved from local field options (e.g. custom entities or status columns).
+  const [extraLabels, setExtraLabels] = useState<Record<string, string>>({});
+  const resolverEntityDefId = ENTITY_DEFINITION_ID[entity] ?? entityDefIdProp ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -383,7 +401,7 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
   useEffect(() => {
     if (!fieldsLoading && fields.length > 0 && filters.length === 0 && drafts.length === 0) {
       const field = fields[0];
-      setDrafts([{ id: crypto.randomUUID(), field: field.key, operator: defaultOperator(field.type), value: '' }]);
+      setDrafts([{ id: uuid(), field: field.key, operator: defaultOperator(field.type), value: '' }]);
     }
   }, [fieldsLoading, fields.length]);
 
@@ -398,7 +416,7 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
     const field = fields[0];
     setDrafts((d) => [
       ...d,
-      { id: crypto.randomUUID(), field: field.key, operator: defaultOperator(field.type), value: '' },
+      { id: uuid(), field: field.key, operator: defaultOperator(field.type), value: '' },
     ]);
   };
 
@@ -447,7 +465,7 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
   };
 
   const loadSaved = (sf: SavedFilter) => {
-    onFiltersChange(sf.conditions.map((c) => ({ ...c, id: crypto.randomUUID() })));
+    onFiltersChange(sf.conditions.map((c) => ({ ...c, id: uuid() })));
     setSavedTab('active');
   };
 
@@ -457,7 +475,8 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
   };
 
   const getDisplayValue = (field: string, value: string): string => {
-    const meta = getFieldMeta(field);
+    const normField = LOGICAL_STATUS_ALIAS[field] ?? field;
+    const meta = getFieldMeta(normField);
     if (meta.options) {
       const opt = meta.options.find((o) => o.value === value);
       if (opt) return opt.label;
@@ -469,8 +488,42 @@ export default function FilterPanel({ entity, filters, onFiltersChange, onClose,
         if (opt) return opt.label;
       }
     }
+    // DB-resolved fallback for status columns whose options aren't in `fields`.
+    const resolved = extraLabels[`${field}:${value}`];
+    if (resolved) return resolved;
     return value;
   };
+
+  // Resolve labels for applied status conditions that local options can't cover
+  // (custom entities, or a saved/column filter keyed differently than `fields`),
+  // so chips never show a raw code like "1" instead of "Active".
+  useEffect(() => {
+    if (!resolverEntityDefId) return;
+    let cancelled = false;
+    (async () => {
+      const updates: Record<string, string> = {};
+      for (const f of filters) {
+        if (!f.value) continue;
+        const key = `${f.field}:${f.value}`;
+        if (extraLabels[key]) continue;
+        const normField = LOGICAL_STATUS_ALIAS[f.field] ?? f.field;
+        const meta = getFieldMeta(normField);
+        if (meta.options?.some((o) => o.value === f.value)) continue;
+        let label: string | null = null;
+        if (normField === 'state_code') {
+          label = await resolveStateCodeLabel(resolverEntityDefId, f.value);
+        } else if (normField === 'status_reason') {
+          label = await resolveStatusReasonLabel(resolverEntityDefId, f.value);
+        }
+        if (label) updates[key] = label;
+      }
+      if (!cancelled && Object.keys(updates).length > 0) {
+        setExtraLabels((prev) => ({ ...prev, ...updates }));
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, fields, resolverEntityDefId]);
 
   const activeCount = filters.length;
   const totalConditions = filters.length + drafts.length;

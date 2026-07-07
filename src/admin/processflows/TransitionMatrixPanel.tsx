@@ -1,3 +1,4 @@
+import { uuid } from '../../lib/uuid';
 import FilterSelect from '../../app/components/FilterSelect';
 import { useState } from 'react';
 import {
@@ -64,7 +65,7 @@ export default function TransitionMatrixPanel({
       ? Math.max(...fromTransitions.map((t) => t.priority))
       : 0;
     const newT: EditableTransition = {
-      transition_id: crypto.randomUUID(),
+      transition_id: uuid(),
       from_stage_id: fromId,
       to_stage_id: toId,
       transition_name: '',

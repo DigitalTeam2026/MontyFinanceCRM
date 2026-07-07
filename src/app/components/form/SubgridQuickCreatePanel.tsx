@@ -1,145 +1,45 @@
-import FilterSelect from '../FilterSelect';
 import { useState, useEffect, useRef } from 'react';
 import { X, Save, Loader2, AlertCircle, FileText, Plus } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import type { DesignerControl } from '../../../types/form';
 import { useToast, toFriendlyError } from '../../context/ToastContext';
+import FormField, { PRODUCT_PICKER_SENTINEL } from './FormField';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface FieldMeta {
+interface FieldDefRow {
+  field_definition_id: string;
   logical_name: string;
   physical_column_name: string;
   display_name: string;
-  field_type: string;
   is_required: boolean;
   config_json: Record<string, unknown> | null;
+  field_type?: { name: string } | null;
+  lookup_entity?: { logical_name: string; physical_table_name: string } | null;
 }
 
-interface OptionItem {
-  value: string;
-  label: string;
+/** A ready-to-render field: an enriched control plus the choice/lookup metadata
+ *  the shared FormField engine needs to actually SHOW the data for every type. */
+interface FormRow {
+  control: DesignerControl;
+  logical: string;
+  physical: string;
+  isRequired: boolean;
+  optionSetName?: string;
+  choiceOptions?: { value: string; label: string }[];
 }
 
-const optionCache: Record<string, OptionItem[]> = {};
-
-async function loadOptionSetValues(optionSetName: string): Promise<OptionItem[]> {
-  if (optionCache[optionSetName]) return optionCache[optionSetName];
-  const { data } = await supabase
-    .from('option_set')
-    .select('option_set_id')
-    .eq('name', optionSetName)
-    .maybeSingle();
-  if (!data) return [];
-  const { data: vals } = await supabase
-    .from('option_set_value')
-    .select('value, label')
-    .eq('option_set_id', data.option_set_id)
-    .order('display_order');
-  const items = ((vals ?? []) as { value: string; label: string }[]).map((v) => ({
-    value: v.value,
-    label: v.label,
-  }));
-  optionCache[optionSetName] = items;
-  return items;
-}
-
-// ─── Single field input ───────────────────────────────────────────────────────
-
-function FieldInput({
-  meta,
-  value,
-  onChange,
-  disabled,
-}: {
-  meta: FieldMeta;
-  value: unknown;
-  onChange: (v: unknown) => void;
-  disabled?: boolean;
-}) {
-  const [options, setOptions] = useState<OptionItem[]>([]);
-
-  const base =
-    'w-full h-8 px-2.5 text-[13px] text-slate-700 bg-white border border-slate-200 rounded-md ' +
-    'placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition ' +
-    'disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed';
-
-  useEffect(() => {
-    const cfg = meta.config_json;
-    const osName = cfg?.option_set_name as string | undefined;
-    if (!osName && meta.field_type !== 'choice' && meta.field_type !== 'option_set') return;
-    const name = osName ?? '';
-    if (!name) return;
-    loadOptionSetValues(name).then(setOptions);
-  }, [meta]);
-
-  const ft = meta.field_type;
-
-  if (ft === 'boolean') {
-    return (
-      <FilterSelect
-        value={String(value ?? '')}
-        onChange={(e) => onChange(e.target.value === 'true' ? true : e.target.value === 'false' ? false : null)}
-        disabled={disabled}
-        className={base}
-      >
-        <option value="">— Select —</option>
-        <option value="true">Yes</option>
-        <option value="false">No</option>
-      </FilterSelect>
-    );
-  }
-
-  if (ft === 'choice' || ft === 'option_set') {
-    return (
-      <FilterSelect
-        value={String(value ?? '')}
-        onChange={(e) => onChange(e.target.value || null)}
-        disabled={disabled}
-        className={base}
-      >
-        <option value="">— Select —</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </FilterSelect>
-    );
-  }
-
-  if (ft === 'textarea') {
-    return (
-      <textarea
-        value={String(value ?? '')}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        rows={3}
-        className={`${base} h-auto py-1.5 resize-none`}
-        placeholder={meta.display_name}
-      />
-    );
-  }
-
-  const inputType =
-    ft === 'email' ? 'email' :
-    ft === 'phone' ? 'tel' :
-    ft === 'url' ? 'url' :
-    ft === 'number' || ft === 'decimal' || ft === 'currency' ? 'number' :
-    ft === 'date' ? 'date' :
-    ft === 'datetime' ? 'datetime-local' :
-    'text';
-
-  return (
-    <input
-      type={inputType}
-      value={String(value ?? '')}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      placeholder={meta.display_name}
-      className={base}
-      step={ft === 'decimal' || ft === 'currency' ? '0.01' : undefined}
-    />
-  );
-}
+/** Entity logical_name (DB) → lookup entity slug used by FormField's LookupField.
+ *  Anything not listed falls back to the raw logical_name, which LookupField
+ *  resolves dynamically against entity_definition. */
+const ENTITY_LOGICAL_TO_SLUG: Record<string, string> = {
+  account: 'accounts',
+  contact: 'contacts',
+  lead: 'leads',
+  opportunity: 'opportunities',
+  ticket: 'tickets',
+  crm_user: 'users',
+};
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
@@ -156,11 +56,6 @@ interface SubgridQuickCreatePanelProps {
   onClose: () => void;
 }
 
-interface FormRow {
-  control: DesignerControl;
-  meta: FieldMeta | null;
-}
-
 export default function SubgridQuickCreatePanel({
   title,
   quickCreateFormId,
@@ -174,6 +69,7 @@ export default function SubgridQuickCreatePanel({
 }: SubgridQuickCreatePanelProps) {
   const { showError } = useToast();
   const [rows, setRows] = useState<FormRow[]>([]);
+  const [entityDefinitionId, setEntityDefinitionId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveMode, setSaveMode] = useState<'close' | 'new'>('close');
@@ -199,7 +95,8 @@ export default function SubgridQuickCreatePanel({
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  // Load form definition + field metadata
+  // Load form definition + field metadata, then enrich each control so FormField
+  // can render every field type (lookup / choice / boolean / datetime / …) with data.
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -212,6 +109,7 @@ export default function SubgridQuickCreatePanel({
           .maybeSingle();
 
         if (!formDef?.layout_json) { setLoading(false); return; }
+        setEntityDefinitionId((formDef.entity_definition_id as string) ?? undefined);
 
         const layout = formDef.layout_json as { tabs: { sections: { controls: DesignerControl[] }[] }[] };
         const controls: DesignerControl[] = [];
@@ -225,37 +123,77 @@ export default function SubgridQuickCreatePanel({
           }
         }
 
-        // Fetch field metadata for all controls
+        // Fetch enriched field metadata for all controls — same shape RecordFormPage
+        // uses: field type name, lookup target entity, and config_json (option sets /
+        // inline choices). This is what makes lookups/choices actually show data.
         const fieldIds = controls.map((c) => c.field_definition_id!).filter(Boolean);
-        let fieldMetaMap: Record<string, FieldMeta> = {};
+        const fieldMetaMap: Record<string, FieldDefRow> = {};
 
         if (fieldIds.length > 0) {
           const { data: fieldDefs } = await supabase
             .from('field_definition')
-            .select('field_definition_id, logical_name, physical_column_name, display_name, is_required, config_json, field_type:field_type_id(name)')
+            .select('field_definition_id, logical_name, physical_column_name, display_name, is_required, config_json, field_type:field_type_id(name), lookup_entity:entity_definition!lookup_entity_id(logical_name, physical_table_name)')
             .in('field_definition_id', fieldIds);
 
-          for (const fd of (fieldDefs as Record<string, unknown>[] ?? [])) {
-            const ft = fd.field_type as { name: string } | null;
-            fieldMetaMap[fd.field_definition_id as string] = {
-              logical_name: fd.logical_name as string,
-              physical_column_name: fd.physical_column_name as string,
-              display_name: fd.display_name as string,
-              field_type: ft?.name ?? 'text',
-              is_required: fd.is_required as boolean,
-              config_json: fd.config_json as Record<string, unknown> | null,
-            };
+          for (const fd of ((fieldDefs as unknown as FieldDefRow[]) ?? [])) {
+            fieldMetaMap[fd.field_definition_id] = fd;
           }
         }
 
-        const formRows: FormRow[] = controls.map((control) => ({
-          control,
-          meta: control.field_definition_id ? (fieldMetaMap[control.field_definition_id] ?? null) : null,
-        }));
+        const formRows: FormRow[] = [];
+        for (const control of controls) {
+          const fd = control.field_definition_id ? fieldMetaMap[control.field_definition_id] : undefined;
+          if (!fd) continue;
 
-        // Skip FK field (it's pre-filled from parent) — check both logical and physical name
-        const visible = formRows.filter((r) => r.meta && r.meta.logical_name !== fkColumn && r.meta.physical_column_name !== fkColumn);
-        setRows(visible);
+          const logical = control.field_logical_name ?? fd.logical_name;
+          const physical = fd.physical_column_name;
+          // Skip the FK field — it's pre-filled from the parent record.
+          if (logical === fkColumn || physical === fkColumn) continue;
+
+          const fieldType = fd.field_type?.name ?? control.field_type_name ?? 'text';
+
+          // Resolve lookup target entity slug from the field's lookup_entity join.
+          let lookupSlug: string | null = control.lookup_entity_slug ?? null;
+          if (fieldType === 'lookup' && fd.lookup_entity?.logical_name) {
+            const targetLogical = fd.lookup_entity.logical_name;
+            lookupSlug = ENTITY_LOGICAL_TO_SLUG[targetLogical] ?? targetLogical;
+          }
+
+          // Resolve option set / inline choices for choice fields from config_json.
+          const cfg = fd.config_json ?? undefined;
+          let optionSetName: string | undefined;
+          let choiceOptions: { value: string; label: string }[] | undefined;
+          if (cfg) {
+            if (cfg.control === 'product_picker') {
+              optionSetName = PRODUCT_PICKER_SENTINEL;
+            } else if (typeof cfg.option_set_name === 'string' && cfg.option_set_name) {
+              optionSetName = cfg.option_set_name;
+            }
+            const choices = cfg.choices as { value: string; label: string }[] | undefined;
+            if (Array.isArray(choices) && choices.length > 0) choiceOptions = choices;
+          }
+
+          const enriched: DesignerControl = {
+            ...control,
+            field_logical_name: logical,
+            field_display_name: control.field_display_name ?? fd.display_name,
+            field_type_name: fieldType,
+            lookup_entity_slug: lookupSlug,
+            lookup_config: control.lookup_config ?? null,
+            config_json: fd.config_json ?? control.config_json ?? null,
+          };
+
+          formRows.push({
+            control: enriched,
+            logical,
+            physical,
+            isRequired: control.is_required_override || fd.is_required,
+            optionSetName,
+            choiceOptions,
+          });
+        }
+
+        setRows(formRows);
       } catch {
         // fallback: show empty
       } finally {
@@ -273,13 +211,13 @@ export default function SubgridQuickCreatePanel({
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
     for (const row of rows) {
-      if (!row.meta) continue;
-      const isRequired = row.control.is_required_override || row.meta.is_required;
-      if (isRequired) {
-        const v = values[row.meta.logical_name];
-        if (v == null || String(v).trim() === '') {
-          errs[row.meta.logical_name] = `${row.control.label_override ?? row.meta.display_name} is required`;
-        }
+      if (!row.isRequired) continue;
+      const v = values[row.logical];
+      const isEmpty = v == null
+        || (Array.isArray(v) ? (v as unknown[]).length === 0 : String(v).trim() === '');
+      if (isEmpty) {
+        const label = row.control.label_override ?? row.control.field_display_name ?? row.logical;
+        errs[row.logical] = `${label} is required`;
       }
     }
     setErrors(errs);
@@ -289,10 +227,11 @@ export default function SubgridQuickCreatePanel({
   const buildPayload = () => {
     const payload: Record<string, unknown> = {};
     for (const row of rows) {
-      if (!row.meta) continue;
-      const v = values[row.meta.logical_name];
+      const v = values[row.logical];
       // Use physical_column_name so PostgREST receives valid DB column names
-      if (v != null && v !== '') payload[row.meta.physical_column_name] = v;
+      if (v != null && !(Array.isArray(v) ? v.length === 0 : v === '')) {
+        payload[row.physical] = v;
+      }
     }
     return payload;
   };
@@ -317,6 +256,10 @@ export default function SubgridQuickCreatePanel({
       setSaving(false);
     }
   };
+
+  // Include the locked parent FK in the value set so dependent lookups that filter
+  // by the parent record resolve correctly.
+  const formValues = { ...values, [fkColumn]: parentId };
 
   return (
     <>
@@ -381,28 +324,22 @@ export default function SubgridQuickCreatePanel({
                 </div>
               </div>
 
-              {rows.map((row) => {
-                if (!row.meta) return null;
-                const label = row.control.label_override ?? row.meta.display_name;
-                const isRequired = row.control.is_required_override || row.meta.is_required;
-                return (
-                  <div key={row.control.id}>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-1">
-                      {label}
-                      {isRequired && <span className="text-red-500 ml-0.5">*</span>}
-                    </label>
-                    <FieldInput
-                      meta={row.meta}
-                      value={values[row.meta.logical_name] ?? ''}
-                      onChange={(v) => set(row.meta!.logical_name, v)}
-                      disabled={saving}
-                    />
-                    {errors[row.meta.logical_name] && (
-                      <p className="text-[11px] text-red-500 mt-1">{errors[row.meta.logical_name]}</p>
-                    )}
-                  </div>
-                );
-              })}
+              {rows.map((row) => (
+                <FormField
+                  key={row.control.id}
+                  control={row.control}
+                  value={values[row.logical] ?? ''}
+                  onChange={(fieldLogicalName, v) => set(fieldLogicalName, v)}
+                  isReadonly={saving}
+                  isRequired={row.isRequired}
+                  errorMessage={errors[row.logical] ?? null}
+                  optionSetName={row.optionSetName}
+                  choiceOptions={row.choiceOptions}
+                  lookupConfig={row.control.lookup_config ?? null}
+                  formValues={formValues}
+                  entityDefinitionId={entityDefinitionId}
+                />
+              ))}
             </div>
           )}
         </div>

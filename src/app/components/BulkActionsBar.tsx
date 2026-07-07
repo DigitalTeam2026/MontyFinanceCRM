@@ -1,3 +1,4 @@
+import { uuid } from '../../lib/uuid';
 import FilterSelect from './FilterSelect';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
@@ -868,7 +869,7 @@ function BulkEditModal({
   onClose: () => void;
 }) {
   const addRow = () => {
-    onRowsChange([...updateRows, { id: crypto.randomUUID(), fieldId: '', value: '' }]);
+    onRowsChange([...updateRows, { id: uuid(), fieldId: '', value: '' }]);
   };
 
   const removeRow = (id: string) => {

@@ -13,9 +13,14 @@ import {
   writeMonetaryFieldAudit,
   fetchCurrencies,
 } from './currencyService';
-import { getTable } from './metadata/metadataStore';
+import { getTable, getSnapshotVersion } from './metadata/metadataStore';
 
 export type RecordData = Record<string, unknown>;
+
+/** Dev-only diagnostic (stripped in production builds). */
+function devWarn(...args: unknown[]): void {
+  if (import.meta.env?.DEV) console.warn('[recordService]', ...args);
+}
 
 const ENTITY_TABLE: Record<string, string> = {
   accounts:       'account',
@@ -47,18 +52,18 @@ const ENTITY_FORM_LOGICAL: Record<string, string> = {
   product:        'product',
 };
 
-const dynamicEntityMetaCache = new Map<string, { table: string; pk: string }>();
+const dynamicEntityMetaCache = new Map<string, { table: string; pk: string; entityDefinitionId?: string }>();
 
-async function resolveEntityMeta(entity: AppEntity): Promise<{ table: string; pk: string }> {
+async function resolveEntityMeta(entity: AppEntity): Promise<{ table: string; pk: string; entityDefinitionId?: string }> {
   if (ENTITY_TABLE[entity] && ENTITY_PK[entity]) {
-    return { table: ENTITY_TABLE[entity], pk: ENTITY_PK[entity] };
+    return { table: ENTITY_TABLE[entity], pk: ENTITY_PK[entity], entityDefinitionId: ENTITY_DEFINITION_ID[entity] };
   }
   const cached = dynamicEntityMetaCache.get(entity);
   if (cached) return cached;
 
   const { data } = await supabase
     .from('entity_definition')
-    .select('physical_table_name')
+    .select('physical_table_name, entity_definition_id')
     .eq('logical_name', entity)
     .maybeSingle();
 
@@ -70,7 +75,11 @@ async function resolveEntityMeta(entity: AppEntity): Promise<{ table: string; pk
   // Fallback uses logical_name (not physical table name) because the PK is always logical_name + '_id'.
   const { data: pkCol } = await supabase.rpc('get_table_pk_column', { p_table: table });
   const pk = (pkCol as string | null) ?? `${entity}_id`;
-  const meta = { table, pk };
+  // Resolve the entity_definition_id here too so custom entities get their
+  // default statecode (Active) on insert — the hardcoded ENTITY_DEFINITION_ID
+  // map only covers system entities, so custom entities were inserted with a
+  // NULL state_code and then hidden by any "Active" (state_code = 1) view filter.
+  const meta = { table, pk, entityDefinitionId: data.entity_definition_id as string | undefined };
   dynamicEntityMetaCache.set(entity, meta);
   return meta;
 }
@@ -87,8 +96,21 @@ export async function getEntityPK(entity: AppEntity): Promise<string> {
 // Physical column sets are cached with a short TTL so that a column added from
 // Admin Studio (ALTER TABLE) becomes visible to saves without a full page reload.
 // Callers that just performed/observed DDL can force a fresh read.
-const tableColumnsCache = new Map<string, { cols: Set<string>; ts: number }>();
+const tableColumnsCache = new Map<string, { cols: Set<string>; ts: number; epoch: number | null }>();
 const TABLE_COLUMNS_TTL = 60_000;
+
+/**
+ * Published-metadata epoch guard. Any per-entity/table metadata cached below is
+ * stamped with the snapshot version it was built against; when a newer version is
+ * published the stamp no longer matches and the entry is treated as stale, so a
+ * field/column added through the builder becomes visible immediately after publish
+ * without waiting out the TTL. (`resetMetadataCaches` still clears everything on the
+ * publish event; this guard also covers callers that read between the event and a
+ * reset, and the null-vs-number transition on first hydrate.)
+ */
+function metadataEpoch(): number | null {
+  return getSnapshotVersion();
+}
 
 /** Drop the cached physical-column set for one table, or all tables. */
 export function clearTableColumnsCache(table?: string): void {
@@ -100,19 +122,21 @@ export async function getTableColumns(
   table: string,
   opts: { force?: boolean } = {},
 ): Promise<Set<string>> {
+  const epoch = metadataEpoch();
   const cached = tableColumnsCache.get(table);
-  if (!opts.force && cached && Date.now() - cached.ts < TABLE_COLUMNS_TTL) return cached.cols;
+  const fresh = cached && cached.epoch === epoch && Date.now() - cached.ts < TABLE_COLUMNS_TTL;
+  if (!opts.force && fresh) return cached!.cols;
   const { data } = await supabase.rpc('get_table_columns', { p_table: table });
   if (data && Array.isArray((data as { cols: string[] }).cols)) {
     const cols = new Set<string>((data as { cols: string[] }).cols);
-    tableColumnsCache.set(table, { cols, ts: Date.now() });
+    tableColumnsCache.set(table, { cols, ts: Date.now(), epoch });
     return cols;
   }
   // Keep a stale-but-usable set rather than caching an empty one on a transient RPC
   // failure (an empty set disables the column filter, which is the safer fallback).
   if (cached) return cached.cols;
   const empty = new Set<string>();
-  tableColumnsCache.set(table, { cols: empty, ts: Date.now() });
+  tableColumnsCache.set(table, { cols: empty, ts: Date.now(), epoch });
   return empty;
 }
 
@@ -131,7 +155,7 @@ export function filterToExistingColumns(
 export async function getDefaultStatusForState(
   entityDefId: string,
   stateValue: number,
-): Promise<{ stateValue: number; reasonValue: number } | null> {
+): Promise<{ stateValue: number; reasonValue: number | null } | null> {
   const { data: sc } = await supabase
     .from('statecode_definition')
     .select('statecode_id')
@@ -139,12 +163,16 @@ export async function getDefaultStatusForState(
     .eq('state_value', stateValue)
     .maybeSingle();
   if (!sc) return null;
+  // Prefer the flagged default reason, then fall back to the lowest-valued one.
+  // Do NOT filter on is_active here: some entities seed status_reason_definition
+  // rows with is_active = null (see [[filter-condition-label-resolution]] gotcha #1),
+  // and over-filtering them out used to make this whole function return null —
+  // leaving state_code NULL and the record hidden by any "Active" view filter.
   const { data: sr } = await supabase
     .from('status_reason_definition')
     .select('reason_value')
     .eq('entity_definition_id', entityDefId)
     .eq('statecode_id', sc.statecode_id)
-    .eq('is_active', true)
     .eq('is_default', true)
     .maybeSingle();
   if (sr) return { stateValue, reasonValue: sr.reason_value };
@@ -153,20 +181,36 @@ export async function getDefaultStatusForState(
     .select('reason_value')
     .eq('entity_definition_id', entityDefId)
     .eq('statecode_id', sc.statecode_id)
-    .eq('is_active', true)
     .order('reason_value')
     .limit(1)
     .maybeSingle();
-  if (first) return { stateValue, reasonValue: first.reason_value };
-  return null;
+  // Always set the state even when no reason row exists — the statecode is what
+  // the "Active" filter matches on; a missing status_reason must not block it.
+  return { stateValue, reasonValue: first ? first.reason_value : null };
 }
 
-interface FieldMapping {
+export interface FieldMapping {
   logicalToPhysical: Record<string, string>;
   physicalToLogical: Record<string, string>;
 }
 
-const fieldMappingCache: Partial<Record<AppEntity, { mapping: FieldMapping; ts: number }>> = {};
+/**
+ * Merge an authoritative mapping (typically the one the open form already built
+ * from its live `field_definition` load) over a base/cached mapping. The override
+ * wins so a field added moments ago is honored even when the shared, TTL-cached
+ * {@link getFieldMapping} hasn't picked it up yet. This is what lets ANY field
+ * placed on a form load and save without per-field code. A no-op when `override`
+ * is undefined, so every existing caller (bulk edit, inline grid edit) is unchanged.
+ */
+export function mergeFieldMapping(base: FieldMapping, override?: FieldMapping | null): FieldMapping {
+  if (!override) return base;
+  return {
+    logicalToPhysical: { ...base.logicalToPhysical, ...override.logicalToPhysical },
+    physicalToLogical: { ...base.physicalToLogical, ...override.physicalToLogical },
+  };
+}
+
+const fieldMappingCache: Partial<Record<AppEntity, { mapping: FieldMapping; ts: number; epoch: number | null }>> = {};
 const FIELD_MAPPING_TTL = 60_000;
 
 export function clearFieldMappingCache(entity?: AppEntity) {
@@ -189,8 +233,11 @@ export function resetMetadataCaches(): void {
 }
 
 async function getFieldMapping(entity: AppEntity, opts: { force?: boolean } = {}): Promise<FieldMapping> {
+  const epoch = metadataEpoch();
   const cached = fieldMappingCache[entity];
-  if (!opts.force && cached && Date.now() - cached.ts < FIELD_MAPPING_TTL) return cached.mapping;
+  if (!opts.force && cached && cached.epoch === epoch && Date.now() - cached.ts < FIELD_MAPPING_TTL) {
+    return cached.mapping;
+  }
 
   const entityLogical = ENTITY_FORM_LOGICAL[entity] ?? entity;
 
@@ -220,7 +267,7 @@ async function getFieldMapping(entity: AppEntity, opts: { force?: boolean } = {}
   }
 
   const mapping = { logicalToPhysical, physicalToLogical };
-  fieldMappingCache[entity] = { mapping, ts: Date.now() };
+  fieldMappingCache[entity] = { mapping, ts: Date.now(), epoch };
   return mapping;
 }
 
@@ -239,9 +286,10 @@ async function getFieldMapping(entity: AppEntity, opts: { force?: boolean } = {}
 export async function toWritablePhysicalPayload(
   entity: AppEntity,
   values: RecordData,
+  mappingOverride?: FieldMapping | null,
 ): Promise<{ payload: RecordData; missingColumns: string[] }> {
   const { table } = await resolveEntityMeta(entity);
-  const mapping = await getFieldMapping(entity);
+  const mapping = mergeFieldMapping(await getFieldMapping(entity), mappingOverride);
   const physical = translateToPhysical(values, mapping, table);
   const intended = Object.keys(physical);
 
@@ -252,6 +300,25 @@ export async function toWritablePhysicalPayload(
   }
   const missingColumns = cols.size > 0 ? intended.filter((k) => !cols.has(k)) : [];
   const payload = filterToExistingColumns(physical, cols);
+
+  // Surface SILENT drops (req. #9): a value the form supplied that maps to no
+  // physical column at all — neither via the field mapping nor as a direct
+  // physical write — and isn't a recognized system/form-internal key. These never
+  // reach `intended`/`missingColumns`, so without this they vanish with no trace.
+  if (import.meta.env?.DEV) {
+    const knownPhysical = new Set(Object.values(mapping.logicalToPhysical));
+    for (const [key, val] of Object.entries(values)) {
+      if (val === undefined) continue;
+      if (mapping.logicalToPhysical[key] || knownPhysical.has(key)) continue;
+      if (SYSTEM_FIELDS.has(key) || FORM_INTERNAL_KEYS.has(key)) continue;
+      devWarn(
+        `Form field "${key}" on "${String(entity)}" was dropped from the save payload: ` +
+        `no field_definition maps it to a physical column, and it is not itself a known ` +
+        `column. Add/publish the field in Admin Studio, or check the control's logical name.`,
+      );
+    }
+  }
+
   return { payload, missingColumns };
 }
 
@@ -284,7 +351,7 @@ export function missingColumnsError(entity: string, missing: string[]): Error {
   );
 }
 
-function translateToLogical(record: RecordData, mapping: FieldMapping): RecordData {
+export function translateToLogical(record: RecordData, mapping: FieldMapping): RecordData {
   const result: RecordData = {};
   const mappedLogical = new Set<string>();
 
@@ -311,7 +378,7 @@ function translateToLogical(record: RecordData, mapping: FieldMapping): RecordDa
   return result;
 }
 
-function translateToPhysical(values: RecordData, mapping: FieldMapping, table: string): RecordData {
+export function translateToPhysical(values: RecordData, mapping: FieldMapping, table: string): RecordData {
   const result: RecordData = {};
   const usedPhysical = new Set<string>();
   const dbManaged = DB_MANAGED_PHYSICAL_COLUMNS[table] ?? new Set<string>();
@@ -354,20 +421,26 @@ function applySoftDeleteFilter(q: any, table: string): any {
   return q.eq('is_deleted', false);
 }
 
-export async function fetchRecord(entity: AppEntity, id: string): Promise<RecordData> {
+export async function fetchRecord(
+  entity: AppEntity,
+  id: string,
+  mappingOverride?: FieldMapping | null,
+): Promise<RecordData> {
   const { table, pk } = await resolveEntityMeta(entity);
 
   let q = supabase.from(table).select('*').eq(pk, id);
   q = applySoftDeleteFilter(q, table);
 
-  const [{ data, error }, mapping] = await Promise.all([
+  const [{ data, error }, baseMapping] = await Promise.all([
     q.maybeSingle(),
     getFieldMapping(entity),
   ]);
 
   if (error) throw error;
   if (!data) throw new Error('Record not found');
-  return translateToLogical(data as RecordData, mapping);
+  // The form's own field map (when supplied) wins so a just-added column's value is
+  // exposed under its logical name even if the shared TTL cache hasn't caught up.
+  return translateToLogical(data as RecordData, mergeFieldMapping(baseMapping, mappingOverride));
 }
 
 const SYSTEM_FIELDS = new Set([
@@ -382,6 +455,16 @@ const SYSTEM_FIELDS = new Set([
   'disqualified_at', 'disqualified_by', 'disqualify_reason', 'reopen_reason',
   'is_qualified', 'originating_lead_id',
   'account_number', 'ticket_number',
+]);
+
+/**
+ * Keys the form state carries that are intentionally NOT persisted as ordinary
+ * columns (BPF flow state, transient UI flags). Excluded from the dev "dropped
+ * field" warning so it only fires on genuine metadata gaps, not by-design keys.
+ */
+const FORM_INTERNAL_KEYS = new Set([
+  'bpf_is_finished', 'completed_stage_ids', 'active_process_stage_id',
+  'active_process_flow_id', 'stage', 'stagecode',
 ]);
 
 const DB_MANAGED_PHYSICAL_COLUMNS: Record<string, Set<string>> = {
@@ -473,15 +556,17 @@ export async function saveRecord(
   entity: AppEntity,
   id: string | null,
   values: RecordData,
-  userId: string
+  userId: string,
+  mappingOverride?: FieldMapping | null,
 ): Promise<RecordData> {
-  const { table, pk } = await resolveEntityMeta(entity);
+  const { table, pk, entityDefinitionId } = await resolveEntityMeta(entity);
   const entitySlug = table;
-  const mapping = await getFieldMapping(entity);
+  const mapping = mergeFieldMapping(await getFieldMapping(entity), mappingOverride);
   // Build the writable payload through the shared helper so a just-added column is
   // picked up (self-heal) and genuine metadata/DB drift is surfaced loudly instead
-  // of silently dropping the user's value.
-  const { payload: physicalValues, missingColumns } = await toWritablePhysicalPayload(entity, values);
+  // of silently dropping the user's value. The form's authoritative map (when passed)
+  // guarantees every field it rendered maps to its column even if the cache is stale.
+  const { payload: physicalValues, missingColumns } = await toWritablePhysicalPayload(entity, values, mappingOverride);
   if (missingColumns.length > 0) throw missingColumnsError(String(entity), missingColumns);
   const tableCols = await getTableColumns(table);
 
@@ -491,7 +576,7 @@ export async function saveRecord(
   const isCustomEntity = !(ENTITY_TABLE[entity] && ENTITY_PK[entity]);
 
   if (id) {
-    const prevRecord = await fetchRecord(entity, id).catch(() => null);
+    const prevRecord = await fetchRecord(entity, id, mappingOverride).catch(() => null);
 
     const updatePayload: Record<string, unknown> = { ...physicalValues };
     if (isCustomEntity || tableCols.has('modified_at')) updatePayload.modified_at = new Date().toISOString();
@@ -565,10 +650,14 @@ export async function saveRecord(
   } else {
     const insertPayload: Record<string, unknown> = { ...physicalValues };
     if (isCustomEntity || tableCols.has('created_by')) insertPayload.created_by = userId;
-    if (isCustomEntity || tableCols.has('owner_id'))   insertPayload.owner_id = userId;
+    // Default owner to the current user, but honor an explicit owner picked on the form
+    // (owner is now an editable lookup) so "create record with owner" persists correctly.
+    if (isCustomEntity || tableCols.has('owner_id')) {
+      if (insertPayload.owner_id == null) insertPayload.owner_id = userId;
+    }
     if (isCustomEntity || tableCols.has('owner_type')) insertPayload.owner_type = 'user';
     if ((isCustomEntity || tableCols.has('state_code')) && insertPayload.state_code == null) {
-      const defId = ENTITY_DEFINITION_ID[entity];
+      const defId = entityDefinitionId ?? ENTITY_DEFINITION_ID[entity];
       if (defId) {
         const defaults = await getDefaultStatusForState(defId, 1);
         if (defaults) {

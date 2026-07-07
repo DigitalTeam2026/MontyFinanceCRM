@@ -1,3 +1,4 @@
+import { uuid } from '../../lib/uuid';
 import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -49,7 +50,7 @@ interface CalcBuilderModalProps {
   onClose: () => void;
 }
 
-const uid = () => crypto.randomUUID();
+const uid = () => uuid();
 
 function defaultConfig(): CalculationConfig {
   return {

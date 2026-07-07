@@ -1,8 +1,10 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
-import type { Session } from '@supabase/supabase-js';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import type { Session } from './lib/supabase';
 import { supabase } from './lib/supabase';
 import LoginPage from './LoginPage';
-import { parseRoute } from './lib/appRoute';
+import { parseRoute, replaceHash } from './lib/appRoute';
+
+const DEFAULT_HASH = '#/app/sales/accounts/dashboard';
 
 // Admin Studio is admin-only and pulls in a large designer surface (entity/form/
 // workflow/dashboard editors). Lazy-load it so regular users never download it,
@@ -27,12 +29,38 @@ export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [isSystemAdmin, setIsSystemAdmin] = useState<boolean | null>(null);
   const [route, setRoute] = useState(parseRoute);
+  // Where to send the user after a successful login — the route they originally
+  // tried to open before being bounced to #/login.
+  const redirectTargetRef = useRef<string | null>(null);
 
   useEffect(() => {
     const handler = () => setRoute(parseRoute());
     window.addEventListener('hashchange', handler);
     return () => window.removeEventListener('hashchange', handler);
   }, []);
+
+  // Keep the URL in sync with the auth gate. Logged-out users are sent to
+  // #/login (remembering where they were headed); once logged in, anyone sitting
+  // on #/login is bounced to their intended destination (or the default).
+  useEffect(() => {
+    if (session === undefined) return; // auth still resolving
+    if (!session) {
+      if (route.surface !== 'login') {
+        const current = window.location.hash;
+        redirectTargetRef.current =
+          current && !current.startsWith('#/login') ? current : null;
+        replaceHash('#/login');
+        setRoute(parseRoute());
+      }
+      return;
+    }
+    if (route.surface === 'login') {
+      const target = redirectTargetRef.current;
+      redirectTargetRef.current = null;
+      replaceHash(target && !target.startsWith('#/login') ? target : DEFAULT_HASH);
+      setRoute(parseRoute());
+    }
+  }, [session, route.surface]);
 
   useEffect(() => {
     // Timeout guard: if auth check doesn't resolve in 5s, fall through to login
@@ -89,9 +117,15 @@ export default function App() {
     );
   }
 
-  // Not logged in
+  // Not logged in — the gate effect has pointed the URL at #/login.
   if (!session) {
     return <LoginPage onLogin={() => {}} />;
+  }
+
+  // Logged in but still on #/login: the gate effect is redirecting to the
+  // intended destination. Show the spinner rather than a flash of the CRM app.
+  if (route.surface === 'login') {
+    return <FullScreenSpinner />;
   }
 
   // Admin + studio route

@@ -510,40 +510,83 @@ const stateCodeLabelCache = new Map<string, { data: Record<string, string>; ts: 
 const statusReasonLabelCache = new Map<string, { data: Record<string, string>; ts: number }>();
 const STATUS_LABEL_CACHE_TTL = 300_000;
 
+async function fetchStateCodeLabelsLive(entityDefId: string): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+  const { data } = await supabase
+    .from('statecode_definition')
+    .select('state_value, display_label')
+    .eq('entity_definition_id', entityDefId);
+  for (const r of data ?? []) map[String(r.state_value)] = r.display_label;
+  return map;
+}
+
 async function resolveStateCodeLabels(entityDefId: string): Promise<Record<string, string>> {
   const cached = stateCodeLabelCache.get(entityDefId);
   if (cached && Date.now() - cached.ts < STATUS_LABEL_CACHE_TTL) return cached.data;
-  const map: Record<string, string> = {};
+  let map: Record<string, string> = {};
   const snap = getTable<{ state_value: number; display_label: string; entity_definition_id: string }>('statecode_definition');
   if (snap !== null) {
     for (const r of snap.filter((r) => r.entity_definition_id === entityDefId)) map[String(r.state_value)] = r.display_label;
+    // Snapshot may be stale (published before this entity's statecodes were seeded).
+    // An empty per-entity map would render raw codes, so fall back to the live table.
+    if (Object.keys(map).length === 0) map = await fetchStateCodeLabelsLive(entityDefId);
   } else {
-    const { data } = await supabase
-      .from('statecode_definition')
-      .select('state_value, display_label')
-      .eq('entity_definition_id', entityDefId);
-    for (const r of data ?? []) map[String(r.state_value)] = r.display_label;
+    map = await fetchStateCodeLabelsLive(entityDefId);
   }
   stateCodeLabelCache.set(entityDefId, { data: map, ts: Date.now() });
+  return map;
+}
+
+async function fetchStatusReasonLabelsLive(entityDefId: string): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+  // No is_active filter: a deactivated reason still needs its label rendered for
+  // existing records that carry that value — a raw code is never acceptable.
+  const { data } = await supabase
+    .from('status_reason_definition')
+    .select('reason_value, display_label')
+    .eq('entity_definition_id', entityDefId);
+  for (const r of data ?? []) map[String(r.reason_value)] = r.display_label;
   return map;
 }
 
 async function resolveStatusReasonLabels(entityDefId: string): Promise<Record<string, string>> {
   const cached = statusReasonLabelCache.get(entityDefId);
   if (cached && Date.now() - cached.ts < STATUS_LABEL_CACHE_TTL) return cached.data;
-  const map: Record<string, string> = {};
-  const snap = getTable<{ reason_value: string; display_label: string; entity_definition_id: string; is_active: boolean }>('status_reason_definition');
+  let map: Record<string, string> = {};
+  const snap = getTable<{ reason_value: string; display_label: string; entity_definition_id: string }>('status_reason_definition');
   if (snap !== null) {
-    for (const r of snap.filter((r) => r.entity_definition_id === entityDefId && r.is_active === true)) map[String(r.reason_value)] = r.display_label;
+    // Resolve labels regardless of is_active — some seeds (lead/opportunity) inserted
+    // reason rows without setting is_active, which would otherwise hide their labels.
+    for (const r of snap.filter((r) => r.entity_definition_id === entityDefId)) map[String(r.reason_value)] = r.display_label;
+    if (Object.keys(map).length === 0) map = await fetchStatusReasonLabelsLive(entityDefId);
   } else {
-    const { data } = await supabase
-      .from('status_reason_definition')
-      .select('reason_value, display_label')
-      .eq('entity_definition_id', entityDefId)
-      .eq('is_active', true);
-    for (const r of data ?? []) map[String(r.reason_value)] = r.display_label;
+    map = await fetchStatusReasonLabelsLive(entityDefId);
   }
   statusReasonLabelCache.set(entityDefId, { data: map, ts: Date.now() });
+  return map;
+}
+
+// Global stage_key/stage_id → display-name map, built from the process_stage
+// metadata (shared across every process flow). A single cache entry suffices
+// because stage keys ("stage_<ts>") and stage ids (UUIDs) are globally unique.
+let stageLabelCache: { data: Record<string, string>; ts: number } | null = null;
+
+async function resolveStageLabels(): Promise<Record<string, string>> {
+  if (stageLabelCache && Date.now() - stageLabelCache.ts < STATUS_LABEL_CACHE_TTL) return stageLabelCache.data;
+  const map: Record<string, string> = {};
+  const add = (r: { stage_key?: string | null; process_stage_id?: string | null; name?: string | null }) => {
+    if (!r.name) return;
+    if (r.stage_key) map[r.stage_key] = r.name;
+    if (r.process_stage_id) map[r.process_stage_id] = r.name;
+  };
+  const snap = getTable<{ stage_key: string; process_stage_id: string; name: string }>('process_stage');
+  if (snap !== null) {
+    for (const r of snap) add(r);
+  } else {
+    const { data } = await supabase.from('process_stage').select('stage_key, process_stage_id, name');
+    for (const r of (data ?? []) as { stage_key: string; process_stage_id: string; name: string }[]) add(r);
+  }
+  stageLabelCache = { data: map, ts: Date.now() };
   return map;
 }
 
@@ -551,6 +594,7 @@ async function resolveStatusReasonLabels(entityDefId: string): Promise<Record<st
 export function resetListMetadataCaches(): void {
   stateCodeLabelCache.clear();
   statusReasonLabelCache.clear();
+  stageLabelCache = null;
   dynamicEntityMetaCache.clear();
 }
 
@@ -581,6 +625,32 @@ function applyStatusLabels(
     state_code: resolve(r.state_code, stateCodeMap, 'Open'),
     status_reason: resolve(r.status_reason, statusReasonMap, 'New'),
   }));
+}
+
+// The lifecycle columns are owned by applyStatusLabels: a stray stage key there is
+// a data error (the record's real state is unknown) and must resolve to the lifecycle
+// default ("Open"/"New"), NOT to the stage name — otherwise the Status column shows
+// e.g. "Stage 1" instead of "Open". So applyStageLabels skips these keys.
+const LIFECYCLE_STATUS_KEYS = new Set(['state_code', 'status_reason', 'statecode', 'statusreason']);
+
+// Resolve any raw BPF stage identifier ("stage_<ts>" / "condition_<ts>") that a
+// grid column carries — e.g. the opportunity `stage` badge — to its human-readable
+// process_stage name. Applies to every string column EXCEPT the lifecycle status
+// columns, so custom/dynamic stage columns on any entity show the stage value
+// instead of the raw id, while Status/Status Reason stay owned by applyStatusLabels.
+function applyStageLabels(rows: ListRow[], stageMap: Record<string, string>): ListRow[] {
+  return rows.map((r) => {
+    let out: ListRow | null = null;
+    for (const [k, v] of Object.entries(r)) {
+      if (LIFECYCLE_STATUS_KEYS.has(k)) continue;
+      if (typeof v !== 'string' || !STAGE_KEY_RE.test(v)) continue;
+      const label = stageMap[v];
+      if (!label || label === v) continue;
+      if (out === null) out = { ...r };
+      out[k] = label;
+    }
+    return out ?? r;
+  });
 }
 
 /**
@@ -770,13 +840,18 @@ async function fetchUniversal(entity: AppEntity, opts: ListOptions): Promise<Lis
 
   // --- Post-processing ---
   const entityDefId = ENTITY_DEFINITION_ID[entity] ?? resolvedDefId;
-  const hasStateCode = tableCols.has('state_code');
-  const hasStatusReason = tableCols.has('status_reason');
+  // Detect status columns from the actual returned rows (select('*')) rather than
+  // the introspected column set, which can be stale after a schema change and would
+  // otherwise skip label resolution — leaving raw codes (1/2/3) in the grid.
+  const sampleRow = data[0];
+  const hasStateCode = tableCols.has('state_code') || (sampleRow != null && 'state_code' in sampleRow);
+  const hasStatusReason = tableCols.has('status_reason') || (sampleRow != null && 'status_reason' in sampleRow);
 
-  const [ownerMap, stateCodeMap, statusReasonMap] = await Promise.all([
+  const [ownerMap, stateCodeMap, statusReasonMap, stageMap] = await Promise.all([
     hasOwner ? resolveOwnerEmails(data.map((r) => r.owner_id as string | null)) : Promise.resolve({} as Record<string, string>),
     hasStateCode && entityDefId ? resolveStateCodeLabels(entityDefId) : Promise.resolve({} as Record<string, string>),
     hasStatusReason && entityDefId ? resolveStatusReasonLabels(entityDefId) : Promise.resolve({} as Record<string, string>),
+    resolveStageLabels(),
   ]);
 
   const computeFullName = HAS_FULL_NAME.has(table);
@@ -810,7 +885,14 @@ async function fetchUniversal(entity: AppEntity, opts: ListOptions): Promise<Lis
     return row;
   });
 
-  // Apply status/state label resolution
+  // Resolve any raw BPF stage id ("stage_<ts>") in any column to its stage name
+  // FIRST, so a stage key stored in a status column keeps its readable stage name
+  // instead of collapsing to the lifecycle default below.
+  if (Object.keys(stageMap).length > 0) {
+    rows = applyStageLabels(rows, stageMap);
+  }
+
+  // Apply status/state label resolution (numeric state_code/status_reason → label).
   if (hasStateCode || hasStatusReason) {
     rows = applyStatusLabels(rows, stateCodeMap, statusReasonMap);
   }

@@ -8,6 +8,7 @@ export interface CrmUser {
   mobile_phone: string | null;
   is_active: boolean;
   is_system_admin: boolean;
+  totp_enabled?: boolean;
   deleted_at: string | null;
   created_at: string;
   modified_at: string;

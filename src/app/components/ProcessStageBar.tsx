@@ -64,12 +64,31 @@ function humanizeFieldName(logicalName: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * A stage field is required to advance when it is statically flagged required on the stage
+ * (process_stage_fields.is_required) OR a business rule set it required at runtime. Rule-hidden
+ * fields are never required. This is what lets a conditionally-required field (e.g. "required
+ * when Souchet = Yes") gate Next Stage even when the field is NOT on the main form — the stage
+ * popup is its own surface, so it must not depend on the field being present in the form layout.
+ */
+function isStageFieldRequired(
+  sf: { field_logical_name: string; is_required: boolean },
+  ruleState?: FormRuleState,
+): boolean {
+  const rs = ruleState?.fields?.[sf.field_logical_name];
+  if (rs?.isHidden) return false;
+  return sf.is_required || !!rs?.isRequired;
+}
+
 // ─── Stage Popup (Dynamics 365 style flyout) ────────────────────────────────
 
 interface StagePopupProps {
   stage: import('../../types/processFlow').ProcessStage;
   stageFields: StageFieldDef[];
   values: RecordData;
+  // Live business-rule state so the popup can require/hide a field that a rule targets even
+  // when that field is not on the main form (its only surface here is the popup itself).
+  ruleState?: FormRuleState;
   onChange: (field: string, value: string) => void;
   onNextStage: () => void;
   onPrevStage: () => void;
@@ -94,6 +113,7 @@ function StagePopup({
   stage,
   stageFields,
   values,
+  ruleState,
   onChange,
   onNextStage,
   onPrevStage,
@@ -136,7 +156,7 @@ function StagePopup({
   const handleNextStage = () => {
     const missing = new Set<string>();
     for (const sf of stageFields) {
-      if (sf.is_required) {
+      if (isStageFieldRequired(sf, ruleState)) {
         const val = values[sf.field_logical_name];
         if (val == null || String(val).trim() === '') {
           missing.add(sf.field_logical_name);
@@ -155,7 +175,7 @@ function StagePopup({
   // the field is configured read-only — EXCEPT a required field on the active stage stays
   // editable. A required-and-locked field is a contradiction: the user could never fill it
   // to satisfy the advance gate. Mandatory always wins over the per-field read-only flag.
-  const isFieldLocked = (sf: StageFieldDef) => isReadonly || isPast || (!!sf.is_readonly && !sf.is_required);
+  const isFieldLocked = (sf: StageFieldDef) => isReadonly || isPast || (!!sf.is_readonly && !isStageFieldRequired(sf, ruleState));
 
   const clearFieldError = (field: string) =>
     setValidationErrors((prev) => { const s = new Set(prev); s.delete(field); return s; });
@@ -345,7 +365,7 @@ function StagePopup({
                 <div key={sf.psf_id}>
                   <label className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 mb-1 uppercase tracking-wide">
                     {label}
-                    {sf.is_required && <span className="text-red-500 text-[10px] leading-none">*</span>}
+                    {isStageFieldRequired(sf, ruleState) && <span className="text-red-500 text-[10px] leading-none">*</span>}
                     {isFieldLocked(sf) && <Lock size={8} className="text-slate-400 ml-auto" />}
                   </label>
                   {renderFieldControl(sf)}
@@ -989,7 +1009,7 @@ export default function ProcessStageBar({
 
   const buildStageFieldViolations = (): StageGateViolation[] => {
     return stageFields
-      .filter((sf) => sf.is_required)
+      .filter((sf) => isStageFieldRequired(sf, ruleState))
       .filter((sf) => { const val = values[sf.field_logical_name]; return val == null || String(val).trim() === ''; })
       .map((sf) => {
         const label = sf.display_label || humanizeFieldName(sf.field_logical_name);
@@ -1440,6 +1460,7 @@ export default function ProcessStageBar({
             stage={popupStage}
             stageFields={popupFieldDefs}
             values={values}
+            ruleState={ruleState}
             onChange={onChange}
             onNextStage={handleNextStageFromPopup}
             onPrevStage={handlePrevStage}

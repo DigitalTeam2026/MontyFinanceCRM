@@ -864,6 +864,11 @@ function ControlCellContent({
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-medium text-slate-700 truncate">{label}</span>
+            {control.borrowed_field_config && (
+              <span className="flex items-center gap-0.5 text-[9px] text-violet-600 bg-violet-50 px-1 rounded shrink-0" title="Read-only field from a related table">
+                <Link size={8} /> Related
+              </span>
+            )}
             {control.is_required_override && <span className="text-red-400 text-[9px] shrink-0">*</span>}
             {control.is_readonly && <span className="text-[9px] text-slate-400 bg-slate-100 px-1 rounded shrink-0">RO</span>}
             {!control.is_visible && <EyeOff size={9} className="text-slate-300 shrink-0" />}

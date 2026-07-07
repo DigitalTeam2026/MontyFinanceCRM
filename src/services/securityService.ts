@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { sendRaw } from '../lib/api';
 import type {
   CrmUser,
   BusinessUnit,
@@ -23,21 +24,56 @@ export async function createUser(payload: {
   is_active?: boolean;
   is_system_admin?: boolean;
 }): Promise<CrmUser> {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-crm-user`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify(payload),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? 'Failed to create user');
-  return json.user as CrmUser;
+  // Creation goes through a dedicated admin endpoint (not the generic crm_user
+  // path) so the server can validate the complex password, hash it, and create
+  // the backing auth.users row atomically. Requires an active system admin token.
+  const { ok, body } = await sendRaw<{ data?: { user: CrmUser }; error?: { message: string } }>(
+    '/api/admin/users',
+    { method: 'POST', body: JSON.stringify(payload) },
+  );
+  if (!ok || !body?.data?.user) {
+    throw new Error(body?.error?.message ?? 'Failed to create user');
+  }
+  return body.data.user;
+}
+
+// ─── Two-factor authentication (per user, admin-managed) ──────────────────────
+
+/** Begin enrollment: returns a fresh secret + otpauth URI for the QR / manual key. */
+export async function setupUserTotp(userId: string): Promise<{ secret: string; otpauth_url: string }> {
+  const { ok, body } = await sendRaw<{ data?: { secret: string; otpauth_url: string }; error?: { message: string } }>(
+    `/api/admin/users/${userId}/2fa/setup`,
+    { method: 'POST', body: '{}' },
+  );
+  if (!ok || !body?.data) throw new Error(body?.error?.message ?? 'Failed to start two-factor setup');
+  return body.data;
+}
+
+/** Confirm enrollment with a code from the authenticator app; turns 2FA on. */
+export async function enableUserTotp(userId: string, code: string): Promise<void> {
+  const { ok, body } = await sendRaw<{ error?: { message: string } }>(
+    `/api/admin/users/${userId}/2fa/enable`,
+    { method: 'POST', body: JSON.stringify({ code }) },
+  );
+  if (!ok) throw new Error(body?.error?.message ?? 'Failed to enable two-factor authentication');
+}
+
+/** Disable / reset 2FA for a user (clears the secret). */
+export async function disableUserTotp(userId: string): Promise<void> {
+  const { ok, body } = await sendRaw<{ error?: { message: string } }>(
+    `/api/admin/users/${userId}/2fa/disable`,
+    { method: 'POST', body: '{}' },
+  );
+  if (!ok) throw new Error(body?.error?.message ?? 'Failed to disable two-factor authentication');
+}
+
+/** Reset a user's password (admin action). Server enforces the complexity policy. */
+export async function resetUserPassword(userId: string, password: string): Promise<void> {
+  const { ok, body } = await sendRaw<{ error?: { message: string } }>(
+    `/api/admin/users/${userId}/password`,
+    { method: 'POST', body: JSON.stringify({ password }) },
+  );
+  if (!ok) throw new Error(body?.error?.message ?? 'Failed to reset password');
 }
 
 export async function fetchUsers(): Promise<CrmUser[]> {

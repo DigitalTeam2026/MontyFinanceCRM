@@ -884,13 +884,6 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           />
           <div className="flex-1" />
           <button
-            onClick={() => setShowColCustomizer((v) => !v)}
-            className="flex items-center gap-1.5 px-2 h-[32px] text-[13px] font-medium text-[var(--muted)] shrink-0 transition rounded-md hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-          >
-            <Columns3 size={14} />
-            <span>Edit columns</span>
-          </button>
-          <button
             onClick={() => setShowFilters((v) => !v)}
             className="flex items-center gap-1.5 px-2 h-[32px] text-[13px] font-medium text-[var(--muted)] shrink-0 transition rounded-md hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
           >

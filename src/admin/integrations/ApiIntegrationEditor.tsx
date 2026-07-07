@@ -1,3 +1,4 @@
+import { uuid } from '../../lib/uuid';
 import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect, useCallback } from 'react';
 import {
@@ -96,7 +97,7 @@ function emptyForm(): ApiIntegrationFormData {
 }
 
 function newHeaderRow(): ApiIntegrationHeaderForm {
-  return { id: crypto.randomUUID(), header_key: '', header_value: '', is_secret: false };
+  return { id: uuid(), header_key: '', header_value: '', is_secret: false };
 }
 
 export default function ApiIntegrationEditor({ integration, onBack, onSaved }: Props) {
@@ -171,7 +172,7 @@ export default function ApiIntegrationEditor({ integration, onBack, onSaved }: P
         body_config: integration.body_config ?? { fields: [], exclude_null_fields: true },
         inbound_config: integration.inbound_config ?? { fields: [], match_field: null },
         headers: headers.map((h) => ({
-          id: crypto.randomUUID(),
+          id: uuid(),
           header_key: h.header_key,
           header_value: h.header_value,
           is_secret: h.is_secret,

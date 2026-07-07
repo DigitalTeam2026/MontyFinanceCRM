@@ -46,7 +46,7 @@ import {
 import type { AppEntity, AppModule } from '../types';
 import { ENTITY_LOGICAL_NAME } from '../types';
 import type { DesignerLayout, DesignerTab, DesignerSection } from '../../types/form';
-import type { RecordData } from '../services/recordService';
+import type { RecordData, FieldMapping } from '../services/recordService';
 import type { BusinessRule } from '../../types/businessRule';
 import type { FormRuleState } from '../services/businessRulesEngine';
 import {
@@ -75,7 +75,7 @@ import type { LoadedProcessFlow } from '../services/processFlowEngine';
 import { fetchProcessFlowsForEntity, switchRecordProcessFlow, updateRecordActiveStage } from '../../services/processFlowService';
 import type { ProcessFlow } from '../../types/processFlow';
 import { supabase } from '../../lib/supabase';
-import FormField, { PRODUCT_PICKER_SENTINEL } from '../components/form/FormField';
+import FormField, { PRODUCT_PICKER_SENTINEL, pickLookupLabel } from '../components/form/FormField';
 import FormSubgrid from '../components/form/FormSubgrid';
 import OpportunityContactsPanel from '../components/form/OpportunityContactsPanel';
 import FieldHistoryPanel from '../components/form/FieldHistoryPanel';
@@ -114,6 +114,7 @@ import type { StageViolationEvent, MissingFormField } from '../components/Proces
 import { fetchRelationshipsForEntity } from '../../services/relationshipService';
 import { checkRecordShareAccess } from '../services/recordShareService';
 import type { SharePermissions } from '../services/recordShareService';
+import { resolveBorrowedLabels, borrowedTypeIsLabelResolved } from '../services/borrowedFieldResolver';
 
 const ENTITY_CHOICE_OPTIONS: Record<string, { value: string; label: string }[]> = {
   industrycode: [
@@ -359,14 +360,18 @@ async function fetchLookupLabels(
         if (seen.has(cacheKey)) return;
         seen.add(cacheKey);
 
+        // Select the whole row so an empty primary label can fall back to any other
+        // name-like column. Never fall back to the id itself — a GUID is not a label,
+        // and setting it would block the on-demand resolver in FormField.
         const { data } = await supabase
           .from(cfg.table)
-          .select(`${cfg.pk}, ${cfg.labelField}`)
+          .select('*')
           .eq(cfg.pk, id)
           .maybeSingle();
 
         if (data) {
-          const label = String((data as Record<string, unknown>)[cfg.labelField] ?? id);
+          const label = pickLookupLabel(data as Record<string, unknown>, cfg.labelField);
+          if (!label) return;
           for (const [fn, es] of Object.entries(slugMap)) {
             if (es === entitySlug) {
               const fid = resolveId(fn);
@@ -380,6 +385,95 @@ async function fetchLookupLabels(
 
   await Promise.all(tasks);
   return results;
+}
+
+/** A borrowed field to resolve at render time: read one column from a related row. */
+interface BorrowedSpec {
+  controlId: string;
+  table: string;
+  pk: string;
+  fkColumn: string;
+  fieldPhysicalColumn: string;
+  fieldDefinitionId: string;
+  fieldTypeName: string | null;
+}
+
+/** Collect every read-only borrowed-field control declared anywhere in the layout. */
+function collectBorrowedSpecs(layout: DesignerLayout | null): BorrowedSpec[] {
+  if (!layout) return [];
+  const specs: BorrowedSpec[] = [];
+  for (const tab of layout.tabs) {
+    for (const section of tab.sections) {
+      for (const control of section.controls) {
+        const b = control.borrowed_field_config;
+        if (control.control_type === 'field' && b && b.related_table_name && b.fk_physical_column) {
+          specs.push({
+            controlId: control.id,
+            table: b.related_table_name,
+            pk: b.related_pk || `${b.related_table_name}_id`,
+            fkColumn: b.fk_physical_column,
+            fieldPhysicalColumn: b.field_physical_column,
+            fieldDefinitionId: b.field_definition_id,
+            fieldTypeName: b.field_type_name,
+          });
+        }
+      }
+    }
+  }
+  return specs;
+}
+
+/**
+ * Resolve borrowed-field values by following each control's FK on the current record
+ * to its related row and reading the borrowed column. Batches by (table, fk) so several
+ * borrowed columns from the same related record cost a single query. Returns a map
+ * keyed by control id. Failures are swallowed per-group (blank field, never a crash).
+ */
+async function fetchBorrowedFieldValues(
+  specs: BorrowedSpec[],
+  record: RecordData,
+): Promise<Record<string, unknown>> {
+  if (specs.length === 0) return {};
+  const groups = new Map<string, { table: string; pk: string; fkColumn: string; specs: BorrowedSpec[] }>();
+  for (const s of specs) {
+    const key = `${s.table}::${s.fkColumn}`;
+    if (!groups.has(key)) groups.set(key, { table: s.table, pk: s.pk, fkColumn: s.fkColumn, specs: [] });
+    groups.get(key)!.specs.push(s);
+  }
+
+  const result: Record<string, unknown> = {};
+  await Promise.all(
+    [...groups.values()].map(async (g) => {
+      const fkVal = record[g.fkColumn];
+      if (fkVal == null || fkVal === '') return;
+      const cols = [...new Set(g.specs.map((s) => s.fieldPhysicalColumn))];
+      const { data } = await supabase
+        .from(g.table)
+        .select([g.pk, ...cols].join(', '))
+        .eq(g.pk, fkVal as string)
+        .maybeSingle();
+      if (!data) return;
+      const row = data as unknown as Record<string, unknown>;
+      for (const s of g.specs) {
+        result[s.controlId] = row[s.fieldPhysicalColumn] ?? null;
+      }
+    }),
+  );
+
+  // Turn coded values (choice/boolean/lookup) into their display labels so the form
+  // shows "Branch"/"Yes"/"Acme Corp" instead of "1"/true/a GUID. Non-coded types
+  // (text/number/date/…) are left as their raw value and formatted by FormField.
+  const labels = await resolveBorrowedLabels(
+    specs.map((s) => ({
+      controlId: s.controlId,
+      fieldDefinitionId: s.fieldDefinitionId,
+      fieldTypeName: s.fieldTypeName,
+      rawValue: result[s.controlId],
+    })),
+  );
+  for (const [controlId, label] of Object.entries(labels)) result[controlId] = label;
+
+  return result;
 }
 
 interface RuleMessageBannerProps {
@@ -544,8 +638,17 @@ interface CollapsibleSectionProps {
   entityDefinitionId?: string;
   /** Maps field logical_name → entity slug for lookup fields (DB-driven) */
   lookupEntitySlugMap?: Record<string, string>;
+  /** Maps field logical_name → physical_column_name (all field types, DB-driven). Used to
+   *  fall back to the physical-keyed value when translateToLogical didn't emit a logical key. */
+  logicalToPhysicalMap?: Record<string, string>;
   subgridRefreshCounter?: number;
   fieldConfigMap?: Record<string, Record<string, unknown>>;
+  /** Maps field logical_name → live field type name from field_definition. Overrides the
+   *  control's layout-snapshotted field_type_name so a field's type change (e.g. datetime→date)
+   *  takes effect on the form without re-placing it on the layout. */
+  fieldTypeMap?: Record<string, string>;
+  /** Read-only values borrowed from related entities, keyed by control id. */
+  borrowedValues?: Record<string, unknown>;
   /** Accounts-only Dynamics-style presentation (flat white sections). */
   isRedesign?: boolean;
 }
@@ -572,8 +675,11 @@ function CollapsibleSection({
   onLookupLabelChange,
   entityDefinitionId,
   lookupEntitySlugMap,
+  logicalToPhysicalMap,
   subgridRefreshCounter,
   fieldConfigMap,
+  fieldTypeMap,
+  borrowedValues,
   isRedesign = false,
 }: CollapsibleSectionProps) {
   const { getFieldRestriction, getEntityPrivilege } = usePermissions();
@@ -717,23 +823,65 @@ function CollapsibleSection({
               );
             }
 
+            // Read-only field borrowed from a related entity: value follows the FK and is
+            // resolved into borrowedValues[control.id]. Always read-only; never saved back.
+            if (control.control_type === 'field' && control.borrowed_field_config) {
+              const raw = borrowedValues?.[control.id];
+              const displayVal = raw == null ? '' : raw;
+              // Coded types (lookup/choice/boolean/status) are already resolved to a display
+              // label in borrowedValues (see resolveBorrowedLabels) — render them as plain
+              // read-only text so the label shows instead of the raw code/GUID.
+              const rawType = control.borrowed_field_config.field_type_name ?? 'text';
+              const displayType = borrowedTypeIsLabelResolved(rawType) ? 'text' : rawType;
+              const borrowedControl = { ...control, field_type_name: displayType };
+              return (
+                <div key={control.id} data-field={control.field_logical_name ?? control.id}>
+                  <FormField
+                    control={borrowedControl}
+                    value={displayVal}
+                    onChange={onChange}
+                    isReadonly={true}
+                    isRequired={false}
+                    errorMessage={null}
+                    ruleMessage={null}
+                    currencySymbol={currencySymbol}
+                    formValues={values}
+                    entityDefinitionId={entityDefinitionId}
+                  />
+                </div>
+              );
+            }
+
             if (control.control_type === 'field' && control.field_logical_name) {
               const fr = getFieldRestriction(entityName, control.field_logical_name);
-              const isOwnerField = control.field_logical_name === 'ownerid';
+              // System-generated fields (account/ticket number, created/modified on) are
+              // meaningless before the first save — hide only those on the New form. Owner is
+              // NOT in this set: it is a normal, editable lookup driven purely by metadata.
               const isSystemAutoField = SYSTEM_READONLY_FIELDS.has(control.field_logical_name ?? '');
-              if (isOwnerField && !recordId) return null;
               if (isSystemAutoField && !recordId) return null;
-              const lookupSlug = control.field_type_name === 'lookup'
+              // The control's field_type_name is snapshotted into the layout when the field is
+              // placed. Override it with the live type from field_definition so a later type
+              // change (e.g. datetime→date) renders the right input without re-placing the field.
+              const liveType = fieldTypeMap?.[control.field_logical_name];
+              const typedControl = liveType && liveType !== control.field_type_name
+                ? { ...control, field_type_name: liveType }
+                : control;
+              const lookupSlug = typedControl.field_type_name === 'lookup'
                 ? ((lookupEntitySlugMap ?? LOOKUP_FIELD_ENTITY_SLUG)[control.field_logical_name] ?? LOOKUP_FIELD_ENTITY_SLUG[control.field_logical_name] ?? null)
                 : null;
               const baseEnriched = lookupSlug
-                ? { ...control, lookup_entity_slug: lookupSlug }
-                : control;
+                ? { ...typedControl, lookup_entity_slug: lookupSlug }
+                : typedControl;
               const fieldCfg = control.field_logical_name ? (fieldConfigMap?.[control.field_logical_name] ?? null) : null;
               const enrichedControl = fieldCfg ? { ...baseEnriched, config_json: fieldCfg } : baseEnriched;
-              const fieldValue = isOwnerField
-                ? (values['owner_id'] ?? '')
-                : (values[control.field_logical_name] ?? '');
+              // Generic value binding: prefer the logical key, then fall back to the physical
+              // column key. translateToLogical exposes both when a field_definition maps them, but
+              // the fallback also covers a field whose mapping was momentarily stale (e.g. owner's
+              // owner_id). Works for EVERY field — no per-field owner special-case.
+              const physCol = logicalToPhysicalMap?.[control.field_logical_name];
+              const fieldValue = values[control.field_logical_name]
+                ?? (physCol ? values[physCol] : undefined)
+                ?? '';
               return (
                 <div key={control.id} data-field={control.field_logical_name}>
                   <FormField
@@ -741,8 +889,8 @@ function CollapsibleSection({
                     value={fieldValue}
                     onChange={onChange}
                     isHidden={rs?.isHidden || fr.is_hidden}
-                    isReadonly={isOwnerField || SYSTEM_READONLY_FIELDS.has(control.field_logical_name ?? '') || rs?.isReadonly || control.is_readonly || fr.is_readonly || formReadonly}
-                    isPermissionLocked={!isOwnerField && fr.is_readonly && !fr.is_masked && !rs?.isReadonly && !control.is_readonly && !formReadonly}
+                    isReadonly={isSystemAutoField || rs?.isReadonly || control.is_readonly || fr.is_readonly || formReadonly}
+                    isPermissionLocked={fr.is_readonly && !fr.is_masked && !rs?.isReadonly && !control.is_readonly && !formReadonly}
                     isMasked={fr.is_masked}
                     isRequired={rs?.isRequired || control.is_required_override || !!fieldRequiredMap[control.field_logical_name ?? '']}
                     errorMessage={validationErrors[control.field_logical_name] ?? null}
@@ -757,7 +905,7 @@ function CollapsibleSection({
                     lookupLabel={lookupLabels[control.field_logical_name] ?? undefined}
                     onLookupLabelChange={onLookupLabelChange}
                     currencySymbol={currencySymbol}
-                    lookupConfig={control.field_type_name === 'lookup' ? (control.lookup_config ?? null) : null}
+                    lookupConfig={typedControl.field_type_name === 'lookup' ? (control.lookup_config ?? null) : null}
                     formValues={values}
                     entityDefinitionId={entityDefinitionId}
                   />
@@ -1084,6 +1232,23 @@ export default function RecordFormPage({
   const [isPinned, setIsPinned] = useState(false);
   const [crmUsers, setCrmUsers] = useState<{ id: string; email: string }[]>([]);
   const [lookupLabels, setLookupLabels] = useState<Record<string, string>>({});
+  // Read-only values borrowed from related entities, keyed by control id. Resolved by
+  // following each borrowed control's FK on the current record — see collectBorrowedSpecs.
+  const [borrowedValues, setBorrowedValues] = useState<Record<string, unknown>>({});
+  const borrowedSpecs = useMemo(() => collectBorrowedSpecs(layout), [layout]);
+  // Only re-query when a borrowed control's FK value actually changes (not on every keystroke).
+  const borrowedFkSignature = useMemo(
+    () => borrowedSpecs.map((s) => `${s.controlId}=${String(values[s.fkColumn] ?? '')}`).join('|'),
+    [borrowedSpecs, values],
+  );
+  useEffect(() => {
+    if (borrowedSpecs.length === 0) { setBorrowedValues({}); return; }
+    let cancelled = false;
+    void fetchBorrowedFieldValues(borrowedSpecs, values).then((v) => { if (!cancelled) setBorrowedValues(v); });
+    return () => { cancelled = true; };
+    // values is intentionally excluded — borrowedFkSignature captures the FK inputs we depend on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [borrowedSpecs, borrowedFkSignature]);
   const [showAssignPopover, setShowAssignPopover] = useState(false);
   const [currencies, setCurrencies] = useState<CurrencyRecord[]>([]);
   const [baseCurrency, setBaseCurrency] = useState<CurrencyRecord | null>(null);
@@ -1099,6 +1264,13 @@ export default function RecordFormPage({
   const [lookupEntitySlugMap, setLookupEntitySlugMap] = useState<Record<string, string>>(LOOKUP_FIELD_ENTITY_SLUG);
   // Maps field logical_name -> physical_column_name for lookup fields (built from DB on load)
   const [lookupPhysicalMap, setLookupPhysicalMap] = useState<Record<string, string>>({});
+  // Authoritative logical<->physical map for THIS form, built from the live field_definition
+  // load below. Passed into fetchRecord/saveRecord so every field the form rendered loads and
+  // saves against its real column even if recordService's shared TTL cache is momentarily stale.
+  // This is the metadata-source-of-truth guarantee — no per-field code needed for new fields.
+  const [fieldMapping, setFieldMapping] = useState<FieldMapping | null>(null);
+  const fieldMappingRef = useRef<FieldMapping | null>(null);
+  fieldMappingRef.current = fieldMapping;
   const [showChangeCurrencyModal, setShowChangeCurrencyModal] = useState(false);
   const [processFlow, setProcessFlow] = useState<LoadedProcessFlow | null>(null);
   const [entityDefId, setEntityDefId] = useState<string | null>(null);
@@ -1409,6 +1581,15 @@ export default function RecordFormPage({
       // Start with the hardcoded fallbacks, then override with DB-sourced slugs
       const slugMap: Record<string, string> = { ...LOOKUP_FIELD_ENTITY_SLUG };
       const physMap: Record<string, string> = {};
+      // Complete logical<->physical map for EVERY field on this entity (all types), used as the
+      // authoritative override for load/save so any field placed on the form binds to its column.
+      // Seed logical→physical with the static fallbacks (e.g. ownerid→owner_id) so well-known
+      // lookups still SAVE even when they lack an explicit field_definition row; live
+      // field_definition rows below override any seed. p2l (physical→logical) is left to the
+      // field_definition loop only — the static map is many-logical-to-one-physical, so seeding
+      // p2l could pick a wrong canonical name; the value-binding physical fallback covers load.
+      const l2p: Record<string, string> = { ...LOOKUP_LOGICAL_TO_PHYSICAL };
+      const p2l: Record<string, string> = {};
       type FDRow = { logical_name: string; physical_column_name?: string | null; config_json: Record<string, unknown> | null; is_required?: boolean; field_type?: { name: string } | null; lookup_entity_id?: string | null; lookup_entity?: { logical_name: string; physical_table_name: string } | null };
       for (const fd of ((fieldDefsRes as { data: FDRow[] | null }).data ?? [])) {
         if (!fd.logical_name) continue;
@@ -1416,6 +1597,12 @@ export default function RecordFormPage({
         if (cfg && typeof cfg === 'object') cfgMap[fd.logical_name] = cfg;
         if (fd.field_type?.name) ftMap[fd.logical_name] = fd.field_type.name;
         if (fd.is_required) reqMap[fd.logical_name] = true;
+        // Authoritative mapping for ALL field types (skip virtual custom_fields-backed fields,
+        // matching recordService.getFieldMapping's exclusion).
+        if (fd.physical_column_name && !fd.physical_column_name.startsWith('custom_fields')) {
+          l2p[fd.logical_name] = fd.physical_column_name;
+          if (!p2l[fd.physical_column_name]) p2l[fd.physical_column_name] = fd.logical_name;
+        }
         if (fd.field_type?.name === 'lookup') {
           if (fd.lookup_entity?.logical_name) {
             const targetLogical = fd.lookup_entity.logical_name;
@@ -1446,6 +1633,9 @@ export default function RecordFormPage({
       setFieldConfigMap(cfgMap);
       setLookupEntitySlugMap(slugMap);
       setLookupPhysicalMap(physMap);
+      const builtMapping: FieldMapping = { logicalToPhysical: l2p, physicalToLogical: p2l };
+      setFieldMapping(builtMapping);
+      fieldMappingRef.current = builtMapping;
 
       setRules(rulesData);
 
@@ -1457,6 +1647,25 @@ export default function RecordFormPage({
         setActiveFormId(fd.form_id ?? null);
         if (normalized.tabs.length > 0) {
           setActiveTabId(FORM_TAB_PREFIX + normalized.tabs[0].id);
+        }
+        // Dev-only: flag any field control whose logical name has no field_definition — such a
+        // field can neither load nor save (req. #9). Skips system status/stage controls which are
+        // backed by definition tables, not field_definition rows.
+        if (import.meta.env?.DEV) {
+          const SYSTEM_CONTROL_FIELDS = new Set(['statecode', 'statuscode', 'statusreason', 'reason', 'stage', 'stagecode']);
+          for (const tab of normalized.tabs) {
+            for (const section of tab.sections) {
+              for (const c of section.controls) {
+                const ln = c.field_logical_name;
+                if (c.control_type !== 'field' || !ln) continue;
+                if (SYSTEM_CONTROL_FIELDS.has(ln) || ftMap[ln]) continue;
+                console.warn(
+                  `[RecordFormPage] Form "${source}" for "${entity}" has control "${ln}" with no ` +
+                  `field_definition — it will not load or save. Add/publish the field in Admin Studio.`,
+                );
+              }
+            }
+          }
         }
       };
 
@@ -1535,7 +1744,7 @@ export default function RecordFormPage({
       if (recordId) {
         let record: RecordData;
         try {
-          record = await fetchRecord(entity, recordId);
+          record = await fetchRecord(entity, recordId, builtMapping);
         } catch {
           if (userId && recordId) {
             removeRecentItem(userId, entity, recordId).catch(() => {});
@@ -1576,13 +1785,11 @@ export default function RecordFormPage({
         const labelField = ENTITY_LABEL_FIELD[entity];
         const label = String(record[labelField] ?? '');
         if (label) onRecordLoaded?.(recordId, label);
+        // All lookup labels — including owner — resolve generically via the DB-sourced
+        // slug map + resolveLookupFetchConfig (ownerid → users → crm_user.email). No
+        // per-field owner special-case.
         fetchLookupLabels(record, slugMap, physMap).then((labels) => {
           if (gen !== loadGenRef.current) return;
-          const ownerId = record['owner_id'];
-          if (ownerId && typeof ownerId === 'string') {
-            const ownerUser = usersData.find((u) => u.id === ownerId);
-            if (ownerUser) labels['ownerid'] = ownerUser.email;
-          }
           setLookupLabels(labels);
         });
         checkLeadHasRelatedOpp(recordId);
@@ -1925,17 +2132,12 @@ export default function RecordFormPage({
     if (!currentId) return;
     const entityLogical = ENTITY_LOGICAL_NAME[entity] ?? entity;
     const [record, tl, rulesData] = await Promise.all([
-      fetchRecord(entity, currentId),
+      fetchRecord(entity, currentId, fieldMappingRef.current),
       fetchTimelineItems(entity, currentId),
       fetchEntityRules(entity),
     ]);
     const pf = gateFlow(await resolveProcessFlowForRecord(entityLogical, record).catch(() => null));
     const labels = await fetchLookupLabels(record, lookupEntitySlugMap, lookupPhysicalMap);
-    const ownerId = record['owner_id'];
-    if (ownerId && typeof ownerId === 'string') {
-      const ownerUser = crmUsers.find((u) => u.id === ownerId);
-      if (ownerUser) labels['ownerid'] = ownerUser.email;
-    }
     setValues(record);
     setSavedValues(record);
     setTimeline(tl);
@@ -2194,7 +2396,7 @@ export default function RecordFormPage({
       // immediately after a successful INSERT and is never cleared by re-renders,
       // ensuring subsequent Saves always call UPDATE on the same record.
       const effectiveId = committedInsertIdRef.current ?? resolvedRecordIdRef.current;
-      const saved = await saveRecord(entity, effectiveId, saveValues, userId);
+      const saved = await saveRecord(entity, effectiveId, saveValues, userId, fieldMappingRef.current);
       const pkCol = await getEntityPK(entity);
       const pk = saved[pkCol] as string | undefined;
       const isNew = !effectiveId;
@@ -2286,11 +2488,6 @@ export default function RecordFormPage({
       });
       setSavedValues(saved);
       fetchLookupLabels(saved, lookupEntitySlugMap, lookupPhysicalMap).then((labels) => {
-        const ownerId = saved['owner_id'];
-        if (ownerId && typeof ownerId === 'string') {
-          const ownerUser = crmUsers.find((u) => u.id === ownerId);
-          if (ownerUser) labels['ownerid'] = ownerUser.email;
-        }
         setLookupLabels(labels);
       });
       setSaveStatus('saved');
@@ -2596,7 +2793,7 @@ export default function RecordFormPage({
         disqualified_at: new Date().toISOString(),
         disqualified_by: userId,
       };
-      await saveRecord(entity, resolvedRecordIdRef.current, updated, userId);
+      await saveRecord(entity, resolvedRecordIdRef.current, updated, userId, fieldMappingRef.current);
       await refreshFullRecord();
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2500);
@@ -2632,7 +2829,7 @@ export default function RecordFormPage({
         disqualified_at: null,
         disqualified_by: null,
       };
-      await saveRecord(entity, resolvedRecordIdRef.current, updated, userId);
+      await saveRecord(entity, resolvedRecordIdRef.current, updated, userId, fieldMappingRef.current);
       await refreshFullRecord();
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2500);
@@ -2646,17 +2843,11 @@ export default function RecordFormPage({
   const handleCloseWon = () => {
     const pf = processFlowRef.current;
     if (pf) {
-      const bpfFinished = Boolean(values['bpf_is_finished']);
+      const bpfRaw = values['bpf_is_finished'];
+      const bpfFinished = bpfRaw === true || bpfRaw === 'true' || bpfRaw === 1;
       if (!bpfFinished) {
-        const stageField = pf.flow.stage_field;
-        const currentStageKey = String(values[stageField] ?? '');
-        const pfForEntity = filterLoadedFlowForEntity(pf, entity);
-        const activeStages = resolveRuntimePath(pfForEntity, values as Record<string, unknown>);
-        const lastActiveStage = activeStages[activeStages.length - 1];
-        if (lastActiveStage && currentStageKey !== lastActiveStage.stage_key) {
-          showError('Cannot close as Won until the Business Process Flow reaches the final stage. Please complete all process stages first.');
-          return;
-        }
+        showError('Cannot close as Won until the Business Process Flow is finished. Please complete the final stage and click Finish first.');
+        return;
       }
     }
     setShowCloseOppModal('won');
@@ -2669,7 +2860,7 @@ export default function RecordFormPage({
     setSaveStatus('saving');
     try {
       const updated = { ...values, ...closingFields, state_code: undefined, status_reason: undefined };
-      await saveRecord(entity, recordId, updated, userId);
+      await saveRecord(entity, recordId, updated, userId, fieldMappingRef.current);
       await refreshFullRecord();
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2500);
@@ -2688,7 +2879,7 @@ export default function RecordFormPage({
     setSaveStatus('saving');
     try {
       const updated = { ...values, ...fields, state_code: undefined, status_reason: undefined };
-      await saveRecord(entity, recordId, updated, userId);
+      await saveRecord(entity, recordId, updated, userId, fieldMappingRef.current);
       await refreshFullRecord();
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2500);
@@ -2887,6 +3078,8 @@ export default function RecordFormPage({
         setLookupLabels((prev) => ({ ...prev, [fieldLogicalName]: label }))
       }
       lookupEntitySlugMap={lookupEntitySlugMap}
+      logicalToPhysicalMap={fieldMapping?.logicalToPhysical}
+      borrowedValues={borrowedValues}
       onNewRecord={onNewRecord}
       onDelete={handleDeleteClick}
       onRefresh={() => { void refreshFullRecord(); }}
@@ -3151,6 +3344,7 @@ interface RecordFormInnerProps {
   subgridRelDefMap: Map<string, string>;
   onLookupLabelChange: (fieldLogicalName: string, label: string) => void;
   lookupEntitySlugMap: Record<string, string>;
+  logicalToPhysicalMap?: Record<string, string>;
   onNewRecord?: (formId?: string | null) => void;
   onDelete?: () => void;
   onRefresh?: () => void;
@@ -3161,6 +3355,7 @@ interface RecordFormInnerProps {
   formAccessResult: { level: FormAccessLevel; message: string | null } | null;
   isRedesign?: boolean;
   fieldConfigMap?: Record<string, Record<string, unknown>>;
+  borrowedValues?: Record<string, unknown>;
 }
 
 function ReadOnlyBanner({ reason }: { reason: 'write' | 'create' | 'share-read' }) {
@@ -3254,8 +3449,9 @@ function RecordFormInner({
   fieldOptionSetMap, fieldInlineChoicesMap, fieldTypeMap, fieldRequiredMap, processFlow, entityDefId, availableFlows = [], onSwitchFlow,
   stageGateErrors, onStageViolation, onFieldNavigate, onClearStageGateErrors,
   transformationRules, onTransform, relatedRecordLabel, subgridRelDefMap, onLookupLabelChange, lookupEntitySlugMap,
+  logicalToPhysicalMap,
   onNewRecord, onDelete, onRefresh, subgridRefreshCounter, leadHasRelatedOpp,
-  roleCanWrite, sharePerms, formAccessResult, isRedesign = false, fieldConfigMap,
+  roleCanWrite, sharePerms, formAccessResult, isRedesign = false, fieldConfigMap, borrowedValues,
 }: RecordFormInnerProps) {
   const { density } = useFormDensity();
   const { getSectionRestriction, getEntityPrivilege } = usePermissions();
@@ -3516,19 +3712,6 @@ function RecordFormInner({
 
           {/* Right-side actions */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Status Reason — moved to header right */}
-            {(values.status_reason || values.statusreason || values.state_code) && (
-              <div className="shrink-0">
-                <StatusDropdown
-                  entityDefinitionId={entityDefId ?? undefined}
-                  statecodeValue={innerStateCode}
-                  value={String(values.status_reason ?? values.statusreason ?? '')}
-                  onChange={(val) => { onChange('status_reason', val); }}
-                  readonly={formReadonly || (entity === 'leads' && (isLeadQualified || isLeadDisqualified))}
-                />
-              </div>
-            )}
-
             {/* Owner chip — moved to header right */}
             {recordId && crmUsers.length > 0 && (
               <div className="shrink-0">
@@ -3566,41 +3749,6 @@ function RecordFormInner({
                   );
                 })()}
               </div>
-            )}
-
-            {/* Form switcher — shown (create or edit) when more than one form is allowed */}
-            {selectableForms.length > 1 && activeFormId && (
-              <div
-                className="flex items-center gap-1.5 pl-2 pr-1 h-7 rounded-md border border-[#e7eaf1] bg-white"
-                title="Switch form"
-              >
-                <LayoutTemplate size={12} className="shrink-0 text-[#9ca3af]" />
-                <FilterSelect
-                  value={activeFormId ?? ''}
-                  onChange={(e) => onSwitchForm(e.target.value)}
-                  matchTriggerWidth
-                  className="text-[11px] font-medium text-[#374151] bg-transparent border-0 focus:outline-none appearance-none pr-4 cursor-pointer"
-                >
-                  {selectableForms.map((f) => (
-                    <option key={f.form_id} value={f.form_id}>{f.name}</option>
-                  ))}
-                </FilterSelect>
-              </div>
-            )}
-
-            {/* Pin */}
-            {recordId && (
-              <button
-                onClick={onTogglePin}
-                title={isPinned ? 'Unpin record' : 'Pin record'}
-                className={`flex items-center justify-center w-7 h-7 rounded-md border transition ${
-                  isPinned
-                    ? 'border-amber-300 bg-amber-50 text-amber-500 hover:bg-amber-100'
-                    : 'border-[#e7eaf1] bg-white text-[#9ca3af] hover:text-amber-500 hover:border-amber-200 hover:bg-amber-50'
-                }`}
-              >
-                <Star size={13} className={isPinned ? 'fill-amber-400 text-amber-400' : ''} />
-              </button>
             )}
 
             {/* View Only badge */}
@@ -3774,6 +3922,12 @@ function RecordFormInner({
 
           {/* Lifecycle Rule commands — driven by Digital Rules configuration */}
           {recordId && lifecycleCommands.map((cmd) => {
+            // Hide "Close as Won" until the Business Process Flow is finished.
+            if (cmd.rule.trigger_event === 'close_opportunity_won' && processFlow) {
+              const bpfRaw = values['bpf_is_finished'];
+              const bpfFinished = bpfRaw === true || bpfRaw === 'true' || bpfRaw === 1;
+              if (!bpfFinished) return null;
+            }
             const handleClick = () => {
               const t = cmd.rule.trigger_event;
               if (t === 'qualify_lead') { onQualify(); return; }
@@ -4155,8 +4309,11 @@ function RecordFormInner({
                       onLookupLabelChange={onLookupLabelChange}
                       entityDefinitionId={entityDefId ?? undefined}
                       lookupEntitySlugMap={lookupEntitySlugMap}
+                      logicalToPhysicalMap={logicalToPhysicalMap}
                       subgridRefreshCounter={subgridRefreshCounter}
                       fieldConfigMap={fieldConfigMap}
+                      fieldTypeMap={fieldTypeMap}
+                      borrowedValues={borrowedValues}
                       isRedesign={isRedesign}
                     />
                   ))}

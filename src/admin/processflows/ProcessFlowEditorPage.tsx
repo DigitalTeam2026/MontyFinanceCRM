@@ -19,15 +19,12 @@ import type {
 } from '../../types/processFlow';
 import { STAGE_TYPE_META, STAGE_CATEGORIES, CONDITION_OPERATORS, LINK_BEHAVIOR_OPTIONS, isConditionGroup } from '../../types/processFlow';
 import {
-  fetchProcessFlowWithDetails, updateProcessFlow,
-  createProcessStage, updateProcessStage, deleteProcessStage,
-  reorderProcessStages, replaceAllTransitions, setDefaultStage,
-  fetchFormsForEntity, fetchStageFields, addStageField,
-  updateStageField, deleteStageField, reorderStageFields,
-  fetchEntityConfigs, upsertEntityConfig, deleteEntityConfig,
-  ensurePrimaryEntityConfig,
+  fetchProcessFlowWithDetails,
+  fetchFormsForEntity,
+  fetchEntityConfigs,
   publishProcessFlowDraft, fetchStageFieldsForFlow,
 } from '../../services/processFlowService';
+import { uuid } from '../../lib/uuid';
 import type { EntityDefinition } from '../../types/entity';
 import { fetchEntities } from '../../services/entityService';
 import type { LineOfBusiness, Product } from '../../types/product';
@@ -512,9 +509,12 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
   const [flow, setFlow] = useState<ProcessFlow>(initialFlow);
   const [stages, setStages] = useState<ProcessStage[]>([]);
   const [transitions, setTransitions] = useState<ProcessFlowTransition[]>([]);
+  // Stage fields and entity configs are buffered here (never written to the DB on edit).
+  // The entire working model is persisted only when the user clicks Save & Publish.
+  const [stageFields, setStageFields] = useState<ProcessStageField[]>([]);
+  const [entityConfigs, setEntityConfigs] = useState<EntityConfigRow[]>([]);
   const [entities, setEntities] = useState<EntityDefinition[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<Tab>('designer');
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -529,14 +529,47 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
   const loadFlow = useCallback(async () => {
     setLoading(true);
     try {
-      const [full, entityData] = await Promise.all([
+      const [full, entityData, stageFieldMap, configRows] = await Promise.all([
         fetchProcessFlowWithDetails(initialFlow.process_flow_id),
         fetchEntities(),
+        fetchStageFieldsForFlow(initialFlow.process_flow_id),
+        fetchEntityConfigs(initialFlow.process_flow_id),
       ]);
       setFlow(full);
       setStages(full.stages ?? []);
       setTransitions(full.transitions ?? []);
+      setStageFields(Object.values(stageFieldMap).flat());
+
+      // Ensure a primary entity-config row always exists in the buffer. Previously this was
+      // written to the DB on load (ensurePrimaryEntityConfig); now it is synthesized in memory
+      // and only persisted when the user publishes.
+      let configs = configRows as EntityConfigRow[];
+      if (!configs.some((c) => c.is_primary)) {
+        const now = new Date().toISOString();
+        configs = [
+          {
+            config_id: uuid(),
+            process_flow_id: full.process_flow_id,
+            entity_definition_id: full.entity_definition_id,
+            is_primary: true,
+            form_id: full.form_id ?? null,
+            relationship_definition_id: null,
+            relationship_column: '',
+            link_behavior: 'open_existing',
+            display_order: 0,
+            created_at: now,
+            modified_at: now,
+            entity_display_name:
+              entityData.find((e) => e.entity_definition_id === full.entity_definition_id)?.display_name ?? '',
+          },
+          ...configs,
+        ];
+      }
+      setEntityConfigs(configs);
+
       setEntities(entityData);
+      // A fresh load (initial or post-publish) is a clean, saved state.
+      setIsDirty(false);
       onFlowUpdate(full);
     } catch (e: unknown) {
       showError(e instanceof Error ? e.message : 'Failed to load');
@@ -565,11 +598,8 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
   const handleSavePublish = async () => {
     setPublishing(true);
     try {
-      const [stageFieldMap, entityConfigsRaw] = await Promise.all([
-        fetchStageFieldsForFlow(flow.process_flow_id),
-        fetchEntityConfigs(flow.process_flow_id),
-      ]);
-      const allStageFields = Object.values(stageFieldMap).flat();
+      // Build the snapshot entirely from the in-memory working model. Nothing was written to the
+      // DB while editing, so this publish is the single, atomic point where changes are persisted.
       const snapshot: ProcessFlowDraft = {
         version: 1,
         flow: {
@@ -585,8 +615,8 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
         },
         stages,
         transitions,
-        stageFields: allStageFields,
-        entityConfigs: entityConfigsRaw.map((c) => ({
+        stageFields,
+        entityConfigs: entityConfigs.map((c) => ({
           config_id: c.config_id,
           entity_definition_id: c.entity_definition_id,
           is_primary: c.is_primary,
@@ -611,6 +641,58 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
   // Next display_order = after the current maximum (robust to gaps from deletes/reorders,
   // so a newly-added stage always sorts last and lands in the right column).
   const nextDisplayOrder = () => (stages.length ? Math.max(...stages.map((s) => s.display_order)) + 1 : 0);
+
+  // Build a fully-formed in-memory ProcessStage from a form payload, with a fresh client-side
+  // UUID. No DB write — the stage lives only in the working model until Save & Publish. The
+  // publish RPC upserts by process_stage_id, so this UUID becomes the row's real id on publish.
+  const materializeStage = (payload: ProcessStageFormData): ProcessStage => {
+    const now = new Date().toISOString();
+    return {
+      process_stage_id: uuid(),
+      process_flow_id: flow.process_flow_id,
+      component_type: payload.component_type ?? 'stage',
+      name: payload.name,
+      description: payload.description,
+      stage_key: payload.stage_key,
+      display_order: payload.display_order,
+      stage_color: payload.stage_color,
+      stage_type: payload.stage_type,
+      stage_category: payload.stage_category,
+      is_default: payload.is_default,
+      is_fixed: payload.is_fixed ?? false,
+      is_terminal: false,
+      probability: payload.probability,
+      allow_backward_movement: payload.allow_backward_movement,
+      requires_entry_approval: payload.requires_entry_approval,
+      requires_exit_approval: payload.requires_exit_approval,
+      entry_rules: payload.entry_rules,
+      exit_rules: payload.exit_rules,
+      allowed_transitions: null,
+      stage_visible_fields: [],
+      gate_required_fields: [],
+      gate_conditions: [],
+      target_entity_id: payload.target_entity_id,
+      stage_entity_id: payload.stage_entity_id,
+      target_relationship_name: payload.target_relationship_name,
+      relationship_definition_id: payload.relationship_definition_id,
+      create_linked_record: payload.create_linked_record,
+      branch_yes_stage_id: payload.branch_yes_stage_id ?? null,
+      branch_no_stage_id: payload.branch_no_stage_id ?? null,
+      condition_entity_id: payload.condition_entity_id ?? null,
+      condition_field: payload.condition_field ?? null,
+      condition_operator: payload.condition_operator ?? null,
+      condition_value: payload.condition_value ?? null,
+      condition_rules: payload.condition_rules ?? null,
+      created_at: now,
+      modified_at: now,
+    };
+  };
+
+  // Replace the buffered stage fields for a single stage (used by the properties panel).
+  const setStageFieldsForStage = (stageId: string, next: ProcessStageField[]) => {
+    setStageFields((prev) => [...prev.filter((f) => f.process_stage_id !== stageId), ...next]);
+    markDirty();
+  };
 
   // A "trunk condition" is a condition that sits on the main line (it is NOT nested inside
   // another condition's Yes/No branch). Once the trunk ends in one, the flow only continues
@@ -641,7 +723,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
   //     YES branch (… → Condition --YES--> before …, empty NO). A STAGE only needs an explicit
   //     link when it landed inside a branch; on the trunk, order adjacency already connects it.
   // Fully generic — derived from branch links, never from entity/stage names.
-  const insertComponentBefore = async (beforeStageId: string, componentType: ComponentType) => {
+  const insertComponentBefore = (beforeStageId: string, componentType: ComponentType) => {
     const before = stages.find((s) => s.process_stage_id === beforeStageId);
     if (!before) return;
     const insertOrder = before.display_order;
@@ -655,38 +737,31 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
     }
     const beforeIsBranchTarget = predId !== null;
 
-    try {
-      let created = await createProcessStage(flow.process_flow_id, buildStagePayload(componentType, insertOrder));
-      const newId = created.process_stage_id;
-
-      // Outgoing: keep `before` attached to the new node.
-      if (componentType === 'condition' || beforeIsBranchTarget) {
-        created = await updateProcessStage(newId, { branch_yes_stage_id: beforeStageId });
-      }
-      // Incoming: redirect the predecessor's branch slot from `before` to the new node.
-      let predUpdated: ProcessStage | null = null;
-      if (predId && predSlot) {
-        predUpdated = await updateProcessStage(predId, predSlot === 'yes'
-          ? { branch_yes_stage_id: newId }
-          : { branch_no_stage_id: newId });
-      }
-
-      const next = [...stages, created].map((s) => {
-        if (s.process_stage_id === newId) return created;
-        const base = predUpdated && s.process_stage_id === predId ? predUpdated : s;
-        return base.display_order >= insertOrder ? { ...base, display_order: base.display_order + 1 } : base;
-      });
-      setStages(next);
-      setSelectedStageId(newId);
-      setDropTarget(null);
-      markDirty();
-      await reorderProcessStages(next.map((s) => ({ process_stage_id: s.process_stage_id, display_order: s.display_order })));
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed to insert component');
+    const created = materializeStage(buildStagePayload(componentType, insertOrder));
+    const newId = created.process_stage_id;
+    // Outgoing: keep `before` attached to the new node.
+    if (componentType === 'condition' || beforeIsBranchTarget) {
+      created.branch_yes_stage_id = beforeStageId;
     }
+
+    const next = [...stages, created].map((s) => {
+      if (s.process_stage_id === newId) return created;
+      // Incoming: redirect the predecessor's branch slot from `before` to the new node.
+      let base = s;
+      if (predId && predSlot && s.process_stage_id === predId) {
+        base = predSlot === 'yes'
+          ? { ...s, branch_yes_stage_id: newId }
+          : { ...s, branch_no_stage_id: newId };
+      }
+      return base.display_order >= insertOrder ? { ...base, display_order: base.display_order + 1 } : base;
+    });
+    setStages(next);
+    setSelectedStageId(newId);
+    setDropTarget(null);
+    markDirty();
   };
 
-  const handleDropOnCanvas = async (componentType: ComponentType) => {
+  const handleDropOnCanvas = (componentType: ComponentType) => {
     // Adding a stage while the trunk already ends in a branch point (condition): the stage
     // belongs in front of that condition, not after it. Both the "+" button and a palette
     // drag funnel through here, so this one guard fixes every entry point. Conditions keep
@@ -694,7 +769,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
     if (componentType === 'stage') {
       const trunkCondition = findTrunkCondition();
       if (trunkCondition) {
-        await insertComponentBefore(trunkCondition.process_stage_id, 'stage');
+        insertComponentBefore(trunkCondition.process_stage_id, 'stage');
         return;
       }
     }
@@ -732,43 +807,34 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
       condition_operator: null,
       condition_value: null,
     };
-    try {
-      const created = await createProcessStage(flow.process_flow_id, payload);
-      setStages((prev) => [...prev, created]);
-      setSelectedStageId(created.process_stage_id);
-      setDropTarget(null);
-      markDirty();
+    const created = materializeStage(payload);
+    setStages((prev) => [...prev, created]);
+    setSelectedStageId(created.process_stage_id);
+    setDropTarget(null);
+    markDirty();
 
-      // After dropping any component (stage OR condition — conditions can nest inside a
-      // branch), if a condition has an empty Yes/No slot, prompt which branch it belongs to.
-      // Prefer the condition the user currently has selected so the drop lands in that one.
-      const hasOpenSlot = (s: ProcessStage) =>
-        s.component_type === 'condition' && s.stage_type === 'active' &&
-        (!s.branch_yes_stage_id || !s.branch_no_stage_id);
-      const selected = stages.find((s) => s.process_stage_id === selectedStageId);
-      const conditionWithSlot =
-        selected && hasOpenSlot(selected) ? selected : stages.find(hasOpenSlot);
-      if (conditionWithSlot && conditionWithSlot.process_stage_id !== created.process_stage_id) {
-        setBranchPickerState({ stageId: created.process_stage_id, conditionId: conditionWithSlot.process_stage_id });
-      }
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed to add component');
+    // After dropping any component (stage OR condition — conditions can nest inside a
+    // branch), if a condition has an empty Yes/No slot, prompt which branch it belongs to.
+    // Prefer the condition the user currently has selected so the drop lands in that one.
+    const hasOpenSlot = (s: ProcessStage) =>
+      s.component_type === 'condition' && s.stage_type === 'active' &&
+      (!s.branch_yes_stage_id || !s.branch_no_stage_id);
+    const selected = stages.find((s) => s.process_stage_id === selectedStageId);
+    const conditionWithSlot =
+      selected && hasOpenSlot(selected) ? selected : stages.find(hasOpenSlot);
+    if (conditionWithSlot && conditionWithSlot.process_stage_id !== created.process_stage_id) {
+      setBranchPickerState({ stageId: created.process_stage_id, conditionId: conditionWithSlot.process_stage_id });
     }
   };
 
-  const handleBranchAssign = async (branch: 'yes' | 'no') => {
+  const handleBranchAssign = (branch: 'yes' | 'no') => {
     if (!branchPickerState) return;
     const { stageId, conditionId } = branchPickerState;
     const updates = branch === 'yes'
       ? { branch_yes_stage_id: stageId }
       : { branch_no_stage_id: stageId };
-    try {
-      const updated = await updateProcessStage(conditionId, updates);
-      setStages((prev) => prev.map((s) => s.process_stage_id === conditionId ? updated : s));
-      markDirty();
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed to assign branch');
-    }
+    setStages((prev) => prev.map((s) => s.process_stage_id === conditionId ? { ...s, ...updates } : s));
+    markDirty();
     setBranchPickerState(null);
   };
 
@@ -808,91 +874,67 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
 
   // Disconnect a condition's Yes/No branch so it becomes empty and droppable again
   // (lets each condition have its own independent branches instead of a shared link).
-  const handleClearBranch = async (conditionId: string, branch: 'yes' | 'no') => {
+  const handleClearBranch = (conditionId: string, branch: 'yes' | 'no') => {
     const updates = branch === 'yes' ? { branch_yes_stage_id: null } : { branch_no_stage_id: null };
-    try {
-      const updated = await updateProcessStage(conditionId, updates);
-      setStages((prev) => prev.map((s) => s.process_stage_id === conditionId ? updated : s));
-      markDirty();
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed to disconnect branch');
-    }
+    setStages((prev) => prev.map((s) => s.process_stage_id === conditionId ? { ...s, ...updates } : s));
+    markDirty();
   };
 
   // Explicitly add a new Stage/Condition into a condition's Yes or No branch (supports nesting).
-  const handleAddToBranch = async (conditionId: string, branch: 'yes' | 'no', componentType: ComponentType) => {
-    try {
-      const created = await createProcessStage(flow.process_flow_id, buildStagePayload(componentType, nextDisplayOrder()));
-      const updates = branch === 'yes'
-        ? { branch_yes_stage_id: created.process_stage_id }
-        : { branch_no_stage_id: created.process_stage_id };
-      const updatedCond = await updateProcessStage(conditionId, updates);
-      setStages((prev) => [
-        ...prev.map((s) => s.process_stage_id === conditionId ? updatedCond : s),
-        created,
-      ]);
-      setSelectedStageId(created.process_stage_id);
-      markDirty();
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed to add to branch');
-    }
+  const handleAddToBranch = (conditionId: string, branch: 'yes' | 'no', componentType: ComponentType) => {
+    const created = materializeStage(buildStagePayload(componentType, nextDisplayOrder()));
+    const updates = branch === 'yes'
+      ? { branch_yes_stage_id: created.process_stage_id }
+      : { branch_no_stage_id: created.process_stage_id };
+    setStages((prev) => [
+      ...prev.map((s) => s.process_stage_id === conditionId ? { ...s, ...updates } : s),
+      created,
+    ]);
+    setSelectedStageId(created.process_stage_id);
+    markDirty();
     setAddBranchState(null);
   };
 
-  const handleDeleteStage = async (stageId: string) => {
+  const handleDeleteStage = (stageId: string) => {
     const stage = stages.find((s) => s.process_stage_id === stageId);
     if (stage?.is_fixed) {
       showError('The first stage is fixed and cannot be deleted while the process exists.');
       return;
     }
-    try {
-      // If this stage is the flow's default_stage_id, clear that FK first to avoid a constraint violation
-      if (flow.default_stage_id === stageId) {
-        await setDefaultStage(flow.process_flow_id, null);
-        setFlow((prev) => ({ ...prev, default_stage_id: null }));
-      }
-      await deleteProcessStage(stageId);
-      setStages((prev) => prev.filter((s) => s.process_stage_id !== stageId));
-      if (selectedStageId === stageId) setSelectedStageId(null);
-      setTransitions((prev) => prev.filter((t) => t.from_stage_id !== stageId && t.to_stage_id !== stageId));
-      markDirty();
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed to delete');
-    }
+    // Remove the stage, drop it from the buffered working model, and null any branch pointers
+    // that referenced it (so the published snapshot never carries a dangling FK).
+    setStages((prev) => prev
+      .filter((s) => s.process_stage_id !== stageId)
+      .map((s) => ({
+        ...s,
+        branch_yes_stage_id: s.branch_yes_stage_id === stageId ? null : s.branch_yes_stage_id,
+        branch_no_stage_id: s.branch_no_stage_id === stageId ? null : s.branch_no_stage_id,
+      })));
+    // If this stage was the flow's default, clear that pointer too.
+    if (flow.default_stage_id === stageId) setFlow((prev) => ({ ...prev, default_stage_id: null }));
+    if (selectedStageId === stageId) setSelectedStageId(null);
+    setTransitions((prev) => prev.filter((t) => t.from_stage_id !== stageId && t.to_stage_id !== stageId));
+    setStageFields((prev) => prev.filter((f) => f.process_stage_id !== stageId));
+    markDirty();
   };
 
   const handleUpdateStage = async (stageId: string, updates: Partial<ProcessStageFormData>) => {
-    try {
-      const updated = await updateProcessStage(stageId, updates);
-      setStages((prev) => prev.map((s) => s.process_stage_id === stageId ? updated : s));
-      markDirty();
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed to update');
-    }
+    setStages((prev) => prev.map((s) => s.process_stage_id === stageId ? { ...s, ...updates } : s));
+    markDirty();
   };
 
-  const handleRenameStage = async (stageId: string, name: string) => {
+  const handleRenameStage = (stageId: string, name: string) => {
     setStages((prev) => prev.map((s) => s.process_stage_id === stageId ? { ...s, name } : s));
     markDirty();
-    try {
-      await updateProcessStage(stageId, { name });
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed to rename');
-    }
   };
 
   const handleSetDefault = async (stageId: string) => {
-    try {
-      await setDefaultStage(flow.process_flow_id, stageId);
-      setFlow((prev) => ({ ...prev, default_stage_id: stageId }));
-      setStages((prev) => prev.map((s) => ({ ...s, is_default: s.process_stage_id === stageId })));
-      markDirty();
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed');
-    }
+    setFlow((prev) => ({ ...prev, default_stage_id: stageId }));
+    setStages((prev) => prev.map((s) => ({ ...s, is_default: s.process_stage_id === stageId })));
+    markDirty();
   };
 
-  const handleMoveStage = async (id: string, dir: 'left' | 'right') => {
+  const handleMoveStage = (id: string, dir: 'left' | 'right') => {
     const activeStages = stages
       .filter((s) => s.stage_type === 'active')
       .sort((a, b) => a.display_order - b.display_order);
@@ -914,32 +956,13 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
     const terminalWithOrder = terminalStages.map((s, i) => ({ ...s, display_order: withOrder.length + i }));
     setStages([...withOrder, ...terminalWithOrder]);
     markDirty();
-    try {
-      await reorderProcessStages([...withOrder, ...terminalWithOrder].map((s) => ({
-        process_stage_id: s.process_stage_id,
-        display_order: s.display_order,
-      })));
-    } catch {
-      await loadFlow();
-    }
   };
 
   const handleSaveTransitions = async (t: ProcessFlowTransition[]) => {
-    try {
-      await replaceAllTransitions(flow.process_flow_id, t.map((x) => ({
-        from_stage_id: x.from_stage_id,
-        to_stage_id: x.to_stage_id,
-        transition_name: x.transition_name,
-        requires_fields: x.requires_fields,
-        conditions: x.conditions ?? [],
-        priority: x.priority ?? 100,
-        is_default: x.is_default ?? false,
-      })));
-      setTransitions(t);
-      markDirty();
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed');
-    }
+    // Buffer only — the transitions (each already carrying a client-side transition_id) are
+    // persisted with the rest of the working model on Save & Publish.
+    setTransitions(t);
+    markDirty();
   };
 
   const selectedStage = stages.find((s) => s.process_stage_id === selectedStageId) ?? null;
@@ -1086,6 +1109,10 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
                     entities={entities}
                     isDefault={selectedStage.process_stage_id === flow.default_stage_id}
                     inheritedEntityId={selectedStagePreviousContextEntityId}
+                    fields={stageFields
+                      .filter((f) => f.process_stage_id === selectedStage.process_stage_id)
+                      .sort((a, b) => a.display_order - b.display_order)}
+                    onFieldsChange={(next) => setStageFieldsForStage(selectedStage.process_stage_id, next)}
                     onUpdate={(updates) => handleUpdateStage(selectedStage.process_stage_id, updates)}
                     onDelete={() => handleDeleteStage(selectedStage.process_stage_id)}
                     onSetDefault={() => handleSetDefault(selectedStage.process_stage_id)}
@@ -1115,11 +1142,9 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
                 flow={flow}
                 entities={entities}
                 stageCount={stages.length}
-                saving={saving}
-                setSaving={setSaving}
-                onFlowChange={(f) => { setFlow(f); onFlowUpdate(f); }}
-                showSuccess={showSuccess}
-                showError={showError}
+                onFlowPatch={(patch) => { setFlow((prev) => ({ ...prev, ...patch })); markDirty(); }}
+                entityConfigs={entityConfigs}
+                onConfigsChange={(next) => { setEntityConfigs(next); markDirty(); }}
               />
             </div>
           )}
@@ -1229,11 +1254,11 @@ interface BpfCanvasProps {
   selectedStageId: string | null;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
-  onSetDefault: (id: string) => Promise<void>;
-  onMove: (id: string, dir: 'left' | 'right') => Promise<void>;
+  onSetDefault: (id: string) => void;
+  onMove: (id: string, dir: 'left' | 'right') => void;
   onRename: (id: string, name: string) => void;
-  onDropType: (type: ComponentType) => Promise<void>;
-  onInsertBefore: (beforeStageId: string, componentType: ComponentType) => Promise<void>;
+  onDropType: (type: ComponentType) => void;
+  onInsertBefore: (beforeStageId: string, componentType: ComponentType) => void;
   onAddToBranch: (conditionId: string, branch: 'yes' | 'no') => void;
   onDropInBranch: (conditionId: string, branch: 'yes' | 'no', componentType: ComponentType) => void;
   onClearBranch: (conditionId: string, branch: 'yes' | 'no') => void;
@@ -2579,13 +2604,16 @@ interface StagePropertiesPanelProps {
   isDefault: boolean;
   /** The entity context inherited from the previous stage (or primary entity) */
   inheritedEntityId: string;
+  /** This stage's buffered fields (sorted). Edits are handed back via onFieldsChange — never written to the DB here. */
+  fields: ProcessStageField[];
+  onFieldsChange: (next: ProcessStageField[]) => void;
   onUpdate: (updates: Partial<ProcessStageFormData>) => Promise<void>;
   onDelete: () => void;
   onSetDefault: () => Promise<void>;
   onClose: () => void;
 }
 
-function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheritedEntityId, onUpdate, onDelete, onSetDefault, onClose }: StagePropertiesPanelProps) {
+function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheritedEntityId, fields, onFieldsChange, onUpdate, onDelete, onSetDefault, onClose }: StagePropertiesPanelProps) {
   const def = getComponentDef(stage.component_type ?? 'stage');
   const [name, setName] = useState(stage.name);
   const [stageColor, setStageColor] = useState(stage.stage_color);
@@ -2622,13 +2650,13 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
   const [conditionEntityFields, setConditionEntityFields] = useState<FieldDefinition[]>([]);
   const [conditionEntityFieldsLoading, setConditionEntityFieldsLoading] = useState(false);
 
-  // Fields
-  const [steps, setSteps] = useState<ProcessStageField[]>([]);
-  const [stepsLoading, setStepsLoading] = useState(false);
+  // Fields — the list is fully controlled by the parent buffer (props.fields); this component
+  // never fetches or writes them. Every mutation produces a new array handed back via onFieldsChange.
+  const steps = fields;
+  const stepsLoading = false;
   const [entityFields, setEntityFields] = useState<FieldDefinition[]>([]);
   const [entityFieldsLoading, setEntityFieldsLoading] = useState(false);
   const [selectedFieldId, setSelectedFieldId] = useState('');
-  const [addingStep, setAddingStep] = useState(false);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -2678,11 +2706,6 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
       .catch(() => setConditionEntityFields([]))
       .finally(() => setConditionEntityFieldsLoading(false));
   }, [conditionEntityId]);
-
-  useEffect(() => {
-    setStepsLoading(true);
-    fetchStageFields(stage.process_stage_id).then(setSteps).catch(() => setSteps([])).finally(() => setStepsLoading(false));
-  }, [stage.process_stage_id]);
 
   useEffect(() => {
     if (!effectiveEntityId) return;
@@ -2742,45 +2765,46 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
     } finally { setSaving(false); }
   };
 
-  const handleAddField = async () => {
+  const handleAddField = () => {
     const fieldDef = entityFields.find((f) => f.field_definition_id === selectedFieldId);
     if (!fieldDef) return;
-    setAddingStep(true);
-    try {
-      const nextOrder = steps.length > 0 ? Math.max(...steps.map((s) => s.display_order)) + 10 : 10;
-      const created = await addStageField(
-        stage.process_stage_id, flow.process_flow_id, fieldDef.logical_name, nextOrder, undefined, null,
-      );
-      setSteps((prev) => [...prev, created]);
-      setSelectedFieldId('');
-    } finally { setAddingStep(false); }
+    const nextOrder = steps.length > 0 ? Math.max(...steps.map((s) => s.display_order)) + 10 : 10;
+    const created: ProcessStageField = {
+      psf_id: uuid(),
+      process_stage_id: stage.process_stage_id,
+      process_flow_id: flow.process_flow_id,
+      field_logical_name: fieldDef.logical_name,
+      display_label: null,
+      is_visible: true,
+      is_required: false,
+      is_readonly: false,
+      display_order: nextOrder,
+      related_entity_id: null,
+      created_at: new Date().toISOString(),
+    };
+    onFieldsChange([...steps, created]);
+    setSelectedFieldId('');
   };
 
-  const handleToggleRequired = async (s: ProcessStageField) => {
-    const updated = { is_required: !s.is_required };
-    setSteps((prev) => prev.map((x) => x.psf_id === s.psf_id ? { ...x, ...updated } : x));
-    await updateStageField(s.psf_id, updated);
+  const handleToggleRequired = (s: ProcessStageField) => {
+    onFieldsChange(steps.map((x) => x.psf_id === s.psf_id ? { ...x, is_required: !x.is_required } : x));
   };
 
-  const handleToggleReadonly = async (s: ProcessStageField) => {
-    const updated = { is_readonly: !s.is_readonly };
-    setSteps((prev) => prev.map((x) => x.psf_id === s.psf_id ? { ...x, ...updated } : x));
-    await updateStageField(s.psf_id, updated);
+  const handleToggleReadonly = (s: ProcessStageField) => {
+    onFieldsChange(steps.map((x) => x.psf_id === s.psf_id ? { ...x, is_readonly: !x.is_readonly } : x));
   };
 
-  const handleDeleteField = async (psfId: string) => {
-    setSteps((prev) => prev.filter((s) => s.psf_id !== psfId));
-    await deleteStageField(psfId);
+  const handleDeleteField = (psfId: string) => {
+    onFieldsChange(steps.filter((s) => s.psf_id !== psfId));
   };
 
-  const commitLabel = async (psfId: string) => {
+  const commitLabel = (psfId: string) => {
     const label = editingLabel.trim() || null;
-    setSteps((prev) => prev.map((s) => s.psf_id === psfId ? { ...s, display_label: label } : s));
+    onFieldsChange(steps.map((s) => s.psf_id === psfId ? { ...s, display_label: label } : s));
     setEditingStepId(null);
-    await updateStageField(psfId, { display_label: label });
   };
 
-  const handleDragEnd = async () => {
+  const handleDragEnd = () => {
     if (dragIdx === null || dragOverIdx.current === null || dragIdx === dragOverIdx.current) {
       setDragIdx(null); dragOverIdx.current = null; return;
     }
@@ -2788,9 +2812,8 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
     const [moved] = reordered.splice(dragIdx, 1);
     reordered.splice(dragOverIdx.current, 0, moved);
     const withOrder = reordered.map((s, i) => ({ ...s, display_order: (i + 1) * 10 }));
-    setSteps(withOrder);
+    onFieldsChange(withOrder);
     setDragIdx(null); dragOverIdx.current = null;
-    await reorderStageFields(withOrder.map((s) => ({ psf_id: s.psf_id, display_order: s.display_order })));
   };
 
   const isStageComponent = (stage.component_type ?? 'stage') === 'stage';
@@ -2994,10 +3017,10 @@ function StagePropertiesPanel({ stage, stages, flow, entities, isDefault, inheri
                         </FilterSelect>
                         <button
                           onClick={handleAddField}
-                          disabled={!selectedFieldId || addingStep}
+                          disabled={!selectedFieldId}
                           className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
                         >
-                          {addingStep ? <Loader2 size={10} className="animate-spin" /> : <Plus size={10} />} Add
+                          <Plus size={10} /> Add
                         </button>
                       </div>
                     </div>
@@ -3458,16 +3481,14 @@ type SettingsFormState = {
 };
 
 function SettingsPanel({
-  flow, entities, stageCount, saving, setSaving, onFlowChange, showSuccess, showError,
+  flow, entities, stageCount, onFlowPatch, entityConfigs, onConfigsChange,
 }: {
   flow: ProcessFlow;
   entities: EntityDefinition[];
   stageCount: number;
-  saving: boolean;
-  setSaving: (v: boolean) => void;
-  onFlowChange: (f: ProcessFlow) => void;
-  showSuccess: (m: string) => void;
-  showError: (m: string) => void;
+  onFlowPatch: (patch: Partial<ProcessFlow>) => void;
+  entityConfigs: EntityConfigRow[];
+  onConfigsChange: (next: EntityConfigRow[]) => void;
 }) {
   const [form, setForm] = useState<SettingsFormState>({
     name: flow.name, description: flow.description,
@@ -3476,15 +3497,16 @@ function SettingsPanel({
     entity_definition_id: flow.entity_definition_id,
     stage_field: flow.stage_field,
   });
-  const [dirty, setDirty] = useState(false);
   const [scope, setScope] = useState<ProcessFlowScope>(flow.product_id ? 'product' : flow.lob_id ? 'lob' : 'global');
   const [lobs, setLobs] = useState<LineOfBusiness[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [formOptions, setFormOptions] = useState<{ form_id: string; name: string; is_default: boolean }[]>([]);
 
+  // Every edit updates the local form (for the controlled inputs) AND the editor's buffered flow.
+  // Nothing is written to the DB here — it is persisted with the rest of the model on Save & Publish.
   const set = <K extends keyof SettingsFormState>(k: K, v: SettingsFormState[K]) => {
     setForm((p) => ({ ...p, [k]: v }));
-    setDirty(true);
+    onFlowPatch({ [k]: v } as Partial<ProcessFlow>);
   };
 
   useEffect(() => {
@@ -3499,30 +3521,13 @@ function SettingsPanel({
 
   const handleScopeChange = (s: ProcessFlowScope) => {
     setScope(s);
-    setForm((p) => ({ ...p, lob_id: s === 'lob' ? p.lob_id : null, product_id: s === 'product' ? p.product_id : null }));
-    setDirty(true);
+    const patch = { lob_id: s === 'lob' ? form.lob_id : null, product_id: s === 'product' ? form.product_id : null };
+    setForm((p) => ({ ...p, ...patch }));
+    onFlowPatch(patch);
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const updated = await updateProcessFlow(flow.process_flow_id, form);
-      onFlowChange(updated);
-      setDirty(false);
-      showSuccess('Settings saved');
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed');
-    } finally { setSaving(false); }
-  };
-
-  const handleToggleActive = async () => {
-    setSaving(true);
-    try {
-      const updated = await updateProcessFlow(flow.process_flow_id, { is_active: !flow.is_active });
-      onFlowChange(updated);
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed');
-    } finally { setSaving(false); }
+  const handleToggleActive = () => {
+    onFlowPatch({ is_active: !flow.is_active });
   };
 
   const SCOPE_OPTIONS: { id: ProcessFlowScope; label: string; icon: React.ReactNode }[] = [
@@ -3634,18 +3639,10 @@ function SettingsPanel({
           <p className="text-sm font-medium text-gray-800">Active</p>
           <p className="text-xs text-gray-400 mt-0.5">When inactive, hidden from end users</p>
         </div>
-        <button onClick={handleToggleActive} disabled={saving} className="text-gray-400 hover:text-blue-600 transition-colors disabled:opacity-50">
+        <button onClick={handleToggleActive} className="text-gray-400 hover:text-blue-600 transition-colors disabled:opacity-50">
           {flow.is_active ? <ToggleRight size={28} className="text-blue-600" /> : <ToggleLeft size={28} />}
         </button>
       </div>
-
-      {dirty && (
-        <button onClick={handleSave} disabled={saving}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-          <Save size={14} />
-          {saving ? 'Saving…' : 'Save Settings'}
-        </button>
-      )}
 
       {flow.is_system && (
         <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
@@ -3655,7 +3652,12 @@ function SettingsPanel({
       )}
 
       <div className="border-t border-gray-200 pt-6">
-        <EntityParticipantsPanel flow={flow} entities={entities} />
+        <EntityParticipantsPanel
+          flow={flow}
+          entities={entities}
+          configs={entityConfigs}
+          onConfigsChange={onConfigsChange}
+        />
       </div>
     </div>
   );
@@ -3666,6 +3668,9 @@ function SettingsPanel({
 interface EntityParticipantsPanelProps {
   flow: ProcessFlow;
   entities: EntityDefinition[];
+  /** Buffered entity configs from the editor. Edits are handed back via onConfigsChange — never written to the DB here. */
+  configs: EntityConfigRow[];
+  onConfigsChange: (next: EntityConfigRow[]) => void;
 }
 
 type EntityConfigRow = ProcessFlowEntityConfig & {
@@ -3676,10 +3681,12 @@ type EntityConfigRow = ProcessFlowEntityConfig & {
   _loadingRels?: boolean;
 };
 
-function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProps) {
-  const { showError, showSuccess } = useToast();
-  const [configs, setConfigs] = useState<EntityConfigRow[]>([]);
-  const [loading, setLoading] = useState(true);
+function EntityParticipantsPanel({ flow, entities, configs, onConfigsChange }: EntityParticipantsPanelProps) {
+  // The config list, its loading, and the primary-row guarantee are owned by the editor buffer.
+  // This panel is fully controlled: it renders `configs` and hands edits back via onConfigsChange.
+  const loading = false;
+  const saving = false;
+  const deletingId: string | null = null;
   const [addingEntity, setAddingEntity] = useState(false);
   const [newEntityId, setNewEntityId] = useState('');
   const [newFormId, setNewFormId] = useState<string | null>(null);
@@ -3688,31 +3695,10 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
   const [newLinkBehavior, setNewLinkBehavior] = useState<LinkBehavior>('create_if_missing');
   const [newForms, setNewForms] = useState<{ form_id: string; name: string; is_default: boolean }[]>([]);
   const [newRels, setNewRels] = useState<RelationshipDefinitionWithEntities[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRow, setEditRow] = useState<Partial<ProcessFlowEntityConfigFormData> | null>(null);
   const [editForms, setEditForms] = useState<{ form_id: string; name: string; is_default: boolean }[]>([]);
   const [editRels, setEditRels] = useState<RelationshipDefinitionWithEntities[]>([]);
-
-  const loadConfigs = async () => {
-    setLoading(true);
-    try {
-      let rows = await fetchEntityConfigs(flow.process_flow_id);
-      // Ensure primary entity row exists
-      if (!rows.find((r) => r.is_primary)) {
-        await ensurePrimaryEntityConfig(flow.process_flow_id, flow.entity_definition_id, flow.form_id ?? null);
-        rows = await fetchEntityConfigs(flow.process_flow_id);
-      }
-      setConfigs(rows);
-    } catch {
-      // noop — graceful
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { loadConfigs(); }, [flow.process_flow_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load forms when new entity selected
   useEffect(() => {
@@ -3750,61 +3736,60 @@ function EntityParticipantsPanel({ flow, entities }: EntityParticipantsPanelProp
     }
   }, [editingId, editRow?.entity_definition_id, flow.entity_definition_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleAddEntity = async () => {
+  const handleAddEntity = () => {
     if (!newEntityId) return;
-    setSaving(true);
-    try {
-      await upsertEntityConfig(flow.process_flow_id, {
-        entity_definition_id: newEntityId,
-        form_id: newFormId,
-        relationship_definition_id: newRelDefId,
-        relationship_column: newRelColumn,
-        link_behavior: newLinkBehavior,
-        display_order: configs.length,
-        is_primary: false,
-      });
-      showSuccess('Entity added');
-      setAddingEntity(false);
-      setNewEntityId('');
-      await loadConfigs();
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Failed to add entity');
-    } finally { setSaving(false); }
+    const now = new Date().toISOString();
+    // Denormalized display fields are resolved from what's already loaded so the row renders
+    // correctly in the buffer without a round-trip to the DB.
+    const newCfg: EntityConfigRow = {
+      config_id: uuid(),
+      process_flow_id: flow.process_flow_id,
+      entity_definition_id: newEntityId,
+      is_primary: false,
+      form_id: newFormId,
+      relationship_definition_id: newRelDefId,
+      relationship_column: newRelColumn,
+      link_behavior: newLinkBehavior,
+      display_order: configs.length,
+      created_at: now,
+      modified_at: now,
+      entity_display_name: entities.find((e) => e.entity_definition_id === newEntityId)?.display_name ?? newEntityId,
+      form_name: newForms.find((f) => f.form_id === newFormId)?.name,
+      relationship_display_name: newRels.find((r) => r.relationship_definition_id === newRelDefId)?.display_name,
+    };
+    onConfigsChange([...configs, newCfg]);
+    setAddingEntity(false);
+    setNewEntityId('');
+    setNewFormId(null);
+    setNewRelDefId(null);
+    setNewRelColumn('');
   };
 
-  const handleSaveEdit = async (configId: string) => {
+  const handleSaveEdit = (configId: string) => {
     if (!editRow) return;
-    setSaving(true);
-    try {
-      const cfg = configs.find((c) => c.config_id === configId);
-      if (!cfg) return;
-      await upsertEntityConfig(flow.process_flow_id, {
-        entity_definition_id: cfg.entity_definition_id,
-        form_id: editRow.form_id ?? cfg.form_id,
-        relationship_definition_id: editRow.relationship_definition_id ?? cfg.relationship_definition_id,
-        relationship_column: editRow.relationship_column ?? cfg.relationship_column,
-        link_behavior: (editRow.link_behavior ?? cfg.link_behavior) as LinkBehavior,
-        display_order: cfg.display_order,
-        is_primary: cfg.is_primary,
-      });
-      showSuccess('Saved');
-      setEditingId(null);
-      setEditRow(null);
-      await loadConfigs();
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Save failed');
-    } finally { setSaving(false); }
+    const cfg = configs.find((c) => c.config_id === configId);
+    if (!cfg) return;
+    const nextFormId = editRow.form_id ?? cfg.form_id;
+    const nextRelId = editRow.relationship_definition_id ?? cfg.relationship_definition_id;
+    const updatedCfg: EntityConfigRow = {
+      ...cfg,
+      form_id: nextFormId,
+      relationship_definition_id: nextRelId,
+      relationship_column: editRow.relationship_column ?? cfg.relationship_column,
+      link_behavior: (editRow.link_behavior ?? cfg.link_behavior) as LinkBehavior,
+      form_name: editForms.find((f) => f.form_id === nextFormId)?.name ?? cfg.form_name,
+      relationship_display_name: nextRelId
+        ? (editRels.find((r) => r.relationship_definition_id === nextRelId)?.display_name ?? cfg.relationship_display_name)
+        : undefined,
+    };
+    onConfigsChange(configs.map((c) => c.config_id === configId ? updatedCfg : c));
+    setEditingId(null);
+    setEditRow(null);
   };
 
-  const handleDelete = async (cfg: ProcessFlowEntityConfig) => {
+  const handleDelete = (cfg: ProcessFlowEntityConfig) => {
     if (cfg.is_primary) return;
-    setDeletingId(cfg.config_id);
-    try {
-      await deleteEntityConfig(cfg.config_id);
-      setConfigs((prev) => prev.filter((c) => c.config_id !== cfg.config_id));
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : 'Delete failed');
-    } finally { setDeletingId(null); }
+    onConfigsChange(configs.filter((c) => c.config_id !== cfg.config_id));
   };
 
   const usedEntityIds = new Set(configs.map((c) => c.entity_definition_id));

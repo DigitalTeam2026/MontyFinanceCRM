@@ -1,3 +1,4 @@
+import { uuid } from '../../../lib/uuid';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { DndContext, useDraggable, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { restrictToParentElement } from '@dnd-kit/modifiers';
@@ -102,7 +103,7 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
     let sf = filters.find((s) => s.data_type === 'date');
     if (!sf) {
       const created: DashboardSemanticFilter = {
-        dashboard_semantic_filter_id: crypto.randomUUID(),
+        dashboard_semantic_filter_id: uuid(),
         dashboard_id: def.dashboard.dashboard_id,
         key: 'dashboard_date', label: 'Dashboard Date',
         data_type: 'date', scope: 'dashboard',
@@ -121,7 +122,7 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
       const f = await suggestDateField(ent.entity_definition_id).catch(() => null);
       if (!f) continue;
       const m: DashboardFilterMapping = {
-        dashboard_filter_mapping_id: crypto.randomUUID(),
+        dashboard_filter_mapping_id: uuid(),
         dashboard_id: def.dashboard.dashboard_id,
         semantic_filter_id: sfId,
         target_entity_id: ent.entity_definition_id,
@@ -205,7 +206,7 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
     // Anchor the new card to the side dictated by the canvas layout direction.
     const startX = layoutDir === 'right-to-left' ? Math.max(0, COLS - meta.defaultSize.width) : 0;
     const v: DashboardVisual = {
-      dashboard_visual_id: crypto.randomUUID(),
+      dashboard_visual_id: uuid(),
       dashboard_page_id: page.dashboard_page_id,
       dashboard_id: def.dashboard.dashboard_id,
       visual_type: type,
@@ -244,7 +245,7 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
   const duplicateVisual = (id: string) => {
     const v = def.visuals.find((x) => x.dashboard_visual_id === id);
     if (!v) return;
-    const copy: DashboardVisual = { ...v, dashboard_visual_id: crypto.randomUUID(), x: v.x + 1, y: v.y + 1, z_index: v.z_index + 1 };
+    const copy: DashboardVisual = { ...v, dashboard_visual_id: uuid(), x: v.x + 1, y: v.y + 1, z_index: v.z_index + 1 };
     commit({ ...def, visuals: [...def.visuals, copy] });
     setSelectedId(copy.dashboard_visual_id);
   };
@@ -253,7 +254,7 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
   const addPage = () => {
     const order = pages.length;
     const p: DashboardPage = {
-      dashboard_page_id: crypto.randomUUID(), dashboard_id: def.dashboard.dashboard_id,
+      dashboard_page_id: uuid(), dashboard_id: def.dashboard.dashboard_id,
       name: `Page ${order + 1}`, display_name: `Page ${order + 1}`, page_order: order,
       icon: null, is_default: pages.length === 0, is_hidden: false, background_config: {}, canvas_config: {},
     };

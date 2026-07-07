@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import qrcode from 'qrcode-generator';
 import {
   Plus, Search, Trash2, RefreshCw,
   Shield, ShieldCheck, UserCheck, X, Check,
   Users, ToggleLeft, ToggleRight, Building2,
+  Smartphone, KeyRound, Lock,
 } from 'lucide-react';
 import SearchableSelect from '../../app/components/SearchableSelect';
 import { useToast } from '../../app/context/ToastContext';
@@ -11,6 +13,7 @@ import {
   fetchUsers, createUser, upsertUser, softDeleteUser,
   fetchUserRoles, assignRoleToUser, removeRoleFromUser,
   fetchBusinessUnits, fetchSecurityRoles,
+  setupUserTotp, enableUserTotp, disableUserTotp, resetUserPassword,
 } from '../../services/securityService';
 import ConfirmDialog from '../components/ConfirmDialog';
 
@@ -331,7 +334,22 @@ export default function UsersPage() {
 
             <div className="flex-1 overflow-y-auto p-5">
               {panel === 'edit' ? (
-                <UserEditForm form={form} onChange={setForm} businessUnits={businessUnits} creating={creating} password={password} onPasswordChange={setPassword} />
+                <>
+                  <UserEditForm form={form} onChange={setForm} businessUnits={businessUnits} creating={creating} password={password} onPasswordChange={setPassword} />
+                  {!creating && selected && (
+                    <>
+                      <PasswordResetSection user={selected} />
+                      <TwoFactorSection
+                        user={selected}
+                        onChange={(enabled) => {
+                          setSelected((s) => (s ? { ...s, totp_enabled: enabled } : s));
+                          setForm((f) => ({ ...f, totp_enabled: enabled }));
+                          setUsers((prev) => prev.map((u) => (u.user_id === selected.user_id ? { ...u, totp_enabled: enabled } : u)));
+                        }}
+                      />
+                    </>
+                  )}
+                </>
               ) : (
                 <UserRolesPanel roles={roles} userRoles={userRoles} onToggle={handleToggleRole} />
               )}
@@ -417,6 +435,251 @@ function UserEditForm({
         <Toggle label="Active" checked={form.is_active ?? true} onChange={(v) => onChange({ ...form, is_active: v })} />
         <Toggle label="System Admin" checked={form.is_system_admin ?? false} onChange={(v) => onChange({ ...form, is_system_admin: v })} accent="amber" />
       </div>
+    </div>
+  );
+}
+
+function PasswordResetSection({ user }: { user: CrmUser }) {
+  const { showSuccess, showError } = useToast();
+  const [pw, setPw] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  // Clear the field when a different user is selected.
+  useEffect(() => setPw(''), [user.user_id]);
+
+  const issues = passwordIssues(pw);
+  const touched = pw.length > 0;
+
+  const submit = async () => {
+    if (issues.length) {
+      showError(`Password must include ${issues.join(', ')}.`);
+      return;
+    }
+    setBusy(true);
+    try {
+      await resetUserPassword(user.user_id, pw);
+      setPw('');
+      showSuccess('Password reset');
+    } catch (e) {
+      showError(e instanceof Error ? e.message : 'Failed to reset password');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="max-w-md mt-6 pt-5 border-t border-slate-200">
+      <div className="flex items-center gap-2 mb-1">
+        <Lock size={14} className="text-slate-500" />
+        <p className="text-xs font-semibold text-slate-700">Reset Password</p>
+      </div>
+      <p className="text-[11px] text-slate-400 mb-3">
+        Set a new password for this user. It must meet the complexity policy below.
+      </p>
+      <div className="flex items-start gap-2">
+        <div className="flex-1">
+          <input
+            type="password"
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            className={INPUT}
+            placeholder={`Min. ${PASSWORD_MIN} chars, mixed case, number & symbol`}
+            autoComplete="new-password"
+          />
+          {touched && issues.length > 0 && (
+            <p className="mt-1 text-xs text-red-600">Must include {issues.join(', ')}.</p>
+          )}
+          {touched && issues.length === 0 && (
+            <p className="mt-1 text-xs text-green-600">Strong password.</p>
+          )}
+        </div>
+        <button
+          onClick={submit}
+          disabled={busy || issues.length > 0}
+          className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 shrink-0"
+        >
+          {busy ? <RefreshCw size={11} className="animate-spin" /> : <KeyRound size={12} />}
+          Reset
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Encode an otpauth:// URI as a QR-code data URL (client-side, no network). */
+function qrDataUrl(text: string): string {
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(text);
+    qr.make();
+    return qr.createDataURL(4, 4);
+  } catch {
+    return '';
+  }
+}
+
+function TwoFactorSection({ user, onChange }: { user: CrmUser; onChange: (enabled: boolean) => void }) {
+  const { showSuccess, showError } = useToast();
+  const [enabled, setEnabled] = useState(!!user.totp_enabled);
+  const [setup, setSetup] = useState<{ secret: string; otpauth_url: string } | null>(null);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const qr = useMemo(() => (setup ? qrDataUrl(setup.otpauth_url) : ''), [setup]);
+
+  // Reset when a different user is selected (or their status changes elsewhere).
+  useEffect(() => {
+    setEnabled(!!user.totp_enabled);
+    setSetup(null);
+    setCode('');
+  }, [user.user_id, user.totp_enabled]);
+
+  const startSetup = async () => {
+    setBusy(true);
+    try {
+      setSetup(await setupUserTotp(user.user_id));
+      setCode('');
+    } catch (e) {
+      showError(e instanceof Error ? e.message : 'Failed to start setup');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmEnable = async () => {
+    setBusy(true);
+    try {
+      await enableUserTotp(user.user_id, code.trim());
+      setEnabled(true);
+      setSetup(null);
+      setCode('');
+      onChange(true);
+      showSuccess('Two-factor authentication enabled');
+    } catch (e) {
+      showError(e instanceof Error ? e.message : 'Failed to enable');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disable = async () => {
+    setBusy(true);
+    try {
+      await disableUserTotp(user.user_id);
+      setEnabled(false);
+      setSetup(null);
+      setCode('');
+      onChange(false);
+      showSuccess(enabled ? 'Two-factor authentication disabled' : 'Setup cancelled');
+    } catch (e) {
+      showError(e instanceof Error ? e.message : 'Failed to disable');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="max-w-md mt-6 pt-5 border-t border-slate-200">
+      <div className="flex items-center gap-2 mb-1">
+        <Smartphone size={14} className="text-slate-500" />
+        <p className="text-xs font-semibold text-slate-700">Two-Factor Authentication</p>
+        {enabled ? (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[9px] font-semibold rounded-full">
+            <ShieldCheck size={9} /> Enabled
+          </span>
+        ) : (
+          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-semibold rounded-full">Disabled</span>
+        )}
+      </div>
+
+      {/* Enabled (and not re-enrolling): offer disable/reset. */}
+      {enabled && !setup && (
+        <>
+          <p className="text-[11px] text-slate-400 mb-3">
+            This user must enter a code from their authenticator app when signing in.
+          </p>
+          <button
+            onClick={disable}
+            disabled={busy}
+            className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-100 rounded-lg disabled:opacity-50"
+          >
+            Disable / Reset 2FA
+          </button>
+        </>
+      )}
+
+      {/* Disabled and not yet enrolling: offer setup. */}
+      {!enabled && !setup && (
+        <>
+          <p className="text-[11px] text-slate-400 mb-3">
+            Require a one-time code from an authenticator app (Google Authenticator, Microsoft
+            Authenticator, Authy, 1Password…) in addition to the password.
+          </p>
+          <button
+            onClick={startSetup}
+            disabled={busy}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-100 rounded-lg disabled:opacity-50"
+          >
+            {busy ? <RefreshCw size={11} className="animate-spin" /> : <KeyRound size={12} />}
+            Set up authenticator app
+          </button>
+        </>
+      )}
+
+      {/* Enrolling: show the QR + setup key, then confirm with a code. */}
+      {setup && (
+        <div className="space-y-3">
+          <p className="text-[11px] text-slate-500">
+            Scan this QR code with an authenticator app (account: <span className="font-mono">{user.email}</span>),
+            or choose <span className="font-semibold">“Enter a setup key”</span> and type the key manually.
+            Then enter the 6-digit code it shows to confirm.
+          </p>
+          {qr && (
+            <div className="flex justify-center">
+              <img
+                src={qr}
+                alt="Scan this QR code with your authenticator app"
+                width={180}
+                height={180}
+                className="border border-slate-200 rounded-lg p-2 bg-white [image-rendering:pixelated]"
+              />
+            </div>
+          )}
+          <div>
+            <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Or enter this setup key</p>
+            <code className="block px-2.5 py-2 text-xs font-mono tracking-wider text-slate-700 bg-slate-50 border border-slate-200 rounded-lg break-all select-all">
+              {setup.secret}
+            </code>
+          </div>
+          <div>
+            <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1">6-digit code</p>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="123456"
+              className={`${INPUT} font-mono tracking-[0.3em] text-center`}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={confirmEnable}
+              disabled={busy || code.length !== 6}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg disabled:opacity-50"
+            >
+              {busy ? <RefreshCw size={11} className="animate-spin" /> : <Check size={11} />}
+              Enable
+            </button>
+            <button
+              onClick={disable}
+              disabled={busy}
+              className="px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 border border-slate-200 rounded-lg disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

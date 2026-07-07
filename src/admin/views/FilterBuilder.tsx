@@ -400,8 +400,38 @@ function FilterValueInput({
 }: FilterValueInputProps) {
   const [statecodeOptions, setStatecodeOptions] = useState<{ value: string; label: string }[]>([]);
   const [statusreasonOptions, setStatusreasonOptions] = useState<{ value: string; label: string }[]>([]);
+  const [optionSetOptions, setOptionSetOptions] = useState<{ value: string; label: string }[]>([]);
   const [lookupOptions, setLookupOptions] = useState<{ value: string; label: string }[]>([]);
   const [lookupLoading, setLookupLoading] = useState(false);
+
+  const inlineChoices = (field?.config_json as { choices?: { value: string; label: string }[] } | null)?.choices ?? [];
+  const optionSetName = (field?.config_json as { option_set_name?: string } | null)?.option_set_name;
+
+  // Option-set choice fields store a named set, not inline choices — load its
+  // values so the condition editor shows labels instead of raw codes.
+  useEffect(() => {
+    let cancelled = false;
+    if (!isChoice || inlineChoices.length > 0 || !optionSetName) {
+      setOptionSetOptions([]);
+      return;
+    }
+    (async () => {
+      const { data: os } = await supabase
+        .from('option_set')
+        .select('option_set_id')
+        .eq('name', optionSetName)
+        .maybeSingle();
+      if (cancelled || !os) return;
+      const { data } = await supabase
+        .from('option_set_value')
+        .select('value, display_label')
+        .eq('option_set_id', os.option_set_id)
+        .order('sort_order');
+      if (cancelled) return;
+      setOptionSetOptions((data ?? []).map((r: { value: string | number; display_label: string }) => ({ value: String(r.value), label: r.display_label })));
+    })();
+    return () => { cancelled = true; };
+  }, [isChoice, optionSetName, inlineChoices.length]);
 
   useEffect(() => {
     if (!field) return;
@@ -488,7 +518,7 @@ function FilterValueInput({
   }
 
   if (isChoice) {
-    const choices = (field?.config_json as { choices?: { value: string; label: string }[] } | null)?.choices ?? [];
+    const choices = inlineChoices.length > 0 ? inlineChoices : optionSetOptions;
     if (choices.length > 0) {
       return (
         <div className="relative flex-1 min-w-0">

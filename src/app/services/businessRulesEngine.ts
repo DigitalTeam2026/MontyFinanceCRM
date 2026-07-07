@@ -82,6 +82,22 @@ function evaluateCondition(cond: RuleCondition, values: RecordData, context?: Pr
     default: break;
   }
 
+  // Boolean (Yes/No) fields must compare semantically, not by raw string, so the
+  // several ways a boolean can be stored (true/false, 'true'/'false', 1/0) all
+  // resolve to the same Yes/No. Critically, a boolean eq/neq condition with no
+  // value configured is under-specified: comparing String(raw) to '' let an
+  // *unset* field spuriously equal a blank condition, which silently fired the
+  // THEN branch (e.g. "Card Received = Yes" forcing dependent fields required on
+  // a lead whose Card Received was never set). Treat a blank boolean condition as
+  // unmet so it can never match by accident.
+  if (cond.field_type_name === 'boolean' && (cond.operator === 'eq' || cond.operator === 'neq')) {
+    if (cond.value == null || cond.value === '') return false;
+    const toBool = (x: unknown): boolean =>
+      x === true || x === 'true' || x === 1 || x === '1' || x === 'yes';
+    const match = toBool(raw) === toBool(cond.value);
+    return cond.operator === 'eq' ? match : !match;
+  }
+
   if (cond.operator === 'in' || cond.operator === 'not_in') {
     const condValues = Array.isArray(cond.value) ? cond.value as string[] : [String(cond.value ?? '')];
     if (Array.isArray(raw)) {

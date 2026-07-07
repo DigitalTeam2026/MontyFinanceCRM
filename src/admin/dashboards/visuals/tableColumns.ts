@@ -1,3 +1,4 @@
+import { uuid } from '../../../lib/uuid';
 // Table-visual column model helpers — shared by the designer (PropertiesPanel /
 // TableColumnsPanel) and the runtime (TableVisual). Centralises:
 //   • building a default TableColumnConfig from a field definition,
@@ -79,7 +80,7 @@ function defaultAlignment(dataType: string): TableColumnConfig['alignment'] {
 
 // ── column construction ─────────────────────────────────────────────────────────
 function uid(): string {
-  try { return crypto.randomUUID(); } catch { return `col_${Math.random().toString(36).slice(2)}`; }
+  try { return uuid(); } catch { return `col_${Math.random().toString(36).slice(2)}`; }
 }
 
 /** Build a fully-defaulted column config from an entity field definition. */

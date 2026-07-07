@@ -1,7 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { DocumentLocationConfig, StorageCredentials } from '../types/documentLocation';
-
-const FILE_SERVER_URL = (import.meta.env.VITE_FILE_SERVER_URL as string | undefined) ?? 'http://localhost:4000';
+import { FILE_SERVER_URL } from './fileServerUrl';
 
 /** List all per-entity document location configs (admin view). */
 export async function fetchDocumentLocations(): Promise<DocumentLocationConfig[]> {

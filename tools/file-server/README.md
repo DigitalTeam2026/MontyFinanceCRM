@@ -20,29 +20,39 @@ old `<root>/<recordId>/<fileName>` location keep working without migration.
 ```
 Browser (CRM)  ──upload──>  File Server (this)  ──writes──>  C:\...\MontyFinanceStorage\Lead\2026\06\12\<recordId>\<file>
       │                          │
-      │                          └─ reads the per-entity root from Supabase
+      │                          └─ verifies auth + reads the per-entity root
+      │                             from the local CRM API (server/index.js -> PostgreSQL)
       └────── registers the stored relative_path (e.g. 2026/06/12/<recordId>/<file>) in `crm_document`
 ```
 
-- The browser sends the file plus the caller's Supabase JWT.
-- The server **verifies the JWT** and reads the entity's root location from
-  `document_location_config` **through that token** (RLS), so a client can never make it
-  write to an arbitrary path.
+This project has **no Supabase cloud** (see `src/lib/supabase.ts`). Auth and config
+lookups are delegated to the local Express API at `server/index.js`:
+
+- The browser sends the file plus the caller's session token (the HMAC token minted by
+  the local API on login — `server/auth.js`).
+- The server **verifies the token** via `GET /api/auth/session`, then reads the entity's
+  root location from `document_location_config` through the same API, so a client can never
+  make it write to an arbitrary path.
+- Record access is checked with the `can_access_record` RPC before any file op.
 - `recordId` / `fileName` are sanitized and the final path is confirmed to stay inside the
   configured root (no path traversal).
+
+> **S3 / SharePoint:** credential storage used Supabase Vault, which is not present in local
+> mode, so those providers are unavailable until credential storage is re-implemented against
+> the local API. **Local** and **NAS** work fully.
 
 ## Setup
 
 ```bash
 cd tools/file-server
 npm install
-cp .env.example .env      # then edit .env
+cp .env.example .env      # then edit .env if needed
 ```
 
 Fill in `.env`:
 
-- `SUPABASE_URL` / `SUPABASE_ANON_KEY` — same values as the project root `.env`
-  (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`).
+- `API_URL` — the local CRM API, same as the project root `.env`'s `VITE_API_URL`
+  (e.g. `http://localhost:3001`). The main API server (`server/index.js`) must be running.
 - `PORT` — default `4000`.
 - `ALLOWED_ORIGINS` — your Vite dev origin, e.g. `http://localhost:5173`.
 

@@ -1,3 +1,4 @@
+import { uuid } from '../../../lib/uuid';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, Trash2, Wand2, Loader2, Calendar, Link2, AlertTriangle, RefreshCw, ChevronDown } from 'lucide-react';
 import Modal from '../../../app/components/Modal';
@@ -22,7 +23,7 @@ interface Props {
   onClose: () => void;
 }
 
-const uuid = () => crypto.randomUUID();
+const uuid = () => uuid();
 const hasSteps = (p: unknown): p is RelationshipPath =>
   !!p && Array.isArray((p as RelationshipPath).steps) && (p as RelationshipPath).steps.length > 0;
 

@@ -20,6 +20,35 @@ function isValidUUID(s: string): boolean {
   return UUID_RE.test(s);
 }
 
+// Common human-readable columns to try, in priority order, when a lookup row's
+// configured label column is empty/null — so a lookup ALWAYS shows text, never a
+// raw GUID, as long as any name-like column has a value.
+const FALLBACK_LABEL_COLUMNS = [
+  'full_name', 'name', 'account_name', 'topic', 'title', 'subject',
+  'display_name', 'label', 'email', 'first_name', 'last_name',
+];
+
+/**
+ * Pick the best display string for a lookup row: the configured column first, then
+ * common name-like columns, never returning a value that is itself a UUID (which
+ * would just be another opaque id). Returns '' when the row has no usable text.
+ */
+export function pickLookupLabel(row: Record<string, unknown>, preferredCol: string): string {
+  const asText = (v: unknown): string => {
+    if (v == null) return '';
+    const s = String(v).trim();
+    return s && !isValidUUID(s) ? s : '';
+  };
+  const primary = asText(row[preferredCol]);
+  if (primary) return primary;
+  for (const col of FALLBACK_LABEL_COLUMNS) {
+    if (col === preferredCol) continue;
+    const v = asText(row[col]);
+    if (v) return v;
+  }
+  return '';
+}
+
 const LOOKUP_SEARCH_CONFIG: Record<string, { table: string; pk: string; labelField: string; searchField?: string; noIsDeleted?: boolean }> = {
   accounts:      { table: 'account',      pk: 'account_id',      labelField: 'account_name' },
   contacts:      { table: 'contact',      pk: 'contact_id',      labelField: 'full_name' },
@@ -126,6 +155,10 @@ export function LookupField({
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [localLabel, setLocalLabel] = useState<string | null>(null);
+  // True once we've attempted to resolve a label for the current value — lets us show a
+  // "(no name)" placeholder for a referenced record that has no name (or was deleted)
+  // instead of leaking a raw GUID, without flickering the placeholder before we've tried.
+  const [triedResolve, setTriedResolve] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -150,21 +183,29 @@ export function LookupField({
 
   const meta = resolvedMeta;
 
+  // Re-attempt resolution whenever the selected value changes.
+  useEffect(() => { setTriedResolve(false); }, [value]);
+
   useEffect(() => {
     if (!hasValue || displayLabel || localLabel || !meta) return;
     let cancelled = false;
+    // Select the whole row so we can fall back to any name-like column when the
+    // configured label column is empty — guarantees a lookup shows text, not a GUID.
     supabase
       .from(meta.table)
-      .select(`${meta.pk}, ${meta.labelCol}`)
+      .select('*')
       .eq(meta.pk, value)
       .maybeSingle()
       .then(({ data }) => {
-        if (cancelled || !data) return;
-        const lbl = String((data as unknown as Record<string, unknown>)[meta.labelCol] ?? '');
+        if (cancelled) return;
+        const lbl = data ? pickLookupLabel(data as Record<string, unknown>, meta.labelCol) : '';
         if (lbl) {
           setLocalLabel(lbl);
           onLabelChange?.(lbl);
         }
+        // Mark resolution attempted even when no label was found (empty/deleted row),
+        // so the display can fall back to a placeholder instead of the GUID.
+        setTriedResolve(true);
       });
     return () => { cancelled = true; };
   }, [hasValue, value, displayLabel, localLabel, meta]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -285,7 +326,12 @@ export function LookupField({
   );
 
   if (hasValue) {
-    const shownLabel = displayLabel || localLabel || value;
+    // Never surface a raw GUID: use the resolved label; if the value is a UUID we can't
+    // resolve to any text (referenced record has no name or was deleted), show a muted
+    // "(no name)" placeholder once resolution has been attempted.
+    const resolvedLabel = displayLabel || localLabel || (isValidUUID(value) ? '' : value);
+    const shownLabel = resolvedLabel || (triedResolve ? '(no name)' : '');
+    const isPlaceholder = !resolvedLabel;
     return (
       <>
         <div className={`flex items-center gap-1.5 ${ds.input} border ${borderCls} rounded-md bg-white`}>
@@ -298,13 +344,13 @@ export function LookupField({
                   onOpenRecord(entitySlug, value);
                 }
               }}
-              className="flex-1 text-[var(--link)] hover:underline truncate text-left leading-none"
-              title={`Open ${shownLabel}`}
+              className={`flex-1 hover:underline truncate text-left leading-none ${isPlaceholder ? 'text-slate-400 italic' : 'text-[var(--link)]'}`}
+              title={isPlaceholder ? 'Referenced record has no name' : `Open ${shownLabel}`}
             >
               {shownLabel}
             </a>
           ) : (
-            <span className="flex-1 text-slate-700 truncate leading-none">{shownLabel}</span>
+            <span className={`flex-1 truncate leading-none ${isPlaceholder ? 'text-slate-400 italic' : 'text-slate-700'}`}>{shownLabel}</span>
           )}
           {browseBtn}
           {!readonly && (

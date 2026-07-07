@@ -91,12 +91,27 @@ export default function ConditionValueInput({
   const isLookup = typeName === 'lookup';
   const isBool = typeName === 'boolean';
 
-  const choices: Option[] = Array.isArray(cfg?.choices) ? (cfg!.choices as Option[]) : [];
+  const inlineChoices: Option[] = Array.isArray(cfg?.choices) ? (cfg!.choices as Option[]) : [];
+  const optionSetName = (cfg?.option_set_name as string | undefined) ?? undefined;
+
+  // Boolean editor shows "Yes" by default (value || 'true' below), but that
+  // default lives only in the DOM until the user changes the dropdown — so a
+  // condition left untouched was saved with value = null while visibly reading
+  // "Yes". Commit the displayed default to state so what's shown is what's saved.
+  useEffect(() => {
+    if (isBool && value !== 'true' && value !== 'false') onChange('true');
+  }, [isBool, value]);
 
   const [statecodeOptions, setStatecodeOptions] = useState<Option[]>([]);
   const [statusreasonOptions, setStatusreasonOptions] = useState<Option[]>([]);
+  const [optionSetOptions, setOptionSetOptions] = useState<Option[]>([]);
   const [lookupOptions, setLookupOptions] = useState<Option[]>([]);
   const [lookupLoading, setLookupLoading] = useState(false);
+
+  // Choice fields store either inline choices (config_json.choices) or a named
+  // option set (config_json.option_set_name). Load the latter from the option-set
+  // tables so the value editor shows labels, not the raw stored code.
+  const choices: Option[] = inlineChoices.length > 0 ? inlineChoices : optionSetOptions;
 
   useEffect(() => {
     if (!field) return;
@@ -121,6 +136,31 @@ export default function ConditionValueInput({
         );
     }
   }, [field?.field_definition_id, isStatecodeField, isStatusreasonField]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!isChoice || inlineChoices.length > 0 || !optionSetName) {
+      setOptionSetOptions([]);
+      return;
+    }
+    (async () => {
+      const { data: os } = await supabase
+        .from('option_set')
+        .select('option_set_id')
+        .eq('name', optionSetName)
+        .maybeSingle();
+      if (cancelled || !os) return;
+      // Resolve labels regardless of is_active so codes never leak.
+      const { data } = await supabase
+        .from('option_set_value')
+        .select('value, display_label')
+        .eq('option_set_id', os.option_set_id)
+        .order('sort_order');
+      if (cancelled) return;
+      setOptionSetOptions((data ?? []).map((r: { value: string | number; display_label: string }) => ({ value: String(r.value), label: r.display_label })));
+    })();
+    return () => { cancelled = true; };
+  }, [isChoice, optionSetName, inlineChoices.length]);
 
   useEffect(() => {
     let cancelled = false;
