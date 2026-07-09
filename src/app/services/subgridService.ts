@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase';
 import { getTableColumns } from './recordService';
+import { resolveOptionSetLabel } from './displayResolver';
 
 export interface SubgridColumn {
   key: string;
@@ -223,6 +224,10 @@ export interface ViewDrivenColumn {
   lookupTable?: string;
   lookupLabelField?: string;
   lookupPk?: string;
+  /** For choice/option-set columns backed by a named option set (field_definition.option_set_id). */
+  optionSetId?: string;
+  /** For inline-choice columns: the choices stored directly in config_json.choices. */
+  inlineChoices?: { value: string; label: string }[];
 }
 
 export const viewColumnCache = new Map<string, ViewDrivenColumn[]>();
@@ -239,7 +244,7 @@ export async function fetchViewColumnsForSubgrid(viewId: string): Promise<ViewDr
 
   const { data, error } = await supabase
     .from('view_column')
-    .select('*, field_definition(logical_name, physical_column_name, display_name, field_type(name), lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name, primary_key_column))')
+    .select('*, field_definition(logical_name, physical_column_name, display_name, option_set_id, config_json, field_type(name), lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name, primary_key_column))')
     .eq('view_id', viewId)
     .eq('is_hidden', false)
     .order('display_order');
@@ -260,6 +265,14 @@ export async function fetchViewColumnsForSubgrid(viewId: string): Promise<ViewDr
       sortable: row.is_sortable as boolean,
       width: row.width as number | null,
     };
+
+    // Choice / option-set columns store a raw code (e.g. "1"); capture the metadata
+    // needed to resolve it to a label (named option set, or inline choices from config_json).
+    const optionSetId = fd?.option_set_id as string | null | undefined;
+    if (optionSetId) col.optionSetId = optionSetId;
+    const inlineChoices = (fd?.config_json as Record<string, unknown> | null)?.choices as
+      { value: string; label: string }[] | undefined;
+    if (Array.isArray(inlineChoices) && inlineChoices.length > 0) col.inlineChoices = inlineChoices;
 
     if (fieldTypeName === 'lookup' && lookupEntity) {
       const table = lookupEntity.physical_table_name as string;
@@ -473,14 +486,41 @@ export async function deleteSubgridRecordByRelDef(
   if (error) throw error;
 }
 
+/** Turn one raw cell value into its choice label(s) using a value→label map.
+ *  Handles both single values and multi-choice values stored as a JSON array string. */
+function mapChoiceValue(rawVal: unknown, labelMap: Record<string, string>): string | null {
+  if (rawVal == null || rawVal === '') return null;
+
+  let vals: string[] | null = null;
+  if (Array.isArray(rawVal)) {
+    vals = (rawVal as unknown[]).map(String).filter(Boolean);
+  } else if (typeof rawVal === 'string') {
+    const s = rawVal.trim();
+    if (s.startsWith('[')) {
+      try { vals = (JSON.parse(s) as unknown[]).map(String).filter(Boolean); } catch { /* single value */ }
+    }
+  }
+
+  if (vals !== null) {
+    const labels = vals.map((v) => labelMap[v] ?? v).filter(Boolean);
+    return labels.length > 0 ? labels.join(', ') : null;
+  }
+  return labelMap[String(rawVal)] ?? null;
+}
+
 export async function resolveSubgridLookups(
   rows: SubgridRow[],
   columns: ViewDrivenColumn[],
 ): Promise<SubgridRow[]> {
+  if (rows.length === 0) return rows;
+
   const lookupCols = columns.filter(
     (c) => c.fieldType === 'lookup' && c.lookupTable && c.lookupLabelField && c.lookupPk,
   );
-  if (lookupCols.length === 0 || rows.length === 0) return rows;
+  // Choice / option-set columns that carry a resolvable value→label source.
+  const choiceCols = columns.filter((c) => c.optionSetId || (c.inlineChoices && c.inlineChoices.length > 0));
+
+  if (lookupCols.length === 0 && choiceCols.length === 0) return rows;
 
   const resolved = await Promise.all(
     lookupCols.map(async (col) => {
@@ -508,6 +548,38 @@ export async function resolveSubgridLookups(
     lookupMaps.set(col.key, map);
   }
 
+  // Build value→label maps for every choice column. Inline choices resolve locally;
+  // named option sets resolve from option_set_value (cached inside resolveOptionSetLabel).
+  const choiceMaps = new Map<string, Record<string, string>>();
+  await Promise.all(
+    choiceCols.map(async (col) => {
+      const map: Record<string, string> = {};
+      if (col.inlineChoices) {
+        for (const ch of col.inlineChoices) map[String(ch.value)] = ch.label;
+      }
+      if (col.optionSetId) {
+        const rawValues = [...new Set(
+          rows.flatMap((r) => {
+            const v = r[col.key];
+            if (v == null || v === '') return [];
+            if (Array.isArray(v)) return (v as unknown[]).map(String);
+            const s = String(v).trim();
+            if (s.startsWith('[')) {
+              try { return (JSON.parse(s) as unknown[]).map(String); } catch { /* single value */ }
+            }
+            return [s];
+          }),
+        )];
+        await Promise.all(rawValues.map(async (rv) => {
+          if (map[rv]) return;
+          const label = await resolveOptionSetLabel(col.optionSetId!, rv);
+          if (label) map[rv] = label;
+        }));
+      }
+      choiceMaps.set(col.key, map);
+    }),
+  );
+
   return rows.map((row) => {
     const patched: Record<string, unknown> = {};
     for (const [colKey, map] of lookupMaps) {
@@ -515,6 +587,10 @@ export async function resolveSubgridLookups(
       if (fkVal && typeof fkVal === 'string' && map[fkVal]) {
         patched[colKey] = map[fkVal];
       }
+    }
+    for (const [colKey, map] of choiceMaps) {
+      const label = mapChoiceValue(row[colKey], map);
+      if (label) patched[colKey] = label;
     }
     return Object.keys(patched).length > 0 ? { ...row, ...patched } : row;
   });

@@ -125,6 +125,7 @@ export default function StatecodeSelect({
       {open && dropPos && createPortal(
         <div
           ref={dropdownRef}
+          data-overlay-portal=""
           style={{ position: 'absolute', top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 9999 }}
           className="bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden"
         >

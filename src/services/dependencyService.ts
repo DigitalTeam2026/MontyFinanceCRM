@@ -118,7 +118,6 @@ export async function checkColumnDependencies(
     checkColumnInForms(entityDefinitionId, fieldDefinitionId, deps),
     checkColumnInBusinessRules(entityDefinitionId, fieldLogicalName, deps),
     checkColumnInProcessFlows(entityDefinitionId, fieldLogicalName, deps),
-    checkColumnInWorkflows(entityDefinitionId, fieldLogicalName, deps),
     checkColumnInColumnSecurity(entityLogicalName, fieldLogicalName, deps),
   ]);
 
@@ -315,47 +314,6 @@ async function checkColumnInProcessFlows(
   }
 }
 
-async function checkColumnInWorkflows(
-  entityDefinitionId: string,
-  fieldLogicalName: string,
-  deps: Dependency[],
-) {
-  const { data: workflows } = await supabase
-    .from('workflow_definition')
-    .select('workflow_id, name, trigger_conditions')
-    .eq('entity_definition_id', entityDefinitionId)
-    .is('deleted_at', null);
-
-  for (const wf of workflows ?? []) {
-    const trigStr = JSON.stringify(wf.trigger_conditions ?? '');
-    if (trigStr.includes(fieldLogicalName)) {
-      deps.push({
-        type: 'workflow',
-        name: wf.name,
-        location: 'Trigger conditions',
-        reason: `Field "${fieldLogicalName}" is referenced in the workflow trigger`,
-      });
-      continue;
-    }
-
-    const { data: steps } = await supabase
-      .from('workflow_step')
-      .select('step_id, name, config_json')
-      .eq('workflow_id', wf.workflow_id);
-
-    for (const step of steps ?? []) {
-      const stepStr = JSON.stringify(step.config_json ?? '');
-      if (stepStr.includes(fieldLogicalName)) {
-        deps.push({
-          type: 'workflow',
-          name: wf.name,
-          location: `Step: ${step.name}`,
-          reason: `Field "${fieldLogicalName}" is referenced in this workflow step`,
-        });
-      }
-    }
-  }
-}
 
 async function checkColumnInColumnSecurity(
   entityLogicalName: string,
@@ -393,7 +351,6 @@ export async function checkEntityDependencies(
     checkEntityInNavigation(entityLogicalName, deps),
     checkEntityInSecurityRoles(entityLogicalName, deps),
     checkEntityInProcessFlows(entityDefinitionId, deps),
-    checkEntityInWorkflows(entityDefinitionId, deps),
   ]);
 
   return { canDelete: deps.length === 0, dependencies: deps };
@@ -548,22 +505,3 @@ async function checkEntityInProcessFlows(
   }
 }
 
-async function checkEntityInWorkflows(
-  entityDefinitionId: string,
-  deps: Dependency[],
-) {
-  const { data: workflows } = await supabase
-    .from('workflow_definition')
-    .select('workflow_id, name')
-    .eq('entity_definition_id', entityDefinitionId)
-    .is('deleted_at', null);
-
-  for (const wf of workflows ?? []) {
-    deps.push({
-      type: 'workflow',
-      name: wf.name,
-      location: 'Workflow definition',
-      reason: 'This workflow is triggered by or acts on the entity',
-    });
-  }
-}

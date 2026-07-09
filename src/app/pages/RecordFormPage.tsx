@@ -69,7 +69,6 @@ import { evaluateRules, applyRuleStateToValues, getRuleMessages } from '../servi
 import type { ProcessRuleContext, RuleRuntime } from '../services/businessRulesEngine';
 import { useCurrentUserName } from '../hooks/useCurrentUserName';
 import { mergeStageVisibilityIntoRuleState } from '../services/stageValidationService';
-import { runStageAutomations } from '../services/stageAutomationService';
 import { resolveProcessFlowForRecord, loadProcessFlowById, invalidateFlowCacheById, resolveRuntimePath, filterLoadedFlowForEntity, getEntityFormIdForFlow } from '../services/processFlowEngine';
 import type { LoadedProcessFlow } from '../services/processFlowEngine';
 import { fetchProcessFlowsForEntity, switchRecordProcessFlow, updateRecordActiveStage } from '../../services/processFlowService';
@@ -738,7 +737,27 @@ function CollapsibleSection({
             const rs = ruleState.fields[control.field_logical_name ?? ''];
 
             if (control.control_type === 'subgrid' && control.subgrid_config) {
-              if (!recordId) return null;
+              // Before the record is saved there is no parent id to attach related
+              // rows to, so the grid can't be functional yet. Rather than hide it
+              // entirely (which makes users think the form has no grid), show the
+              // grid's header with a clear "save first" hint so it's visible from the
+              // moment the form opens.
+              if (!recordId) {
+                const gridLabel = control.label_override ?? control.field_display_name ?? 'Related records';
+                return (
+                  <div key={control.id} className={`${control.column_span === 2 ? 'col-span-2' : ''}`}>
+                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-100 bg-slate-50">
+                        <span className="text-[13px] font-semibold text-slate-700">{gridLabel}</span>
+                      </div>
+                      <div className="flex flex-col items-center justify-center gap-1.5 py-8 px-4 text-center">
+                        <p className="text-[12px] font-medium text-slate-500">Save the record to add related items</p>
+                        <p className="text-[11px] text-slate-400">This grid becomes available once the record has been saved.</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
               const configKey = control.subgrid_config.related_entity_name;
 
               if (configKey === 'opportunity_contacts') {
@@ -2148,7 +2167,7 @@ export default function RecordFormPage({
     checkLeadHasRelatedOpp(currentId);
   }, [entity, lookupEntitySlugMap, crmUsers, checkLeadHasRelatedOpp, gateFlow]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleStageChangeAsync = useCallback(async (fromStage: string, toStage: string, finished = false, completedStageIds?: string[]) => {
+  const handleStageChangeAsync = useCallback(async (_fromStage: string, toStage: string, finished = false, completedStageIds?: string[]) => {
     const currentRecordId = resolvedRecordIdRef.current;
     if (!currentRecordId || formReadonly) return;
     setStageGateErrors(null);
@@ -2198,13 +2217,6 @@ export default function RecordFormPage({
         ...completedPatch,
       };
       await doSave(savePayload);
-
-      if (!finished) {
-        const result = await runStageAutomations(entity, fromStage, toStage, valuesRef.current);
-        if (Object.keys(result.fieldPatches).length > 0) {
-          setValues((prev) => ({ ...prev, ...result.fieldPatches }));
-        }
-      }
       await refreshFullRecord();
     } catch (err) {
       console.error('handleStageChangeAsync ERROR:', err);

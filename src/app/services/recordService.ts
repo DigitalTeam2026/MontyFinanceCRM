@@ -4,7 +4,7 @@ import { ENTITY_DEFINITION_ID } from '../types';
 import type { FormDefinition } from '../../types/form';
 import type { BusinessRule } from '../../types/businessRule';
 import { createNotification } from './notificationService';
-import { runFlowsV2ForEvent } from './workflowDispatchV2';
+import { dispatchAutomationForEvent } from './automation/dispatch';
 import { provisionRecordStorage } from '../../services/documentService';
 import {
   hasNonNullMonetaryValue,
@@ -644,7 +644,9 @@ export async function saveRecord(
       }).catch(() => {});
     }
 
-    runFlowsV2ForEvent(entitySlug, 'on_update', id, saved, prevRecord).catch(() => {});
+    // Power Automation: detect matching rules and enqueue durable jobs (the
+    // server worker executes the actions). Best-effort; never blocks the save.
+    dispatchAutomationForEvent(entitySlug, 'update', id, saved, prevRecord, userId);
 
     return saved;
   } else {
@@ -703,7 +705,8 @@ export async function saveRecord(
       }
     }
 
-    runFlowsV2ForEvent(entitySlug, 'on_create', created[pk] as string, created, null).catch(() => {});
+    // Power Automation: detect + enqueue on create (before = null).
+    dispatchAutomationForEvent(entitySlug, 'create', created[pk] as string, created, null, userId);
 
     // Eagerly provision the record's storage folder (best-effort; no-op when the
     // entity has no Document Location configured or the file server is offline).

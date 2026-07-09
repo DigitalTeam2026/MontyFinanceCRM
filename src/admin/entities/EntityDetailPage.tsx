@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   ChevronRight, Database, Layers, GitFork, FileText, LayoutList,
-  Zap, RefreshCw, Settings, Pencil, Trash2, Lock,
+  Zap, RefreshCw, Pencil, Trash2, Lock,
   ToggleLeft, ToggleRight, ChevronDown, ChevronUp, ExternalLink, Table2,
   AlertTriangle, Wrench,
 } from 'lucide-react';
@@ -12,7 +12,6 @@ import { fetchFormsForEntity } from '../../services/formService';
 import { fetchViewsForEntity } from '../../services/viewService';
 import { fetchRulesForEntity } from '../../services/businessRuleService';
 import { fetchRelationshipsForEntity } from '../../services/relationshipService';
-import { fetchWorkflowsForEntity } from '../../services/workflowService';
 import { checkEntityDependencies } from '../../services/dependencyService';
 import type { DependencyResult } from '../../services/dependencyService';
 import { getSoftDeleteMeta, countDeletedRecords } from './services/recycleBinService';
@@ -28,7 +27,6 @@ interface EntityDetailPageProps {
   onNavigateForms: (entity: EntityDefinition) => void;
   onNavigateViews: (entity: EntityDefinition) => void;
   onNavigateRules: (entity: EntityDefinition) => void;
-  onNavigateWorkflows: (entity: EntityDefinition) => void;
   onNavigateData?: (entity: EntityDefinition) => void;
   onNavigateRecycleBin?: (entity: EntityDefinition) => void;
   onNavigateNavigation?: () => void;
@@ -40,7 +38,6 @@ interface Counts {
   forms: number | null;
   views: number | null;
   rules: number | null;
-  workflows: number | null;
 }
 
 export default function EntityDetailPage({
@@ -52,14 +49,13 @@ export default function EntityDetailPage({
   onNavigateForms,
   onNavigateViews,
   onNavigateRules,
-  onNavigateWorkflows,
   onNavigateData,
   onNavigateRecycleBin,
   onNavigateNavigation,
 }: EntityDetailPageProps) {
   const [counts, setCounts] = useState<Counts>({
     columns: null, relationships: null, forms: null,
-    views: null, rules: null, workflows: null,
+    views: null, rules: null,
   });
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -83,13 +79,12 @@ export default function EntityDetailPage({
   const loadCounts = useCallback(async () => {
     setLoading(true);
     try {
-      const [fields, rels, forms, views, rules, workflows] = await Promise.all([
+      const [fields, rels, forms, views, rules] = await Promise.all([
         fetchFieldsForEntity(id).catch(() => []),
         fetchRelationshipsForEntity(id).catch(() => []),
         fetchFormsForEntity(id).catch(() => []),
         fetchViewsForEntity(id).catch(() => []),
         fetchRulesForEntity(id).catch(() => []),
-        fetchWorkflowsForEntity(id).catch(() => []),
       ]);
       setCounts({
         columns: fields.length,
@@ -97,7 +92,6 @@ export default function EntityDetailPage({
         forms: forms.length,
         views: views.length,
         rules: rules.length,
-        workflows: workflows.length,
       });
     } finally {
       setLoading(false);
@@ -371,13 +365,6 @@ export default function EntityDetailPage({
               count={counts.rules}
               loading={loading}
               onClick={() => onNavigateRules(currentEntity)}
-            />
-            <SubAreaLink
-              icon={<Settings size={14} />}
-              label="Workflows"
-              count={counts.workflows}
-              loading={loading}
-              onClick={() => onNavigateWorkflows(currentEntity)}
             />
           </SubAreaCard>
 

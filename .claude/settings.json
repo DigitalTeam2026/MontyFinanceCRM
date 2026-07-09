@@ -4,7 +4,17 @@
       "Read(//c/c/Users/habib.serhan/Desktop/Monty Finance CRM/src/**)",
       "Bash(grep -E \"\\\\.\\(ts|tsx|js\\)$\")",
       "Bash(npx tsc *)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "PowerShell($svc = Get-CimInstance Win32_Service -Filter \"Name='MontyFinanceAPI'\"; $svc.PathName; Write-Output '--- proc 8048 cwd/exe ---'; \\(Get-Process -Id 8048\\).Path)",
+      "PowerShell(& C:\\\\nssm.exe get MontyFinanceAPI Application)",
+      "PowerShell(& C:\\\\nssm.exe get MontyFinanceAPI AppDirectory)",
+      "PowerShell(& C:\\\\nssm.exe get MontyFinanceAPI AppParameters)",
+      "PowerShell(& C:\\\\nssm.exe get MontyFinanceAPI AppStdout)",
+      "PowerShell(& C:\\\\nssm.exe get MontyFinanceAPI AppStderr)",
+      "Bash(node -e ' *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\dev\\.claude\\projects\\c--Monty-Finance-CRM-MontyFinanceCRM\\memory"
     ]
   }
 }

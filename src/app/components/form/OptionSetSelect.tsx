@@ -148,6 +148,7 @@ export default function OptionSetSelect({
     ? createPortal(
         <div
           ref={dropdownRef}
+          data-overlay-portal=""
           style={{
             position: 'absolute',
             top: dropPos.top,

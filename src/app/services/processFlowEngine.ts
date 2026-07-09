@@ -782,11 +782,16 @@ export function evaluateConditionBranch(
 
   const evalLeaf = (field: string, operator: string, value: string | null): boolean => {
     const fieldVal = sourceValues[field];
+    // A choice/option-set value can hold MULTIPLE selected codes as a comma-separated list, so
+    // `eq` means "field is ANY of these" and `neq` means "field is NONE of these". A single value
+    // yields a one-element list, so this is identical to plain equality for existing conditions.
+    const valList = value == null ? [] : String(value).split(',').filter((s) => s.trim() !== '');
+    const inSet = valList.some((cv) => String(fieldVal ?? '') === cv);
     switch (operator) {
       case 'not_empty': return fieldVal != null && String(fieldVal).trim() !== '';
       case 'empty':     return fieldVal == null || String(fieldVal).trim() === '';
-      case 'eq':        return String(fieldVal ?? '') === String(value ?? '');
-      case 'neq':       return String(fieldVal ?? '') !== String(value ?? '');
+      case 'eq':        return valList.length ? inSet : String(fieldVal ?? '') === String(value ?? '');
+      case 'neq':       return valList.length ? !inSet : String(fieldVal ?? '') !== String(value ?? '');
       case 'gt':        return Number(fieldVal) > Number(value);
       case 'gte':       return Number(fieldVal) >= Number(value);
       case 'lt':        return Number(fieldVal) < Number(value);
@@ -867,32 +872,61 @@ export function resolveRuntimePath(
   values: RecordData,
   relatedValues?: Map<string, RecordData>,
 ): ProcessStage[] {
-  const conditions = pf.activeStages.filter((s) => s.component_type === 'condition');
+  const active = pf.activeStages; // already display_order-sorted
+  const hasConditions = active.some((s) => s.component_type === 'condition');
+  if (!hasConditions) return active;
 
-  if (conditions.length === 0) {
-    return pf.activeStages;
+  // The flow is a TREE, not a flat list: trunk stages (the main line) run in display_order and
+  // terminate at a condition; each condition forks into a YES/NO branch, and branch stages chain
+  // onward via branch_yes_stage_id. To show ONLY the path the record's values select, we WALK the
+  // tree from the trunk head, evaluating each condition and following just the winning branch.
+  // (The old code returned every non-condition stage minus a single losing node, so every branch's
+  // stages piled into one long bar — 3 stages became 16+.)
+  const activeIds = new Set(active.map((s) => s.process_stage_id));
+  const byId = (id: string | null | undefined): ProcessStage | null =>
+    id && activeIds.has(id) ? (pf.stageById.get(id) ?? null) : null;
+
+  // Branch targets: any active stage pointed at by a condition's YES/NO branch OR by a branch
+  // continuation (a plain stage's branch_yes). These are reached only by walking INTO a branch,
+  // so they are not part of the main trunk. Whatever remains is the trunk, in display_order.
+  const branchTargetIds = new Set<string>();
+  for (const s of active) {
+    if (byId(s.branch_yes_stage_id)) branchTargetIds.add(s.branch_yes_stage_id!);
+    if (byId(s.branch_no_stage_id)) branchTargetIds.add(s.branch_no_stage_id!);
   }
+  const trunk = active.filter((s) => !branchTargetIds.has(s.process_stage_id));
+  const trunkNextOf = new Map<string, ProcessStage | null>();
+  for (let i = 0; i < trunk.length; i++) trunkNextOf.set(trunk[i].process_stage_id, trunk[i + 1] ?? null);
 
-  // Map each branch-exclusive stage ID to whether it should be shown
-  const excludedStageIds = new Set<string>();
+  const path: ProcessStage[] = [];
+  const visited = new Set<string>();
+  let node: ProcessStage | null = trunk[0] ?? active[0] ?? null;
+  let onTrunk = true; // false once we descend into a condition branch (branches don't rejoin the trunk)
+  const maxHops = active.length + 4;
 
-  for (const condStage of conditions) {
-    const yesId = condStage.branch_yes_stage_id;
-    const noId = condStage.branch_no_stage_id;
-    const result = evaluateConditionBranch(pf, condStage.stage_key, values, relatedValues);
+  for (let hop = 0; node && hop < maxHops; hop++) {
+    if (visited.has(node.process_stage_id)) break; // cycle guard
+    visited.add(node.process_stage_id);
 
-    if (result) {
-      // Exclude the losing branch
-      const losingId = result.process_stage_id === yesId ? noId : yesId;
-      if (losingId) excludedStageIds.add(losingId);
-    } else {
-      // Cannot evaluate — show both branches so user can see all possibilities
+    if (node.component_type === 'condition') {
+      // Follow ONLY the branch whose predicate the record satisfies. A null winner means the
+      // winning branch is empty (or the condition is unconfigured) → the path simply ends here.
+      node = evaluateConditionBranch(pf, node.stage_key, values, relatedValues);
+      onTrunk = false;
+      continue;
     }
+
+    // Plain stage — part of the resolved path.
+    path.push(node);
+
+    // Next hop: a branch continuation (branch_yes on a plain stage) wins; otherwise, while still on
+    // the trunk, step to the next trunk node by display_order; otherwise this branch tail ends.
+    const cont = byId(node.branch_yes_stage_id);
+    if (cont) { node = cont; onTrunk = false; continue; }
+    node = onTrunk ? (trunkNextOf.get(node.process_stage_id) ?? null) : null;
   }
 
-  return pf.activeStages.filter(
-    (s) => s.component_type !== 'condition' && !excludedStageIds.has(s.process_stage_id),
-  );
+  return path;
 }
 
 export function mergeStageVisibilityIntoRuleState(

@@ -27,6 +27,7 @@ const fs = require("fs");
 const path = require("path");
 const { hashPassword, verifyPassword, signToken, verifyToken, TOKEN_TTL_MS } = require("./auth");
 const totp = require("./totp");
+const { startAutomationWorker } = require("./automationWorker");
 
 const app = express();
 
@@ -1449,4 +1450,6 @@ ensureAuthSchema()
     app.listen(port, "0.0.0.0", () => {
       console.log(`Local API running on port ${port}`);
     });
+    // Power Automation: drain the automation_job queue (send_email, etc.).
+    startAutomationWorker(pool);
   });

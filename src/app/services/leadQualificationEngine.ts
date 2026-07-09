@@ -217,6 +217,13 @@ export async function buildQualifyPreview(
   const accountValues = buildPhysicalRecord(allMappings, 'account', leadValues, ACCOUNT_LOGICAL_TO_PHYSICAL);
   const contactValues = buildPhysicalRecord(allMappings, 'contact', leadValues, CONTACT_LOGICAL_TO_PHYSICAL);
   const opportunityValues = buildPhysicalRecord(allMappings, 'opportunity', leadValues, OPPORTUNITY_LOGICAL_TO_PHYSICAL);
+  // Reflect the lead's inherited lookups in the preview, mirroring executeQualifyLead
+  // (a newly-created account/contact would replace these at execution time).
+  if (leadValues['account_id']) opportunityValues['account_id'] = leadValues['account_id'];
+  if (leadValues['contact_id']) opportunityValues['primary_contact_id'] = leadValues['contact_id'];
+  if (!opportunityValues['product_id'] && leadValues['product_id']) {
+    opportunityValues['product_id'] = leadValues['product_id'];
+  }
 
   const missingRequired: { entity: string; field: string }[] = [];
   for (const m of allMappings) {
@@ -379,9 +386,19 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
 
   if (createOpportunity) {
     const oppPhys = buildPhysicalRecord(allMappings, 'opportunity', leadValues, OPPORTUNITY_LOGICAL_TO_PHYSICAL);
+    // Carry the lead's linked lookups onto the opportunity BY ID. A newly-created
+    // account/contact wins; otherwise fall back to the record already linked on the
+    // lead. This mirrors what already worked for Product (via the field mapping) and
+    // fixes Account/Contact showing blank when no new record is created — a lookup
+    // column needs the related row's id, never the name a field mapping might copy.
     const resolvedAccountId = accountId ?? (leadValues['account_id'] as string | null) ?? null;
     if (resolvedAccountId) oppPhys['account_id'] = resolvedAccountId;
-    if (contactId) oppPhys['primary_contact_id'] = contactId;
+    const resolvedContactId = contactId ?? (leadValues['contact_id'] as string | null) ?? null;
+    if (resolvedContactId) oppPhys['primary_contact_id'] = resolvedContactId;
+    // Inherit the lead's product only when a mapping didn't already set one.
+    if (!oppPhys['product_id'] && leadValues['product_id']) {
+      oppPhys['product_id'] = leadValues['product_id'];
+    }
 
     if (requalOpportunityAction === 'update_existing' && updateOpportunityId) {
       const updatePayload: Record<string, unknown> = { ...oppPhys, modified_at: new Date().toISOString(), modified_by: userId };

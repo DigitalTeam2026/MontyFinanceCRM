@@ -24,8 +24,9 @@ export type SnapshotTable =
   | 'process_flow_transition' | 'nav_area' | 'nav_group' | 'nav_item' | 'dashboard'
   | 'dashboard_widget' | 'dashboard_role_assignment' | 'option_set' | 'option_set_value'
   | 'statecode_definition' | 'status_reason_definition' | 'relationship_definition'
-  | 'lead_qualification_rule' | 'lead_qualification_field_mapping' | 'workflow_definition'
-  | 'workflow_step' | 'digital_rule' | 'digital_rule_condition' | 'digital_rule_action';
+  | 'lead_qualification_rule' | 'lead_qualification_field_mapping'
+  | 'automation_rule' | 'automation_rule_action'
+  | 'digital_rule' | 'digital_rule_condition' | 'digital_rule_action';
 
 type Snapshot = Partial<Record<SnapshotTable, unknown[]>>;
 

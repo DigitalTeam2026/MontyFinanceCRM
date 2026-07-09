@@ -184,6 +184,7 @@ export default function ProductPickerSelect({ value, onChange, isReadonly = fals
       {open && createPortal(
         <div
           ref={dropdownRef}
+          data-overlay-portal=""
           style={dropdownStyle}
           className="bg-white border border-slate-200 rounded-lg shadow-xl flex flex-col overflow-hidden"
         >

@@ -36,17 +36,24 @@ export default defineConfig(({ mode }) => {
       exclude: ['lucide-react'],
     },
     build: {
-      // Raise the warning ceiling — the remaining large chunks (echarts, xlsx) are
-      // now lazy-loaded on demand, so they no longer block initial paint.
+      // Raise the warning ceiling — every remaining large chunk is lazy-loaded on
+      // demand (AdminStudio only in /admin, echarts only when a dashboard opens,
+      // xlsx only on import/export), so none of them block initial paint.
+      //
+      // echarts is imported via echarts/core in VisualRenderer with only the chart
+      // types/components the dashboards use registered (echarts.use([...])), which
+      // trims that shared chunk from ~1.3MB to ~820KB. The single chunk still above
+      // 900KB is AdminStudio (~1.4MB) — an inherently large, admin-only lazy route;
+      // splitting it further is over-engineering for a bundle regular users never load.
       //
       // We deliberately do NOT use manualChunks here. The app's lazy-import
       // boundaries (AdminStudio, DashboardViewer, the import modal, and the dynamic
       // import('xlsx') in xlsxExport) already let Rollup split echarts/xlsx/admin
       // into separate chunks attributed to those lazy routes. Forcing named vendor
-      // chunks instead made Rollup hoist a heavy library (echarts ≈385KB gzip) into
-      // the entry's modulepreload, downloading it eagerly for every user — the exact
-      // opposite of what we want.
-      chunkSizeWarningLimit: 900,
+      // chunks instead made Rollup hoist a heavy library into the entry's
+      // modulepreload, downloading it eagerly for every user — the opposite of what
+      // we want.
+      chunkSizeWarningLimit: 1450,
     },
   };
 });

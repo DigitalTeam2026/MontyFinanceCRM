@@ -15,7 +15,7 @@ import FieldManagementPage from './fields/FieldManagementPage';
 import FormManagementPage from './forms/FormManagementPage';
 import ViewManagementPage from './views/ViewManagementPage';
 import BusinessRulesPage from './rules/BusinessRulesPage';
-import WorkflowsPage from './workflows/WorkflowsPage';
+import PowerAutomationPage from './automationrules/PowerAutomationPage';
 import SecurityManagementPage from './security/SecurityManagementPage';
 import NavigationPage from './navigation/NavigationPage';
 import CurrenciesPage from './currencies/CurrenciesPage';
@@ -287,11 +287,10 @@ export default function AdminStudio() {
         onBack: entityState.selectedEntity ? backToEntityDetail : undefined,
       };
     }
-    if (activeModule === 'workflows') {
+    if (activeModule === 'automationrules') {
       return {
-        title: entityCtxLabel ? `Workflows - ${entityCtxLabel}` : 'Workflows',
-        subtitle: entityCtxLabel ? `Automations for ${entityCtxLabel}` : 'Automate processes triggered by record events',
-        onBack: entityState.selectedEntity ? backToEntityDetail : undefined,
+        title: 'Power Automation',
+        subtitle: 'Automation rules — when a record changes, run actions',
       };
     }
     if (activeModule === 'security') {
@@ -416,7 +415,6 @@ export default function AdminStudio() {
             onNavigateForms={(e) => navigateEntitySubArea('forms', e)}
             onNavigateViews={(e) => navigateEntitySubArea('views', e)}
             onNavigateRules={(e) => navigateEntitySubArea('rules', e)}
-            onNavigateWorkflows={(e) => navigateEntitySubArea('workflows', e)}
             onNavigateData={(e) => setEntityState({ view: 'data', selectedEntity: e })}
             onNavigateRecycleBin={(e) => setEntityState({ view: 'recycle', selectedEntity: e })}
             onNavigateNavigation={() => { setActiveModule('navigation'); setEntityState({ view: 'list' }); }}
@@ -471,7 +469,7 @@ export default function AdminStudio() {
     if (activeModule === 'rules') {
       return <BusinessRulesPage preselectedEntityId={entityState.selectedEntity?.entity_definition_id} />;
     }
-    if (activeModule === 'workflows') return <WorkflowsPage />;
+    if (activeModule === 'automationrules') return <PowerAutomationPage />;
     if (activeModule === 'security') return <SecurityManagementPage />;
     if (activeModule === 'navigation') return <NavigationPage />;
     if (activeModule === 'currencies') return <CurrenciesPage />;

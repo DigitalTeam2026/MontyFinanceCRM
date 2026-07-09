@@ -8,6 +8,7 @@ import {
   Layers, X, GripVertical, Trash2,
   Check, Pencil, Loader2, Star, StarOff, Link2, Building2,
   ArrowLeftRight, ShieldCheck, Tag, ListChecks, Pin, Search,
+  Copy, ClipboardPaste, ChevronDown,
 } from 'lucide-react';
 import { useToast } from '../../app/context/ToastContext';
 import type {
@@ -142,12 +143,20 @@ function ConditionGroupEditor({ group, onChange, fields, entityId, depth = 0, va
             {r.operator !== 'empty' && r.operator !== 'not_empty' && (() => {
               const f = fields.find((ff) => ff.logical_name === r.field);
               const ftype = f?.field_type?.name ?? 'text';
-              const cfg = f?.config_json as Record<string, unknown> | null;
               if (f && (ftype === 'lookup' || ftype === 'owner')) {
                 return <div className="flex-1 min-w-[9rem]"><ConditionLookupValueInput field={f} value={r.value} hideLabel onResolved={(val, label) => registerLabel(`${r.field}::${val}`, label)} onChange={(v) => setRule(i, { ...r, value: v })} /></div>;
               }
-              if (f && (ftype === 'choice' || ftype === 'optionset') && (cfg?.is_statecode_field || cfg?.is_statusreason_field) && entityId) {
+              if (f && (ftype === 'choice' || ftype === 'multi_choice' || ftype === 'optionset') && entityId) {
                 return <div className="flex-1 min-w-[9rem]"><ConditionChoiceValueInput field={f} entityDefId={entityId} value={r.value} hideLabel onResolved={(val, label) => registerLabel(`${r.field}::${val}`, label)} onChange={(v) => setRule(i, { ...r, value: v })} /></div>;
+              }
+              if (f && ftype === 'boolean') {
+                return (
+                  <FilterSelect value={r.value || ''} onChange={(e) => setRule(i, { ...r, value: e.target.value })} className={`${selCls} flex-1 min-w-[6rem]`}>
+                    <option value="">-- Select --</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </FilterSelect>
+                );
               }
               return <input value={r.value} onChange={(e) => setRule(i, { ...r, value: e.target.value })} placeholder="value" className={`${selCls} flex-1 min-w-[6rem]`} />;
             })()}
@@ -214,6 +223,13 @@ function ConditionChoiceValueInput({
   const cfg = field.config_json as Record<string, unknown> | null;
   const isStatecode = !!cfg?.is_statecode_field;
   const isStatusReason = !!cfg?.is_statusreason_field;
+  // A regular choice field stores its options EITHER inline (config_json.choices)
+  // OR as a named option set (config_json.option_set_name) — resolve both so the
+  // value editor shows labels, not the raw stored code. See filter-condition-label-resolution.
+  const inlineChoices: { value: string; label: string }[] = Array.isArray(cfg?.choices)
+    ? (cfg!.choices as Record<string, unknown>[]).map((c) => ({ value: String(c.value), label: String(c.label ?? c.value) }))
+    : [];
+  const optionSetName = (cfg?.option_set_name as string | undefined) ?? undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -249,18 +265,74 @@ function ConditionChoiceValueInput({
               };
             }));
           }
+        } else if (inlineChoices.length > 0) {
+          if (!cancelled) setOptions(inlineChoices);
+        } else if (optionSetName) {
+          const { data: os } = await supabase
+            .from('option_set')
+            .select('option_set_id')
+            .eq('name', optionSetName)
+            .maybeSingle();
+          if (os) {
+            // Resolve labels regardless of is_active so codes never leak.
+            const { data } = await supabase
+              .from('option_set_value')
+              .select('value, display_label')
+              .eq('option_set_id', os.option_set_id)
+              .order('sort_order');
+            if (!cancelled) {
+              setOptions((data ?? []).map((d: Record<string, unknown>) => ({
+                value: String(d.value),
+                label: String(d.display_label),
+              })));
+            }
+          } else if (!cancelled) {
+            setOptions([]);
+          }
+        } else if (!cancelled) {
+          setOptions([]);
         }
       } catch { /* fallback to empty */ }
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [entityDefId, isStatecode, isStatusReason]);
+  }, [entityDefId, isStatecode, isStatusReason, optionSetName, inlineChoices.length]);
 
-  // Report the readable label for the current value up to the condition summary.
+  // Multi-select: the value is a comma-separated list of option codes (a single value stays a
+  // plain code, so old single-value conditions keep working unchanged). Empty string = nothing
+  // selected. Option-set codes are numeric/short with no commas, so comma is a safe separator.
+  const selected = value ? value.split(',').filter(Boolean) : [];
+  const selectedSet = new Set(selected);
+  const toggle = (v: string) => {
+    const next = selectedSet.has(v)
+      ? selected.filter((x) => x !== v)
+      : [...selected, v];
+    // Preserve option order so the stored string is stable regardless of click order.
+    const ordered = options.map((o) => o.value).filter((ov) => next.includes(ov));
+    onChange(ordered.join(','));
+  };
+  const selectedLabels = options.filter((o) => selectedSet.has(o.value)).map((o) => o.label);
+  const summaryLabel = selected.length === 0
+    ? '-- Select --'
+    : (selectedLabels.join(', ') || `${selected.length} selected`);
+
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  // Report the readable (combined) label for the current selection up to the condition summary,
+  // so the live IF preview shows "Corporation, Partnership" instead of raw codes.
   useEffect(() => {
     if (!value) return;
-    const match = options.find((o) => o.value === value);
-    if (match) onResolved?.(value, match.label);
+    const label = options.filter((o) => selectedSet.has(o.value)).map((o) => o.label).join(', ');
+    if (label) onResolved?.(value, label);
   }, [value, options]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const inputCls = hideLabel
@@ -279,14 +351,40 @@ function ConditionChoiceValueInput({
   }
 
   return (
-    <div>
+    <div ref={wrapRef} className="relative">
       {!hideLabel && <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Value</label>}
-      <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} className={inputCls}>
-        <option value="">-- Select --</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </FilterSelect>
+      {/* Multi-select trigger: shows the chosen labels (or a placeholder) and opens a checkbox list.
+          Pick one for a single-value match, or several to match ANY of them (an "in" set). */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`${inputCls} flex items-center justify-between gap-1 text-left`}
+      >
+        <span className={`truncate ${selected.length === 0 ? 'text-gray-400' : 'text-gray-700'}`}>{summaryLabel}</span>
+        <ChevronDown size={12} className="text-gray-400 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 w-full min-w-[10rem] max-h-56 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+          {options.length === 0 ? (
+            <div className="px-2.5 py-1.5 text-xs text-gray-400">No options</div>
+          ) : options.map((o) => {
+            const checked = selectedSet.has(o.value);
+            return (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => toggle(o.value)}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-left hover:bg-amber-50"
+              >
+                <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${checked ? 'bg-amber-500 border-amber-500' : 'border-gray-300 bg-white'}`}>
+                  {checked && <Check size={9} className="text-white" strokeWidth={3} />}
+                </span>
+                <span className="truncate text-gray-700">{o.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -525,6 +623,10 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
   const [dropTarget, setDropTarget] = useState<'canvas' | null>(null);
   const [branchPickerState, setBranchPickerState] = useState<{ stageId: string; conditionId: string } | null>(null);
   const [addBranchState, setAddBranchState] = useState<{ conditionId: string; branch: 'yes' | 'no' } | null>(null);
+  // A copied stage/condition held in-memory (its config + buffered stage fields). While this is
+  // set the canvas is in "paste mode": every insertion point becomes a paste target so the user
+  // chooses where the copy lands.
+  const [clipboardStage, setClipboardStage] = useState<{ stage: ProcessStage; fields: ProcessStageField[] } | null>(null);
 
   const loadFlow = useCallback(async () => {
     setLoading(true);
@@ -895,20 +997,157 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
     setAddBranchState(null);
   };
 
+  // ─── Copy / Paste a stage ────────────────────────────────────────────────────
+  // Copy grabs a deep snapshot of the stage AND its buffered stage fields. Nothing is
+  // written yet — paste materializes a fresh node from the snapshot at the chosen spot.
+  const handleCopyStage = (stageId: string) => {
+    const stage = stages.find((s) => s.process_stage_id === stageId);
+    if (!stage) return;
+    const fields = stageFields.filter((f) => f.process_stage_id === stageId);
+    setClipboardStage({
+      stage: JSON.parse(JSON.stringify(stage)) as ProcessStage,
+      fields: JSON.parse(JSON.stringify(fields)) as ProcessStageField[],
+    });
+    showSuccess(`Copied "${stage.name}" — click any ＋ insertion point to paste it.`);
+  };
+
+  // Turn the clipboard snapshot into a brand-new node at `order`: fresh id + stage_key,
+  // a "(Copy)" name, no default/fixed flags, and NO inherited branch links (those point at
+  // existing nodes — a paste must start disconnected so it can't hijack another node's wiring).
+  const materializePastedStage = (order: number): { stage: ProcessStage; fields: ProcessStageField[] } | null => {
+    if (!clipboardStage) return null;
+    const now = new Date().toISOString();
+    const newId = uuid();
+    const src = clipboardStage.stage;
+    const type = src.component_type ?? 'stage';
+    const stage: ProcessStage = {
+      ...src,
+      process_stage_id: newId,
+      process_flow_id: flow.process_flow_id,
+      name: `${src.name} (Copy)`,
+      stage_key: `${type}_${Date.now()}`,
+      display_order: order,
+      is_default: false,
+      is_fixed: false,
+      branch_yes_stage_id: null,
+      branch_no_stage_id: null,
+      created_at: now,
+      modified_at: now,
+    };
+    const fields: ProcessStageField[] = clipboardStage.fields.map((f) => ({
+      ...f,
+      psf_id: uuid(),
+      process_stage_id: newId,
+      process_flow_id: flow.process_flow_id,
+    }));
+    return { stage, fields };
+  };
+
+  // Paste the copy immediately BEFORE `beforeStageId` — same connection re-wiring as
+  // insertComponentBefore, so it slots cleanly into the main line OR any Yes/No branch.
+  const pasteStageBefore = (beforeStageId: string) => {
+    if (!clipboardStage) return;
+    const before = stages.find((s) => s.process_stage_id === beforeStageId);
+    if (!before) return;
+    const insertOrder = before.display_order;
+
+    let predId: string | null = null;
+    let predSlot: 'yes' | 'no' | null = null;
+    for (const s of stages) {
+      if (s.branch_yes_stage_id === beforeStageId) { predId = s.process_stage_id; predSlot = 'yes'; break; }
+      if (s.branch_no_stage_id === beforeStageId) { predId = s.process_stage_id; predSlot = 'no'; break; }
+    }
+    const beforeIsBranchTarget = predId !== null;
+
+    const made = materializePastedStage(insertOrder);
+    if (!made) return;
+    const { stage: created, fields: newFields } = made;
+    const newId = created.process_stage_id;
+    // Keep `before` attached after the pasted node so the line never breaks.
+    if (created.component_type === 'condition' || beforeIsBranchTarget) {
+      created.branch_yes_stage_id = beforeStageId;
+    }
+
+    const next = [...stages, created].map((s) => {
+      if (s.process_stage_id === newId) return created;
+      let base = s;
+      if (predId && predSlot && s.process_stage_id === predId) {
+        base = predSlot === 'yes'
+          ? { ...s, branch_yes_stage_id: newId }
+          : { ...s, branch_no_stage_id: newId };
+      }
+      return base.display_order >= insertOrder ? { ...base, display_order: base.display_order + 1 } : base;
+    });
+    setStages(next);
+    setStageFields((prev) => [...prev, ...newFields]);
+    setSelectedStageId(newId);
+    setClipboardStage(null);
+    markDirty();
+  };
+
+  // Paste at the end of the main line (respecting the trunk-condition guard, exactly like a drop).
+  const pasteStageAtEnd = () => {
+    if (!clipboardStage) return;
+    const copyIsStage = (clipboardStage.stage.component_type ?? 'stage') === 'stage';
+    if (copyIsStage) {
+      const trunkCondition = findTrunkCondition();
+      if (trunkCondition) { pasteStageBefore(trunkCondition.process_stage_id); return; }
+    }
+    const made = materializePastedStage(nextDisplayOrder());
+    if (!made) return;
+    const { stage: created, fields: newFields } = made;
+    setStages((prev) => [...prev, created]);
+    setStageFields((prev) => [...prev, ...newFields]);
+    setSelectedStageId(created.process_stage_id);
+    setClipboardStage(null);
+    markDirty();
+  };
+
+  // Paste into a Yes/No branch — `nodeId` is the condition (empty branch) OR the last stage of a
+  // branch (continuation); either way we point that node's branch slot at the pasted node.
+  const pasteStageInBranch = (nodeId: string, branch: 'yes' | 'no') => {
+    if (!clipboardStage) return;
+    const made = materializePastedStage(nextDisplayOrder());
+    if (!made) return;
+    const { stage: created, fields: newFields } = made;
+    const updates = branch === 'yes'
+      ? { branch_yes_stage_id: created.process_stage_id }
+      : { branch_no_stage_id: created.process_stage_id };
+    setStages((prev) => [
+      ...prev.map((s) => s.process_stage_id === nodeId ? { ...s, ...updates } : s),
+      created,
+    ]);
+    setStageFields((prev) => [...prev, ...newFields]);
+    setSelectedStageId(created.process_stage_id);
+    setClipboardStage(null);
+    markDirty();
+  };
+
   const handleDeleteStage = (stageId: string) => {
     const stage = stages.find((s) => s.process_stage_id === stageId);
     if (stage?.is_fixed) {
       showError('The first stage is fixed and cannot be deleted while the process exists.');
       return;
     }
-    // Remove the stage, drop it from the buffered working model, and null any branch pointers
-    // that referenced it (so the published snapshot never carries a dangling FK).
+    // SPLICE the stage out of its branch line instead of cutting the link: re-point whoever
+    // pointed at it to ITS successor, so the branch tail stays connected on the same row. A plain
+    // stage's successor is its single continuation (branch_yes_stage_id); a condition has two
+    // outgoing branches (yes/no), so there is no single successor to splice to — for a condition
+    // we fall back to nulling. Without this splice, deleting a node in the middle/front of a branch
+    // chain orphans the tail: with no owner it resolves to row 0 and collapses onto the main flow
+    // line ("the rest go to the first one I copied from"). A null successor here also correctly
+    // ends the branch when the deleted node was the last one on its line.
+    const successorId = stage && stage.component_type !== 'condition'
+      ? (stage.branch_yes_stage_id ?? null)
+      : null;
+    // Remove the stage, drop it from the buffered working model, and re-point (or null) any branch
+    // pointers that referenced it (so the published snapshot never carries a dangling FK).
     setStages((prev) => prev
       .filter((s) => s.process_stage_id !== stageId)
       .map((s) => ({
         ...s,
-        branch_yes_stage_id: s.branch_yes_stage_id === stageId ? null : s.branch_yes_stage_id,
-        branch_no_stage_id: s.branch_no_stage_id === stageId ? null : s.branch_no_stage_id,
+        branch_yes_stage_id: s.branch_yes_stage_id === stageId ? successorId : s.branch_yes_stage_id,
+        branch_no_stage_id: s.branch_no_stage_id === stageId ? successorId : s.branch_no_stage_id,
       })));
     // If this stage was the flow's default, clear that pointer too.
     if (flow.default_stage_id === stageId) setFlow((prev) => ({ ...prev, default_stage_id: null }));
@@ -992,7 +1231,7 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
   ];
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
+    <div className="flex flex-col flex-1 min-h-0 bg-gray-50">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 bg-white shrink-0">
         <div className="flex items-center gap-3">
@@ -1096,6 +1335,12 @@ export default function ProcessFlowEditorPage({ flow: initialFlow, onBack, onFlo
                   dropTarget={dropTarget}
                   setDropTarget={setDropTarget}
                   draggingType={draggingType}
+                  clipboardStage={clipboardStage}
+                  onCopyStage={handleCopyStage}
+                  onPasteBefore={pasteStageBefore}
+                  onPasteAtEnd={pasteStageAtEnd}
+                  onPasteInBranch={pasteStageInBranch}
+                  onCancelPaste={() => setClipboardStage(null)}
                 />
               </div>
 
@@ -1265,6 +1510,12 @@ interface BpfCanvasProps {
   dropTarget: 'canvas' | null;
   setDropTarget: (v: 'canvas' | null) => void;
   draggingType: React.MutableRefObject<ComponentType | null>;
+  clipboardStage: { stage: ProcessStage; fields: ProcessStageField[] } | null;
+  onCopyStage: (stageId: string) => void;
+  onPasteBefore: (beforeStageId: string) => void;
+  onPasteAtEnd: () => void;
+  onPasteInBranch: (nodeId: string, branch: 'yes' | 'no') => void;
+  onCancelPaste: () => void;
 }
 
 const ENTITY_COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#0891b2', '#ea580c', '#0d9488'];
@@ -1280,7 +1531,9 @@ type ConnectorDef = { d: string; color: string; dashed?: boolean; label?: string
 function BpfCanvas({
   flow, stages, entities, selectedStageId, onSelect, onDelete, onSetDefault, onMove, onRename,
   onDropType, onInsertBefore, onAddToBranch, onDropInBranch, onClearBranch, dropTarget, setDropTarget, draggingType,
+  clipboardStage, onCopyStage, onPasteBefore, onPasteAtEnd, onPasteInBranch, onCancelPaste,
 }: BpfCanvasProps) {
+  const pasteMode = clipboardStage !== null;
   const containerRef = useRef<HTMLDivElement>(null);
   const [branchDrop, setBranchDrop] = useState<{ conditionId: string; branch: 'yes' | 'no' } | null>(null);
   // The id of the trunk node a dragged component would be inserted BEFORE (gap-drop hover).
@@ -1713,6 +1966,33 @@ function BpfCanvas({
         </div>
       </div>
 
+      {/* Paste-mode banner — appears while a stage is on the clipboard, guiding the user to
+          click any insertion point to drop the copy there. */}
+      {pasteMode && (
+        <div className="flex items-center justify-between gap-3 px-3 py-2 border-b border-emerald-200 bg-emerald-50 shrink-0">
+          <div className="flex items-center gap-2 text-emerald-800 min-w-0">
+            <ClipboardPaste size={14} className="shrink-0" />
+            <span className="text-xs font-medium truncate">
+              Copied <strong>{clipboardStage!.stage.name}</strong> — click any <span className="font-semibold">＋</span> insertion point to paste it where you want.
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={onPasteAtEnd}
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors"
+            >
+              <ClipboardPaste size={11} /> Paste at end
+            </button>
+            <button
+              onClick={onCancelPaste}
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <X size={11} /> Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Canvas area */}
       <div
         ref={containerRef}
@@ -1891,6 +2171,7 @@ function BpfCanvas({
                       canMoveRight={!isLast && !stage.is_fixed}
                       onSelect={() => onSelect(stage.process_stage_id)}
                       onDelete={() => onDelete(stage.process_stage_id)}
+                      onCopy={() => onCopyStage(stage.process_stage_id)}
                       onSetDefault={() => onSetDefault(stage.process_stage_id)}
                       onMoveLeft={() => onMove(stage.process_stage_id, 'left')}
                       onMoveRight={() => onMove(stage.process_stage_id, 'right')}
@@ -1918,8 +2199,9 @@ function BpfCanvas({
                   return (
                     <div
                       key={cond.process_stage_id + z.branch}
-                      className="absolute"
+                      className={`absolute ${pasteMode ? 'cursor-pointer' : ''}`}
                       style={{ left: z.x, top: z.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
+                      onClick={pasteMode ? (e) => { e.stopPropagation(); onPasteInBranch(cond.process_stage_id, z.branch); } : undefined}
                       onDragOver={(e) => {
                         if (!draggingType.current) return;
                         e.preventDefault();
@@ -1938,14 +2220,18 @@ function BpfCanvas({
                       }}
                     >
                       <div className={`w-full h-full rounded-xl border-2 border-dashed flex flex-col items-center justify-center text-center transition-colors ${
-                        active
+                        pasteMode
+                          ? (isYes ? 'border-emerald-400 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-red-400 bg-red-50 text-red-700 hover:bg-red-100')
+                          : active
                           ? (isYes ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-red-500 bg-red-50 text-red-700')
                           : (isYes ? 'border-emerald-300/70 bg-emerald-50/30 text-emerald-500' : 'border-red-300/70 bg-red-50/30 text-red-500')
                       }`}>
                         <span className={`text-[9px] font-bold uppercase tracking-wider ${isYes ? 'text-emerald-600' : 'text-red-600'}`}>{isYes ? 'YES' : 'NO'} branch</span>
-                        <Plus size={14} className="my-0.5" />
+                        {pasteMode ? <ClipboardPaste size={14} className="my-0.5" /> : <Plus size={14} className="my-0.5" />}
                         <span className="text-[10px] font-medium px-2 leading-tight">
-                          {active
+                          {pasteMode
+                            ? `Paste copy in ${isYes ? 'YES' : 'NO'} branch`
+                            : active
                             ? `Drop ${draggingType.current === 'condition' ? 'condition' : 'stage'} in ${isYes ? 'YES' : 'NO'} branch`
                             : 'Drop Stage / Condition'}
                         </span>
@@ -1989,8 +2275,8 @@ function BpfCanvas({
                     <div className={`w-4 h-0.5 ${isYes ? 'bg-emerald-300' : 'bg-red-300'}`} />
                     <button
                       type="button"
-                      title="Add a stage to this branch"
-                      onClick={(e) => { e.stopPropagation(); onDropInBranch(st.process_stage_id, 'yes', 'stage'); }}
+                      title={pasteMode ? 'Paste the copied stage in this branch' : 'Add a stage to this branch'}
+                      onClick={(e) => { e.stopPropagation(); pasteMode ? onPasteInBranch(st.process_stage_id, 'yes') : onDropInBranch(st.process_stage_id, 'yes', 'stage'); }}
                       onMouseDown={(e) => e.stopPropagation()}
                       className={`w-7 h-7 rounded-full border-2 border-dashed flex items-center justify-center transition-colors cursor-pointer select-none ${
                         active
@@ -1998,7 +2284,7 @@ function BpfCanvas({
                           : (isYes ? 'border-emerald-300 bg-white text-emerald-500 hover:border-emerald-400 hover:bg-emerald-50' : 'border-red-300 bg-white text-red-500 hover:border-red-400 hover:bg-red-50')
                       }`}
                     >
-                      <Plus size={14} />
+                      {pasteMode ? <ClipboardPaste size={13} /> : <Plus size={14} />}
                     </button>
                   </div>
                 );
@@ -2042,19 +2328,21 @@ function BpfCanvas({
                     style={{ left: pos.x + NODE_WIDTH, top: pos.y + NODE_HEIGHT / 2 - 14, height: 28 }}
                   >
                     {/* connector stub */}
-                    <div className="w-4 h-0.5 bg-gray-300" />
+                    <div className={`w-4 h-0.5 ${pasteMode ? 'bg-emerald-300' : 'bg-gray-300'}`} />
                     <button
                       type="button"
-                      title="Add a stage"
-                      onClick={() => onDropType('stage')}
+                      title={pasteMode ? 'Paste the copied stage here' : 'Add a stage'}
+                      onClick={() => pasteMode ? onPasteAtEnd() : onDropType('stage')}
                       onMouseDown={(e) => e.stopPropagation()}
                       className={`w-7 h-7 rounded-full border-2 border-dashed flex items-center justify-center transition-colors cursor-pointer select-none ${
-                        dropTarget === 'canvas'
+                        pasteMode
+                          ? 'border-emerald-400 bg-emerald-50 text-emerald-600 hover:border-emerald-500 hover:bg-emerald-100'
+                          : dropTarget === 'canvas'
                           ? 'border-blue-400 bg-blue-50 text-blue-600'
                           : 'border-blue-300 bg-white text-blue-400 hover:border-blue-400 hover:bg-blue-50'
                       }`}
                     >
-                      <Plus size={14} />
+                      {pasteMode ? <ClipboardPaste size={13} /> : <Plus size={14} />}
                     </button>
                   </div>
                 );
@@ -2091,16 +2379,18 @@ function BpfCanvas({
                   >
                     <button
                       type="button"
-                      title="Insert a stage here"
-                      onClick={(e) => { e.stopPropagation(); onInsertBefore(gap.beforeId, 'stage'); }}
+                      title={pasteMode ? 'Paste the copied stage here' : 'Insert a stage here'}
+                      onClick={(e) => { e.stopPropagation(); pasteMode ? onPasteBefore(gap.beforeId) : onInsertBefore(gap.beforeId, 'stage'); }}
                       onMouseDown={(e) => e.stopPropagation()}
                       className={`rounded-full border-2 border-dashed flex items-center justify-center transition-all cursor-pointer select-none ${
-                        active
+                        pasteMode
+                          ? 'w-7 h-7 border-emerald-400 bg-emerald-50 text-emerald-600 opacity-90 hover:opacity-100 hover:border-emerald-500 hover:bg-emerald-100'
+                          : active
                           ? 'w-8 h-8 border-blue-500 bg-blue-50 text-blue-600'
                           : 'w-5 h-5 border-blue-300/80 bg-white text-blue-400 opacity-60 hover:opacity-100 hover:w-7 hover:h-7 hover:border-blue-400 hover:bg-blue-50'
                       }`}
                     >
-                      <Plus size={active ? 16 : 12} />
+                      {pasteMode ? <ClipboardPaste size={13} /> : <Plus size={active ? 16 : 12} />}
                     </button>
                   </div>
                 );
@@ -2241,6 +2531,7 @@ interface StageNodeProps {
   branchLane?: 'yes' | 'no';
   onSelect: () => void;
   onDelete: () => void;
+  onCopy?: () => void;
   onSetDefault: () => void;
   onMoveLeft: () => void;
   onMoveRight: () => void;
@@ -2251,7 +2542,7 @@ interface StageNodeProps {
   noOpen?: boolean;
 }
 
-function StageNode({ stage, isSelected, isDefault, canMoveLeft, canMoveRight, entityColor, entityName, branchLane, onSelect, onDelete, onSetDefault, onMoveLeft, onMoveRight, onRename, onAddToBranch, onClearBranch, yesOpen, noOpen }: StageNodeProps) {
+function StageNode({ stage, isSelected, isDefault, canMoveLeft, canMoveRight, entityColor, entityName, branchLane, onSelect, onDelete, onCopy, onSetDefault, onMoveLeft, onMoveRight, onRename, onAddToBranch, onClearBranch, yesOpen, noOpen }: StageNodeProps) {
   const def = getComponentDef(stage.component_type ?? 'stage');
   const isTerminal = stage.stage_type !== 'active';
   const isEntityBoundary = !!stage.target_entity_id;
@@ -2385,6 +2676,15 @@ function StageNode({ stage, isSelected, isDefault, canMoveLeft, canMoveRight, en
 
         {/* Hover actions */}
         <div className="absolute -top-2.5 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
+          {onCopy && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onCopy(); }}
+              title="Copy this condition"
+              className="w-5 h-5 bg-white border border-gray-200 rounded-full flex items-center justify-center text-gray-400 hover:text-emerald-600 hover:border-emerald-300 shadow-sm transition-colors"
+            >
+              <Copy size={8} />
+            </button>
+          )}
           {!stage.is_fixed && (
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
@@ -2495,6 +2795,15 @@ function StageNode({ stage, isSelected, isDefault, canMoveLeft, canMoveRight, en
 
       {/* Hover actions */}
       <div className="absolute -top-2.5 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
+        {onCopy && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onCopy(); }}
+            title="Copy this stage"
+            className="w-5 h-5 bg-white border border-gray-200 rounded-full flex items-center justify-center text-gray-400 hover:text-emerald-600 hover:border-emerald-300 shadow-sm transition-colors"
+          >
+            <Copy size={8} />
+          </button>
+        )}
         {!isDefault && !stage.is_fixed && (
           <button
             onClick={(e) => { e.stopPropagation(); onSetDefault(); }}

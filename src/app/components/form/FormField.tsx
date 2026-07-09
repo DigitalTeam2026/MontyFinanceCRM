@@ -576,6 +576,7 @@ function MultiChoiceDropdown({
   const dropdown = open ? createPortal(
     <div
       ref={dropdownRef}
+      data-overlay-portal=""
       style={dropdownStyle}
       className="bg-white border border-slate-200 rounded-md shadow-xl overflow-auto max-h-52"
     >

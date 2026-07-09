@@ -36,7 +36,8 @@ export const CUSTOMIZATION_MODULES: CustomizationModule[] = [
   { key: 'relationships', label: 'Relationships', moduleRoute: 'relationships', tables: ['relationship_definition'] },
   { key: 'leadqualification', label: 'Lead Qualification',
     tables: ['lead_qualification_rule', 'lead_qualification_field_mapping'] },
-  { key: 'workflows', label: 'Workflows', moduleRoute: 'workflows', tables: ['workflow_definition', 'workflow_step'] },
+  { key: 'automation_rule', label: 'Power Automation', moduleRoute: 'automationrules',
+    tables: ['automation_rule', 'automation_rule_action'] },
   { key: 'digitalrules', label: 'Digital Rules', moduleRoute: 'digitalrules',
     tables: ['digital_rule', 'digital_rule_condition', 'digital_rule_action'] },
 ];

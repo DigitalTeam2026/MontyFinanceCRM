@@ -146,28 +146,15 @@ export async function fetchProcessFlowDraft(
   return data as { has_draft: boolean; draft_json: ProcessFlowDraft | null; draft_modified_at: string | null };
 }
 
-/** Publishes a fully id-resolved snapshot to the live flow via the admin Edge Function (atomic, server-side). */
+/** Publishes a fully id-resolved snapshot to the live flow via the SECURITY DEFINER
+ *  RPC (atomic, server-side). The RPC enforces system-admin access itself; the
+ *  local /api/rpc route resolves the caller from the Bearer token. */
 export async function publishProcessFlowDraft(flowId: string, snapshot: ProcessFlowDraft): Promise<void> {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
-  if (!token) throw new Error('Not authenticated');
-
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-process-flow`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify({ action: 'publish', flow_id: flowId, snapshot }),
+  const { error } = await supabase.rpc('publish_process_flow_draft', {
+    p_flow_id: flowId,
+    p_snapshot: snapshot,
   });
-  if (!res.ok) {
-    const raw = await res.text();
-    let body: { error?: string } = {};
-    try { body = JSON.parse(raw); } catch { /* non-JSON body */ }
-    throw new Error(body.error ?? `Publish failed: ${res.status} ${raw}`);
-  }
+  if (error) throw new Error(error.message ?? 'Publish failed');
 }
 
 export async function fetchFormsForEntity(entityDefinitionId: string): Promise<{ form_id: string; name: string; form_type: string; is_default: boolean }[]> {
@@ -185,24 +172,10 @@ export async function fetchFormsForEntity(entityDefinitionId: string): Promise<{
 }
 
 export async function softDeleteProcessFlow(flowId: string): Promise<void> {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
-  if (!token) throw new Error('Not authenticated');
-
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-process-flow`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      'Apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify({ action: 'soft_delete', flow_id: flowId }),
+  const { error } = await supabase.rpc('soft_delete_process_flow', {
+    p_flow_id: flowId,
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error ?? `Request failed: ${res.status}`);
-  }
+  if (error) throw new Error(error.message ?? 'Delete failed');
 }
 
 export async function setDefaultStage(flowId: string, stageId: string | null): Promise<void> {

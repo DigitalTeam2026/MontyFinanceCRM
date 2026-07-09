@@ -1,6 +1,20 @@
 import { useState, useEffect, useRef, Component, type ReactNode } from 'react';
-import ReactECharts from 'echarts-for-react';
+// Tree-shaken echarts: import only the chart types + components the dashboards
+// actually use, instead of the full `echarts-for-react` default (which pulls in
+// the entire echarts library, ~1.3MB). Register once via echarts.use(); the
+// core-based wrapper renders against this trimmed build.
+import ReactEChartsCore from 'echarts-for-react/lib/core';
+import * as echarts from 'echarts/core';
+import { BarChart, LineChart, PieChart, ScatterChart, FunnelChart, GaugeChart, TreemapChart } from 'echarts/charts';
+import { TooltipComponent, LegendComponent, GridComponent, MarkLineComponent } from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
 import DOMPurify from 'dompurify';
+
+echarts.use([
+  BarChart, LineChart, PieChart, ScatterChart, FunnelChart, GaugeChart, TreemapChart,
+  TooltipComponent, LegendComponent, GridComponent, MarkLineComponent,
+  CanvasRenderer,
+]);
 import { Loader2, AlertTriangle, Inbox, Lock, Check } from 'lucide-react';
 import type { DashboardVisual, DashboardDefinition, ThemeConfig, VisualFilter, RelatedFilter, SemanticQueryFilter, ButtonAction, OrderBySpec, SlicerBroadcastOpts } from '../types/dashboard';
 import { VISUAL_REGISTRY } from './registry';
@@ -178,7 +192,8 @@ function VisualBody({ visual, theme, rows, total, onSelect, highlight, getHighli
       ? rows.map((r) => ({ raw: rawOf(r, catKey), label: formatLabel(r[catKey]) }))
       : undefined;
     return (
-      <ReactECharts
+      <ReactEChartsCore
+        echarts={echarts}
         option={option} style={{ height: '100%', width: '100%' }} notMerge lazyUpdate
         onEvents={onSelect && catKey && catField ? {
           click: (p: { name?: string; dataIndex?: number; event?: { event?: MouseEvent } }) => {

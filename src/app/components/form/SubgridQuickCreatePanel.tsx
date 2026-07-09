@@ -80,6 +80,14 @@ export default function SubgridQuickCreatePanel({
   // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      // Field dropdowns (choice / option-set / status / product picker / multi-choice)
+      // and lookup dialogs render their menus through a React portal into
+      // document.body — i.e. OUTSIDE panelRef. Without this guard, clicking an option
+      // (a mousedown outside the panel) closes the panel BEFORE the selection commits,
+      // so e.g. the Card Varient value is discarded and the whole in-progress record is
+      // lost. Ignore any click that lands inside a portaled overlay.
+      if (target?.closest?.('[data-overlay-portal]')) return;
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         onClose();
       }

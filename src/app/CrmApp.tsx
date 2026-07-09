@@ -279,6 +279,16 @@ export default function CrmApp({
 
   const handleNewRecord = (formId?: string | null) => {
     if (creationCheck.blocked) return;
+    // The crm_user entity can't be created through the generic record form: a
+    // user needs a backing auth.users row + a hashed password, created atomically
+    // by POST /api/admin/users (server/index.js). The generic POST /api/crm_user
+    // path 500s. Redirect to Admin Studio → Security → Users, the only supported
+    // user-creation flow. Non-admins can't reach that surface, but they also lack
+    // create permission on crm_user, so this branch is effectively inert for them.
+    if (activeEntity === 'crm_user') {
+      window.location.hash = '#/studio/security';
+      return;
+    }
     // formId is only meaningful when it's a real id string (Save & New reuses the
     // current form). When this handler is wired directly as an onClick, React
     // passes the click event as the first arg — ignore anything that isn't a
