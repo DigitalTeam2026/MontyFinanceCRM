@@ -50,6 +50,22 @@ export interface SendEmailConfig {
   subject: string;               // template with {{tokens}}
   body: string;                  // template with {{tokens}} (HTML-escaped by default)
   attach_document?: boolean;     // attach a generate_document output from this rule
+  email_account_id?: string | null; // sender mailbox to send AS ([] = use the default account)
+}
+
+/** A configured sender mailbox the send_email action can send AS. */
+export interface AutomationEmailAccount {
+  account_id: string;
+  name: string;                  // label shown in the flow picker
+  from_address: string;          // mailbox UPN we send AS (the "on behalf" address)
+  provider: string;              // 'graph'
+  tenant_id: string | null;
+  client_id: string | null;
+  client_secret: string | null;
+  is_default: boolean;
+  enabled: boolean;
+  created_at: string;
+  modified_at: string;
 }
 
 export type ListRowsOperator =
@@ -90,12 +106,16 @@ export type AutomationActionConfig =
   | ListRowsConfig
   | Record<string, unknown>;
 
+/** When an action runs relative to the actions before it ("Configure run after"). */
+export type AutomationRunAfter = 'success' | 'failure' | 'always';
+
 export interface AutomationRuleAction {
   automation_rule_action_id: string;
   rule_id: string;
   sort_order: number;
   action_type: AutomationActionType;
   config: AutomationActionConfig;
+  run_after: AutomationRunAfter; // 'success' = run only if nothing before failed (default)
   created_at: string;
   modified_at: string;
 }

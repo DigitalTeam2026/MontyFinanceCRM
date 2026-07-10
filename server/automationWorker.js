@@ -13,7 +13,8 @@
 const fs = require("fs");
 const path = require("path");
 const { sendEmail } = require("./emailTransport");
-const { ruleMatches } = require("./ruleMatch");
+const { ruleMatches, conditionHolds } = require("./ruleMatch");
+const { resolveFieldDisplay, resolveLogicalRecordDisplay } = require("./labelResolver");
 const {
   resolveTokens, resolveValue, resolveEmailList, dedupeEmails, escapeHtml,
 } = require("./tokenResolver");
@@ -52,6 +53,29 @@ async function resolveRecipients(pool, config, after) {
   return [...out];
 }
 
+/**
+ * Resolve the sender mailbox for a send_email action. Returns the flow's chosen
+ * enabled account, else the default enabled account, else null (transport then
+ * falls back to GRAPH_* env / edge-fn / stub). Never throws.
+ */
+async function resolveSenderAccount(pool, accountId) {
+  try {
+    if (accountId) {
+      const r = await pool.query(
+        "select * from automation_email_account where account_id = $1 and enabled = true limit 1",
+        [accountId]
+      );
+      if (r.rows[0]) return r.rows[0];
+    }
+    const d = await pool.query(
+      "select * from automation_email_account where is_default = true and enabled = true limit 1"
+    );
+    return d.rows[0] || null;
+  } catch {
+    return null; // table missing or query failed — fall back to env/stub
+  }
+}
+
 // ── metadata resolution (logical → physical), cached ─────────────────────────
 
 const entityCache = new Map(); // logical_name -> entity_definition row
@@ -72,7 +96,7 @@ async function getEntity(pool, logical) {
 async function getFields(pool, entityDefId) {
   if (fieldCache.has(entityDefId)) return fieldCache.get(entityDefId);
   const r = await pool.query(
-    `select fd.logical_name, fd.physical_column_name, fd.lookup_entity_id, ft.name as type
+    `select fd.logical_name, fd.physical_column_name, fd.display_name, fd.lookup_entity_id, fd.config_json, ft.name as type
        from field_definition fd
        left join field_type ft on ft.field_type_id = fd.field_type_id
       where fd.entity_definition_id = $1 and fd.is_active = true and fd.deleted_at is null`,
@@ -109,6 +133,84 @@ const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 function quoteIdent(name) {
   if (!IDENT_RE.test(String(name))) throw new Error(`unsafe identifier: ${name}`);
   return `"${name}"`;
+}
+
+/**
+ * Authoritative AND-condition gate. Own-record conditions evaluate against the
+ * saved snapshot; related conditions ("<lookup>.<field>") follow the lookup to
+ * the related row and read its current value. Returns true if every condition
+ * holds. This is where related-record conditions actually get enforced (the
+ * client/enqueue matchers defer them — see ruleMatch conditionHolds).
+ */
+async function conditionsPass(pool, rule, job, after) {
+  let conds = rule.conditions;
+  if (typeof conds === "string") {
+    try { conds = JSON.parse(conds); } catch { conds = []; }
+  }
+  if (!Array.isArray(conds) || conds.length === 0) return true;
+
+  const entity = await getEntity(pool, job.record_table);
+  const fields = entity ? await getFields(pool, entity.entity_definition_id) : null;
+
+  for (const c of conds) {
+    if (!c || !c.field) continue;
+    if (!String(c.field).includes(".")) {
+      if (!conditionHolds(c, after)) return false; // own field
+      continue;
+    }
+    // Parent (polymorphic "regarding") record: "regarding.<relField>" — follow the
+    // note's regarding_entity_name + regarding_record_id to its parent row. This is
+    // how a Note rule conditions on the Lead/Opportunity it was created on.
+    if (String(c.field).startsWith("regarding.")) {
+      const relField = String(c.field).slice("regarding.".length);
+      const parentName = after ? after.regarding_entity_name : null;
+      const parentId = after ? after.regarding_record_id : null;
+      let actual = null;
+      if (parentName && parentId) {
+        const pe = await getEntity(pool, parentName);
+        if (pe) {
+          const pf = await getFields(pool, pe.entity_definition_id);
+          const col = pf.byLogical.get(relField)?.physical_column_name;
+          if (col) {
+            const r = await pool.query(
+              `select ${quoteIdent(col)} as v from ${quoteIdent(pe.physical_table_name)} where ${quoteIdent(pe.primary_key_column)} = $1 limit 1`,
+              [parentId]
+            );
+            actual = r.rows[0] ? r.rows[0].v : null;
+          }
+        }
+      }
+      if (!conditionHolds({ field: "v", operator: c.operator, value: c.value }, { v: actual })) return false;
+      continue;
+    }
+    // Related: <lookupLogical>.<relField>
+    const [lookupLogical, relField] = String(c.field).split(".");
+    const lf = fields && fields.byLogical.get(lookupLogical);
+    const relId = after ? after[lookupLogical] : null;
+    let actual = null;
+    if (lf && lf.lookup_entity_id && relId) {
+      const relEnt = (
+        await pool.query(
+          "select entity_definition_id, physical_table_name, primary_key_column from entity_definition where entity_definition_id = $1",
+          [lf.lookup_entity_id]
+        )
+      ).rows[0];
+      if (relEnt) {
+        const relFields = await getFields(pool, relEnt.entity_definition_id);
+        const col = relFields.byLogical.get(relField)?.physical_column_name;
+        if (col) {
+          const r = await pool.query(
+            `select ${quoteIdent(col)} as v from ${quoteIdent(relEnt.physical_table_name)} where ${quoteIdent(relEnt.primary_key_column)} = $1 limit 1`,
+            [relId]
+          );
+          actual = r.rows[0] ? r.rows[0].v : null;
+        }
+      }
+    }
+    // Reuse conditionHolds with a non-dotted synthetic field so it evaluates normally.
+    if (!conditionHolds({ field: "v", operator: c.operator, value: c.value }, { v: actual })) return false;
+  }
+  return true;
 }
 
 let chainNonce = 0;
@@ -174,6 +276,10 @@ const ACTIONS = {
       return { __skipped: true, reason: "no recipients", to: [], cc: [] };
     }
 
+    // Sender mailbox ("send on behalf"): the flow's chosen account, else the
+    // default account. Carries its own Graph credentials to the transport.
+    const account = await resolveSenderAccount(ctx.pool, config.email_account_id);
+
     const subject = resolveTokens(config.subject, ctx, false);
     let html = resolveTokens(config.body, ctx, true);
 
@@ -194,8 +300,13 @@ const ACTIONS = {
       }
     }
 
-    const result = await sendEmail({ to, cc, subject, html });
-    return { transport: result.transport, message_id: result.messageId, to, cc, subject };
+    const result = await sendEmail({ to, cc, subject, html, account });
+    return {
+      transport: result.transport,
+      message_id: result.messageId,
+      from: result.from || account?.from_address || null,
+      to, cc, subject,
+    };
   },
 
   async list_rows(ctx) {
@@ -206,10 +317,11 @@ const ACTIONS = {
     if (!entity) throw new Error(`list_rows: unknown source table ${c.source_table}`);
     const fields = await getFields(ctx.pool, entity.entity_definition_id);
 
-    // Columns (chosen logical names, else all active fields).
+    // Columns (chosen logical names, else all active fields). Carry field metadata
+    // so the emitted rows resolve codes→labels (these rows feed email bodies/tables).
     const cols = (Array.isArray(c.columns) && c.columns.length
-      ? c.columns.map((l) => ({ logical: l, physical: fields.byLogical.get(l)?.physical_column_name }))
-      : [...fields.byLogical.values()].map((f) => ({ logical: f.logical_name, physical: f.physical_column_name }))
+      ? c.columns.map((l) => { const f = fields.byLogical.get(l); return { logical: l, physical: f?.physical_column_name, meta: f }; })
+      : [...fields.byLogical.values()].map((f) => ({ logical: f.logical_name, physical: f.physical_column_name, meta: f }))
     ).filter((x) => x.physical);
     if (cols.length === 0) throw new Error("list_rows: no valid columns");
 
@@ -254,11 +366,13 @@ const ACTIONS = {
     sql += ` limit $${params.length}`;
 
     const res = await ctx.pool.query(sql, params);
-    const rows = res.rows.map((r) => {
+    const rows = await Promise.all(res.rows.map(async (r) => {
       const o = {};
-      for (const x of cols) o[x.logical] = r[x.physical];
+      await Promise.all(cols.map(async (x) => {
+        o[x.logical] = await resolveFieldDisplay(ctx.pool, x.meta, entity.entity_definition_id, r[x.physical]);
+      }));
       return o;
-    });
+    }));
     // __step tells processJob to publish this into ctx.steps for later actions.
     return { __step: stepName, step_name: stepName, count: rows.length, columns: cols.map((x) => x.logical), rows };
   },
@@ -331,9 +445,11 @@ const ACTIONS = {
     const fields = await getFields(ctx.pool, entity.entity_definition_id);
 
     // Columns: explicit config.columns (logical names), else all active fields.
+    // Carry the field metadata + display label so cells resolve codes→labels and the
+    // header row shows the display name, not the logical name.
     const cols = (Array.isArray(c.columns) && c.columns.length
-      ? c.columns.map((l) => ({ logical: l, physical: fields.byLogical.get(l)?.physical_column_name }))
-      : [...fields.byLogical.values()].map((f) => ({ logical: f.logical_name, physical: f.physical_column_name }))
+      ? c.columns.map((l) => { const f = fields.byLogical.get(l); return { logical: l, physical: f?.physical_column_name, meta: f, header: f?.display_name || l }; })
+      : [...fields.byLogical.values()].map((f) => ({ logical: f.logical_name, physical: f.physical_column_name, meta: f, header: f.display_name || f.logical_name }))
     ).filter((x) => x.physical);
     if (cols.length === 0) throw new Error("no exportable columns");
 
@@ -346,7 +462,11 @@ const ACTIONS = {
         )).rows
       : (await ctx.pool.query(`select ${selectList} from ${quoteIdent(entity.physical_table_name)} limit 5000`)).rows;
 
-    const headers = cols.map((x) => x.logical);
+    const headers = cols.map((x) => x.header);
+    // Resolve each cell's raw stored value to its label (choice/lookup/state/status/boolean).
+    const displayRows = await Promise.all(rows.map(async (r) =>
+      Promise.all(cols.map((x) => resolveFieldDisplay(ctx.pool, x.meta, entity.entity_definition_id, r[x.physical])))
+    ));
     const rawName = resolveTokens(c.filename || "export", ctx, false) || "export";
     const safeBase = (String(rawName).replace(/[^\w.-]+/g, "_").slice(0, 80)) || "export";
     const dir = path.join(__dirname, "storage", "documents");
@@ -356,13 +476,13 @@ const ACTIONS = {
 
     if (format === "xlsx") {
       const XLSX = require("xlsx"); // resolves from repo-root node_modules (no new dep)
-      const aoa = [headers, ...rows.map((r) => cols.map((x) => r[x.physical]))];
+      const aoa = [headers, ...displayRows];
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Export");
       XLSX.writeFile(wb, full);
     } else {
-      const csv = [headers.map(csvCell).join(","), ...rows.map((r) => cols.map((x) => csvCell(r[x.physical])).join(","))].join("\r\n");
+      const csv = [headers.map(csvCell).join(","), ...displayRows.map((r) => r.map(csvCell).join(","))].join("\r\n");
       fs.writeFileSync(full, csv, "utf8");
     }
     return { document_path: `/storage/documents/${fname}`, format, row_count: rows.length };
@@ -457,6 +577,13 @@ async function processJob(pool, job, opts = {}) {
     rule,
     after,
     recordUrl: recordUrlFor(job.record_table, job.record_id),
+    // Deep link to the PARENT record for polymorphic timeline rows (notes/emails
+    // carry regarding_entity_name + regarding_record_id) — used by {{record.regarding.url}}
+    // so "note created on an opportunity" emails can open the opportunity directly.
+    regardingUrl:
+      after && after.regarding_entity_name && after.regarding_record_id
+        ? recordUrlFor(after.regarding_entity_name, after.regarding_record_id)
+        : null,
     count: opts.batchCount || 1,
     steps: {}, // { <step_name>: { count, columns, rows } } — for {{steps.*}} tokens
   };
@@ -471,27 +598,86 @@ async function processJob(pool, job, opts = {}) {
     }
   }
 
+  // Resolve the triggering record's field codes → labels so {{record.<field>}} email
+  // tokens render "Active"/related-record names instead of raw codes/UUIDs. Non-fatal.
+  try {
+    const recEntity = await getEntity(pool, job.record_table);
+    if (recEntity) {
+      const recFields = await getFields(pool, recEntity.entity_definition_id);
+      ctx.afterDisplay = await resolveLogicalRecordDisplay(pool, recEntity.entity_definition_id, recFields, after);
+    }
+  } catch { /* fall back to raw values in tokenResolver */ }
+
+  // AND-condition gate (authoritative — includes related-record conditions the
+  // client deferred). Skip the job if the conditions no longer hold.
+  try {
+    if (!(await conditionsPass(pool, rule, job, after))) {
+      await markJob(pool, job.automation_job_id, {
+        status: "skipped",
+        finished_at: new Date(),
+        error: "conditions not met",
+      });
+      return;
+    }
+  } catch (e) {
+    console.error("[automation.worker] condition eval error:", e.message);
+    // On evaluation error, fall through and run (fail-open) rather than silently drop.
+  }
+
+  // Fresh slate per attempt: drop this job's non-succeeded logs so a retry (or the
+  // failure/always branches below) don't pile up duplicate failed/skipped rows.
+  // Succeeded rows are kept — they drive the `done` set and step rehydration above.
+  await pool.query(
+    "delete from automation_job_action_log where job_id = $1 and status <> 'succeeded'",
+    [job.automation_job_id]
+  );
+
+  // First error seen this run. Set once, never cleared — it decides the final job
+  // status AND which run_after branch each later action takes.
+  let firstError = null;
+  const logAction = (action, status, extra = {}) =>
+    pool.query(
+      `insert into automation_job_action_log
+         (job_id, action_id, action_type, sort_order, status, error, output, started_at, finished_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8, now())`,
+      [
+        job.automation_job_id,
+        action.automation_rule_action_id,
+        action.action_type,
+        action.sort_order,
+        status,
+        extra.error ?? null,
+        extra.output ?? null,
+        extra.started ?? new Date(),
+      ]
+    );
+
   try {
     for (const action of actions) {
       if (done.has(action.automation_rule_action_id)) continue;
+
+      // Power Automate "Configure run after": does this action run given whether
+      // an earlier action has already failed?
+      const runAfter = action.run_after || "success";
+      const shouldRun =
+        runAfter === "always" ? true : runAfter === "failure" ? !!firstError : !firstError;
+      if (!shouldRun) {
+        await logAction(action, "skipped", {
+          error: firstError
+            ? "skipped — an earlier action failed"
+            : "skipped — runs only if an earlier action fails",
+        });
+        continue;
+      }
 
       const handler = ACTIONS[action.action_type];
       const started = new Date();
 
       if (!handler) {
-        await pool.query(
-          `insert into automation_job_action_log
-             (job_id, action_id, action_type, sort_order, status, error, started_at, finished_at)
-           values ($1,$2,$3,$4,'skipped',$5,$6, now())`,
-          [
-            job.automation_job_id,
-            action.automation_rule_action_id,
-            action.action_type,
-            action.sort_order,
-            `action type "${action.action_type}" not implemented yet`,
-            started,
-          ]
-        );
+        await logAction(action, "skipped", {
+          error: `action type "${action.action_type}" not implemented yet`,
+          started,
+        });
         continue;
       }
 
@@ -501,20 +687,7 @@ async function processJob(pool, job, opts = {}) {
         // A handler may opt to SKIP (not fail) — e.g. send_email with no
         // recipients. Recorded as 'skipped'; the job continues + can succeed.
         if (output && output.__skipped) {
-          await pool.query(
-            `insert into automation_job_action_log
-               (job_id, action_id, action_type, sort_order, status, error, output, started_at, finished_at)
-             values ($1,$2,$3,$4,'skipped',$5,$6,$7, now())`,
-            [
-              job.automation_job_id,
-              action.automation_rule_action_id,
-              action.action_type,
-              action.sort_order,
-              output.reason || "skipped",
-              output,
-              started,
-            ]
-          );
+          await logAction(action, "skipped", { error: output.reason || "skipped", output, started });
           continue;
         }
 
@@ -523,38 +696,21 @@ async function processJob(pool, job, opts = {}) {
           ctx.steps[output.__step] = { count: output.count, columns: output.columns, rows: output.rows };
         }
 
-        await pool.query(
-          `insert into automation_job_action_log
-             (job_id, action_id, action_type, sort_order, status, output, started_at, finished_at)
-           values ($1,$2,$3,$4,'succeeded',$5,$6, now())`,
-          [
-            job.automation_job_id,
-            action.automation_rule_action_id,
-            action.action_type,
-            action.sort_order,
-            output || {},
-            started,
-          ]
-        );
+        await logAction(action, "succeeded", { output: output || {}, started });
       } catch (actErr) {
-        await pool.query(
-          `insert into automation_job_action_log
-             (job_id, action_id, action_type, sort_order, status, error, started_at, finished_at)
-           values ($1,$2,$3,$4,'failed',$5,$6, now())`,
-          [
-            job.automation_job_id,
-            action.automation_rule_action_id,
-            action.action_type,
-            action.sort_order,
-            String(actErr.message || actErr).slice(0, 1000),
-            started,
-          ]
-        );
-        throw actErr; // abort remaining actions; retry resumes here.
+        await logAction(action, "failed", {
+          error: String(actErr.message || actErr).slice(0, 1000),
+          started,
+        });
+        // Don't abort the run — later failure/always branches still need to fire.
+        // The job is marked failed after the loop; the retry re-runs this action.
+        if (!firstError) firstError = actErr;
       }
     }
 
-    // All actions done.
+    if (firstError) throw firstError;
+
+    // Every action that ran succeeded.
     await markJob(pool, job.automation_job_id, {
       status: "succeeded",
       finished_at: new Date(),

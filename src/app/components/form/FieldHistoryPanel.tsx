@@ -2,7 +2,8 @@ import FilterSelect from '../FilterSelect';
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Download, Clock } from 'lucide-react';
 import type { AppEntity } from '../../types';
-import { fetchFieldHistory, type FieldChangeEntry } from '../../services/recordService';
+import { fetchFieldHistory, getAppEntityDefinitionId, type FieldChangeEntry } from '../../services/recordService';
+import { loadEntityFieldCodeMeta, resolveFieldCode } from '../../services/fieldCodeResolver';
 import { useToast } from '../../context/ToastContext';
 import { supabase } from '../../../lib/supabase';
 import { getInitials } from '../../utils/initials';
@@ -45,7 +46,9 @@ function formatLabel(fieldName: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function displayValue(v: string, resolvedNames: Record<string, string>): string {
+function displayValue(v: string, resolvedNames: Record<string, string>, codeLabel?: string): string {
+  // A resolved choice/statecode/statusreason label always wins over the raw code.
+  if (codeLabel) return codeLabel;
   if (v === 'true') return 'Yes';
   if (v === 'false') return 'No';
   if (UUID_RE.test(v) && resolvedNames[v]) return resolvedNames[v];
@@ -107,6 +110,8 @@ export default function FieldHistoryPanel({ entity, recordId }: Props) {
   const [userMap, setUserMap] = useState<Record<string, string>>({});
   const [resolvedNames, setResolvedNames] = useState<Record<string, string>>({});
   const [resolvedEntity, setResolvedEntity] = useState<Record<string, string>>({});
+  // choice / statecode / statusreason codes resolved to labels, keyed by `${field_name}::${value}`.
+  const [codeLabels, setCodeLabels] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterField, setFilterField] = useState<string>('');
@@ -120,6 +125,26 @@ export default function FieldHistoryPanel({ entity, recordId }: Props) {
       const hist = await fetchFieldHistory(entity, recordId);
       const cleaned = hist.filter((e) => !HIDDEN_FIELDS.has(e.field_name));
       setEntries(cleaned);
+
+      // Resolve choice / statecode / statusreason codes → labels for this entity's fields
+      // so old→new values never show a raw "1"/"2" (on screen and in the CSV export).
+      const nextCodeLabels: Record<string, string> = {};
+      try {
+        const entDefId = await getAppEntityDefinitionId(entity);
+        if (entDefId) {
+          const codeMeta = await loadEntityFieldCodeMeta(entDefId);
+          await Promise.all(cleaned.map(async (e) => {
+            for (const val of [e.old_value, e.new_value]) {
+              if (val == null || val === '') continue;
+              const key = `${e.field_name}::${val}`;
+              if (nextCodeLabels[key] !== undefined) continue;
+              const lbl = await resolveFieldCode(codeMeta, e.field_name, val);
+              if (lbl) nextCodeLabels[key] = lbl;
+            }
+          }));
+        }
+      } catch { /* non-fatal — fall back to raw codes */ }
+      setCodeLabels(nextCodeLabels);
 
       // Resolve changing users to display names.
       const userIds = [...new Set(cleaned.map((e) => e.changed_by).filter((id): id is string => !!id))];
@@ -232,8 +257,8 @@ export default function FieldHistoryPanel({ entity, recordId }: Props) {
         formatTimestamp(e.changed_at),
         user,
         formatLabel(e.field_name),
-        e.old_value === null ? '' : displayValue(e.old_value, resolvedNames),
-        e.new_value === null ? '' : displayValue(e.new_value, resolvedNames),
+        e.old_value === null ? '' : displayValue(e.old_value, resolvedNames, codeLabels[`${e.field_name}::${e.old_value}`]),
+        e.new_value === null ? '' : displayValue(e.new_value, resolvedNames, codeLabels[`${e.field_name}::${e.new_value}`]),
       ].map(csvCell).join(','));
     }
     const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
@@ -386,6 +411,7 @@ export default function FieldHistoryPanel({ entity, recordId }: Props) {
                             entry={entry}
                             resolvedNames={resolvedNames}
                             resolvedEntity={resolvedEntity}
+                            codeLabels={codeLabels}
                           />
                         ))}
                       </div>
@@ -418,10 +444,12 @@ function FieldRow({
   entry,
   resolvedNames,
   resolvedEntity,
+  codeLabels,
 }: {
   entry: FieldChangeEntry;
   resolvedNames: Record<string, string>;
   resolvedEntity: Record<string, string>;
+  codeLabels: Record<string, string>;
 }) {
   return (
     <div
@@ -441,9 +469,9 @@ function FieldRow({
         {formatLabel(entry.field_name)}
       </span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
-        <HistoryValue raw={entry.old_value} side="old" resolvedNames={resolvedNames} resolvedEntity={resolvedEntity} />
+        <HistoryValue raw={entry.old_value} side="old" resolvedNames={resolvedNames} resolvedEntity={resolvedEntity} codeLabel={entry.old_value != null ? codeLabels[`${entry.field_name}::${entry.old_value}`] : undefined} />
         <span style={{ color: 'var(--muted)' }}>→</span>
-        <HistoryValue raw={entry.new_value} side="new" resolvedNames={resolvedNames} resolvedEntity={resolvedEntity} />
+        <HistoryValue raw={entry.new_value} side="new" resolvedNames={resolvedNames} resolvedEntity={resolvedEntity} codeLabel={entry.new_value != null ? codeLabels[`${entry.field_name}::${entry.new_value}`] : undefined} />
       </div>
     </div>
   );
@@ -454,11 +482,13 @@ function HistoryValue({
   side,
   resolvedNames,
   resolvedEntity,
+  codeLabel,
 }: {
   raw: string | null;
   side: 'old' | 'new';
   resolvedNames: Record<string, string>;
   resolvedEntity: Record<string, string>;
+  codeLabel?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -479,8 +509,9 @@ function HistoryValue({
     maxWidth: '100%',
   };
 
-  // Lookup reference → link to the record (navigable entities only).
-  if (UUID_RE.test(raw) && resolvedNames[raw]) {
+  // Lookup reference → link to the record (navigable entities only). A resolved
+  // choice/statecode/statusreason label takes precedence over lookup handling.
+  if (!codeLabel && UUID_RE.test(raw) && resolvedNames[raw]) {
     const label = resolvedNames[raw];
     const slug = NAVIGABLE_SLUG[resolvedEntity[raw] ?? ''];
     const linkStyle: React.CSSProperties = {
@@ -499,7 +530,7 @@ function HistoryValue({
     return <span style={linkStyle}>{label}</span>;
   }
 
-  const text = displayValue(raw, resolvedNames);
+  const text = displayValue(raw, resolvedNames, codeLabel);
   const isLong = text.length > LONG_TEXT;
   const shown = isLong && !expanded ? text.slice(0, LONG_TEXT) + '…' : text;
 

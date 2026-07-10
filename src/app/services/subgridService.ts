@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase';
 import { getTableColumns } from './recordService';
-import { resolveOptionSetLabel } from './displayResolver';
+import { resolveOptionSetLabel, resolveStateCodeLabel, resolveStatusReasonLabel } from './displayResolver';
 
 export interface SubgridColumn {
   key: string;
@@ -228,6 +228,11 @@ export interface ViewDrivenColumn {
   optionSetId?: string;
   /** For inline-choice columns: the choices stored directly in config_json.choices. */
   inlineChoices?: { value: string; label: string }[];
+  /** statecode/statusreason columns resolve their integer code via the definition
+   *  tables (statecode_definition / status_reason_definition), keyed by entity. */
+  statusKind?: 'statecode' | 'statusreason';
+  /** Owning entity's definition id — required to resolve statecode/statusreason codes. */
+  entityDefinitionId?: string;
 }
 
 export const viewColumnCache = new Map<string, ViewDrivenColumn[]>();
@@ -244,7 +249,7 @@ export async function fetchViewColumnsForSubgrid(viewId: string): Promise<ViewDr
 
   const { data, error } = await supabase
     .from('view_column')
-    .select('*, field_definition(logical_name, physical_column_name, display_name, option_set_id, config_json, field_type(name), lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name, primary_key_column))')
+    .select('*, field_definition(logical_name, physical_column_name, display_name, entity_definition_id, option_set_id, config_json, field_type(name), lookup_entity:entity_definition!lookup_entity_id(physical_table_name, primary_field_name, primary_key_column))')
     .eq('view_id', viewId)
     .eq('is_hidden', false)
     .order('display_order');
@@ -268,11 +273,18 @@ export async function fetchViewColumnsForSubgrid(viewId: string): Promise<ViewDr
 
     // Choice / option-set columns store a raw code (e.g. "1"); capture the metadata
     // needed to resolve it to a label (named option set, or inline choices from config_json).
+    const cfg = fd?.config_json as Record<string, unknown> | null;
     const optionSetId = fd?.option_set_id as string | null | undefined;
     if (optionSetId) col.optionSetId = optionSetId;
-    const inlineChoices = (fd?.config_json as Record<string, unknown> | null)?.choices as
-      { value: string; label: string }[] | undefined;
+    const inlineChoices = cfg?.choices as { value: string; label: string }[] | undefined;
     if (Array.isArray(inlineChoices) && inlineChoices.length > 0) col.inlineChoices = inlineChoices;
+
+    // statecode / statusreason columns carry no option set or inline choices — they
+    // resolve their integer code via the definition tables, keyed by entity. Detect
+    // from the config flags or the physical column name so the code never leaks raw.
+    if (cfg?.is_statecode_field || physicalCol === 'state_code') col.statusKind = 'statecode';
+    else if (cfg?.is_statusreason_field || physicalCol === 'status_reason') col.statusKind = 'statusreason';
+    if (col.statusKind) col.entityDefinitionId = fd?.entity_definition_id as string | undefined;
 
     if (fieldTypeName === 'lookup' && lookupEntity) {
       const table = lookupEntity.physical_table_name as string;
@@ -290,6 +302,46 @@ export async function fetchViewColumnsForSubgrid(viewId: string): Promise<ViewDr
 
   viewColumnCache.set(viewId, cols);
   return cols;
+}
+
+const entityDefIdCache = new Map<string, string | null>();
+
+/** Resolve an entity's definition id from its logical name or physical table (cached). */
+export async function resolveEntityDefId(logicalOrTable: string, table?: string): Promise<string | undefined> {
+  const cacheKey = `${logicalOrTable}|${table ?? ''}`;
+  if (entityDefIdCache.has(cacheKey)) return entityDefIdCache.get(cacheKey) ?? undefined;
+  const singular = logicalOrTable.replace(/s$/, '');
+  const ors = [`logical_name.eq.${logicalOrTable}`, `logical_name.eq.${singular}`];
+  if (table) ors.push(`physical_table_name.eq.${table}`);
+  const { data } = await supabase
+    .from('entity_definition')
+    .select('entity_definition_id')
+    .or(ors.join(','))
+    .maybeSingle();
+  const id = (data?.entity_definition_id as string | undefined) ?? null;
+  entityDefIdCache.set(cacheKey, id);
+  return id ?? undefined;
+}
+
+/** Build resolution specs for a static SUBGRID_CONFIGS entry so the static path
+ *  resolves the same code→label surfaces the view-driven path does. Today the only
+ *  static columns storing raw codes are state_code / status_reason (badge). */
+export async function buildStaticResolutionColumns(configKey: string): Promise<ViewDrivenColumn[]> {
+  const conf = SUBGRID_CONFIGS[configKey];
+  if (!conf) return [];
+  const statusCols = conf.columns.filter((c) => c.key === 'state_code' || c.key === 'status_reason');
+  if (statusCols.length === 0) return [];
+  const entId = await resolveEntityDefId(conf.entitySlug, conf.table);
+  if (!entId) return [];
+  return statusCols.map((c) => ({
+    key: c.key,
+    label: c.label,
+    fieldType: 'choice',
+    sortable: c.sortable ?? false,
+    width: null,
+    statusKind: c.key === 'state_code' ? 'statecode' : 'statusreason',
+    entityDefinitionId: entId,
+  }));
 }
 
 export async function fetchDefaultViewForEntity(entityLogicalName: string): Promise<{ view_id: string; name: string } | null> {
@@ -519,8 +571,10 @@ export async function resolveSubgridLookups(
   );
   // Choice / option-set columns that carry a resolvable value→label source.
   const choiceCols = columns.filter((c) => c.optionSetId || (c.inlineChoices && c.inlineChoices.length > 0));
+  // statecode / statusreason columns resolve via the definition tables, keyed by entity.
+  const statusCols = columns.filter((c) => c.statusKind && c.entityDefinitionId);
 
-  if (lookupCols.length === 0 && choiceCols.length === 0) return rows;
+  if (lookupCols.length === 0 && choiceCols.length === 0 && statusCols.length === 0) return rows;
 
   const resolved = await Promise.all(
     lookupCols.map(async (col) => {
@@ -580,6 +634,24 @@ export async function resolveSubgridLookups(
     }),
   );
 
+  // statecode / statusreason: resolve each distinct code via the definition tables.
+  const statusMaps = new Map<string, Record<string, string>>();
+  await Promise.all(
+    statusCols.map(async (col) => {
+      const map: Record<string, string> = {};
+      const rawValues = [...new Set(
+        rows.map((r) => r[col.key]).filter((v) => v != null && v !== '').map(String),
+      )];
+      await Promise.all(rawValues.map(async (rv) => {
+        const label = col.statusKind === 'statecode'
+          ? await resolveStateCodeLabel(col.entityDefinitionId!, rv)
+          : await resolveStatusReasonLabel(col.entityDefinitionId!, rv);
+        if (label) map[rv] = label;
+      }));
+      statusMaps.set(col.key, map);
+    }),
+  );
+
   return rows.map((row) => {
     const patched: Record<string, unknown> = {};
     for (const [colKey, map] of lookupMaps) {
@@ -591,6 +663,12 @@ export async function resolveSubgridLookups(
     for (const [colKey, map] of choiceMaps) {
       const label = mapChoiceValue(row[colKey], map);
       if (label) patched[colKey] = label;
+    }
+    for (const [colKey, map] of statusMaps) {
+      const rawVal = row[colKey];
+      if (rawVal != null && rawVal !== '' && map[String(rawVal)]) {
+        patched[colKey] = map[String(rawVal)];
+      }
     }
     return Object.keys(patched).length > 0 ? { ...row, ...patched } : row;
   });

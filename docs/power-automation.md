@@ -79,13 +79,30 @@ helpers target the legacy Supabase cloud project and are **not** the live DB).
 
 ## Email transport
 
-`server/emailTransport.js` exposes a single `sendEmail({to, subject, html})`:
+`server/emailTransport.js` exposes a single `sendEmail({to, cc, subject, html, account})`:
 
-1. **edge-fn** — POSTs to the Microsoft Graph `send-email` function when
+1. **graph** — Microsoft 365 via Microsoft Graph `sendMail` (client-credentials
+   flow). Credentials come from the flow's chosen sender **account**
+   (`automation_email_account`) if it carries them, else from `GRAPH_*` env vars.
+   The mail is sent **as** the account's `from_address` (the "send on behalf"
+   mailbox), else `GRAPH_SENDER_UPN`. The Azure app registration needs the
+   **Application** permission `Mail.Send` (admin-consented).
+2. **edge-fn** — POSTs to an external Graph `send-email` function when
    `SEND_EMAIL_FN_URL` (and optional `SEND_EMAIL_FN_TOKEN`) is set.
-2. **stub** (default) — logs the message and records it in Run history
+3. **stub** (default) — logs the message and records it in Run history
    (`output.transport = 'stub'`). Nothing is silently dropped; the demo works
-   end-to-end without mail config. Adding SMTP (nodemailer) is a one-file change.
+   end-to-end without mail config.
+
+### Sender mailboxes (`automation_email_account`)
+
+Multiple mailboxes are configured in **Admin Studio → Power Automation → Email
+accounts**: each has a `name`, a `from_address` (the mailbox it sends AS), and
+optional per-account Azure credentials (`tenant_id` / `client_id` /
+`client_secret`) — leave those blank to share the server's `GRAPH_*` env. One
+account is the **default** (used when a flow doesn't pick one). In each **Send
+email** action a **Send from** dropdown chooses the account; the worker resolves
+it (`resolveSenderAccount`) and passes its credentials + `from_address` to the
+transport. The chosen `from` is recorded in Run history.
 
 Email bodies are **HTML-escaped by default** during token rendering.
 
@@ -154,7 +171,8 @@ No other worker changes are needed — retries, idempotency, and logging are gen
 | `AUTOMATION_POLL_MS` | `1500` | worker poll interval |
 | `AUTOMATION_BATCH` | `10` | jobs claimed per tick |
 | `APP_BASE_URL` | `""` | base for `{{record.url}}` (`<base>/#/<table>/<id>`) |
-| `SEND_EMAIL_FN_URL` / `SEND_EMAIL_FN_TOKEN` | — | Graph email function endpoint |
+| `GRAPH_TENANT_ID` / `GRAPH_CLIENT_ID` / `GRAPH_CLIENT_SECRET` / `GRAPH_SENDER_UPN` | — | fallback Microsoft Graph credentials + default sender, used when a sender account has no own credentials |
+| `SEND_EMAIL_FN_URL` / `SEND_EMAIL_FN_TOKEN` | — | external Graph email function endpoint (used only if no Graph creds resolve) |
 
 ## Reference rule (seeded, disabled)
 

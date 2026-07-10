@@ -7,6 +7,7 @@ import type { EntityDefinition } from '../../types/entity';
 import CalcBuilderModal, { summarizeCalculation } from './CalcBuilderModal';
 import { useToast } from '../../app/context/ToastContext';
 import { supabase } from '../../lib/supabase';
+import { fieldColumnHasData } from '../../services/fieldService';
 
 // ─── Status manager types ─────────────────────────────────────────────────────
 
@@ -771,6 +772,28 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
   const selectedType = fieldTypes.find((t) => t.field_type_id === form.field_type_id);
   const typeName = selectedType?.name ?? '';
 
+  // A column's data type can only be changed while the column is empty — once it holds
+  // data, converting the type would corrupt or fail to convert the existing values.
+  const entity = entities.find((e) => e.entity_definition_id === entityId);
+  const physicalColumn = field?.physical_column_name ?? '';
+  const canCheckData = isEdit && !schemaLocked && !!physicalColumn && !physicalColumn.includes('.');
+  const [columnHasData, setColumnHasData] = useState(false);
+  const [checkingData, setCheckingData] = useState(canCheckData);
+
+  useEffect(() => {
+    if (!canCheckData || !entity?.physical_table_name) { setCheckingData(false); return; }
+    let cancelled = false;
+    setCheckingData(true);
+    fieldColumnHasData(entity.physical_table_name, physicalColumn)
+      .then((has) => { if (!cancelled) setColumnHasData(has); })
+      .finally(() => { if (!cancelled) setCheckingData(false); });
+    return () => { cancelled = true; };
+  }, [canCheckData, entity?.physical_table_name, physicalColumn]);
+
+  // Lock the type selector for system/schema-locked fields, while the check runs, or
+  // once we know the column contains data.
+  const typeLocked = schemaLocked || checkingData || columnHasData;
+
   const initialCalc = (field?.config_json as { calculation?: CalculationConfig } | null)?.calculation ?? null;
   const initialLegacyFormula = (field?.config_json as { formula?: CalcFormula } | null)?.formula ?? null;
   const [calcConfig, setCalcConfig] = useState<CalculationConfig | null>(initialCalc);
@@ -918,18 +941,26 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
             </PanelSection>
 
             <PanelSection title="Data Type">
-              <F label="Type" required error={fieldErrors.field_type_id}>
-                <div className={`grid grid-cols-4 gap-1.5 ${schemaLocked ? 'pointer-events-none opacity-60' : ''}`}>
-                  {fieldTypes.map((ft) => {
-                    const sel = form.field_type_id === ft.field_type_id;
-                    return (
-                      <button key={ft.field_type_id} type="button" onClick={() => !schemaLocked && handleTypeChange(ft.field_type_id)}
-                        className={`px-2 py-1.5 rounded border text-[11px] font-medium transition-all text-center ${sel ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'}`}>
-                        {ft.display_name}
-                      </button>
-                    );
-                  })}
-                </div>
+              <F
+                label="Type"
+                required
+                error={fieldErrors.field_type_id}
+                hint={
+                  columnHasData
+                    ? 'This column already contains data, so its type is locked. Clear all values from the column first to change it.'
+                    : checkingData
+                      ? 'Checking whether this column already contains data…'
+                      : undefined
+                }
+              >
+                <SearchableSelect
+                  options={fieldTypes.map((ft) => ({ value: ft.field_type_id, label: ft.display_name, sublabel: ft.description ?? undefined }))}
+                  value={form.field_type_id}
+                  onChange={(v) => { if (!typeLocked) handleTypeChange(v); }}
+                  disabled={typeLocked}
+                  placeholder="Select a field type…"
+                  className={fieldErrors.field_type_id ? 'ring-2 ring-red-400 rounded-lg' : ''}
+                />
               </F>
 
               {LOOKUP_TYPES.has(typeName) && (

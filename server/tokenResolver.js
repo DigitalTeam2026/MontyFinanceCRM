@@ -10,6 +10,7 @@
 // Tokens:
 //   {{record.<field>}} | {{<field>}}   -> triggering record field
 //   {{record.url}}                     -> record deep link
+//   {{record.regarding.url}}           -> parent-record deep link (timeline notes/emails)
 //   {{count}}                          -> batch count
 //   {{steps.<name>.count}}             -> rows returned by an earlier list_rows step
 //   {{steps.<name>.join(<col>, 'sep')}}-> one column joined into a string
@@ -56,6 +57,7 @@ function resolveExpr(expr, ctx, html) {
   const esc = html ? escapeHtml : (v) => (v == null ? "" : String(v));
 
   if (expr === "record.url") return esc(ctx.recordUrl);
+  if (expr === "record.regarding.url") return esc(ctx.regardingUrl);
   if (expr === "count") return esc(ctx.count);
 
   if (expr.startsWith("steps.")) {
@@ -80,8 +82,13 @@ function resolveExpr(expr, ctx, html) {
   }
 
   // Triggering-record field: {{record.<field>}} or bare {{<field>}}.
+  // Prefer the label-resolved value (choice/lookup/state/status → label) when present,
+  // falling back to the raw stored value.
   const field = expr.includes(".") ? expr.slice(expr.indexOf(".") + 1) : expr;
-  return esc(ctx.after ? ctx.after[field] : undefined);
+  const display = ctx.afterDisplay && Object.prototype.hasOwnProperty.call(ctx.afterDisplay, field)
+    ? ctx.afterDisplay[field]
+    : (ctx.after ? ctx.after[field] : undefined);
+  return esc(display);
 }
 
 /** Render every {{token}} in a template string. */

@@ -58,6 +58,10 @@ export function computeChangedFields(
 
 /** Does one extra AND-condition hold against the post-save record? */
 export function conditionHolds(cond: AutomationCondition, after: RecordValues): boolean {
+  // A related-record condition ("lookup.field") can't be evaluated against the
+  // record's own snapshot — the server worker follows the lookup and evaluates it.
+  // Treat as passing here so the job still enqueues; the worker is authoritative.
+  if (typeof cond.field === 'string' && cond.field.includes('.')) return true;
   const actual = after[cond.field];
   switch (cond.operator) {
     case 'equals':       return valuesEqual(actual, cond.value);

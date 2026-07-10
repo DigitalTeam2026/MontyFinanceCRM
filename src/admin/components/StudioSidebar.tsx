@@ -1,4 +1,4 @@
-import { Database, Settings, ChevronRight, ShieldCheck, Map, LogOut, ExternalLink, GitMerge, Milestone, ScanSearch, ClipboardCheck, FileWarning, KeyRound, ShieldAlert, Activity, Zap, Building2, FolderCog, History, LayoutDashboard, HeartPulse, FileUp } from 'lucide-react';
+import { Database, Settings, ChevronRight, ShieldCheck, Map, LogOut, ExternalLink, GitMerge, Milestone, ScanSearch, ClipboardCheck, FileWarning, KeyRound, ShieldAlert, Activity, Zap, Building2, FolderCog, History, LayoutDashboard, HeartPulse, FileUp, Mail } from 'lucide-react';
 import { getInitials } from '../../app/utils/initials';
 
 interface SideNavItem {
@@ -27,6 +27,7 @@ const SECTIONS: { label: string; items: SideNavItem[] }[] = [
     items: [
       { id: 'entities',  label: 'Tables',           icon: <Database size={14} /> },
       { id: 'automationrules', label: 'Power Automation', icon: <Zap size={14} /> },
+      { id: 'emailaccounts', label: 'Email Accounts',  icon: <Mail size={14} /> },
       { id: 'processflows', label: 'Process Flows',   icon: <GitMerge size={14} /> },
       { id: 'stages',       label: 'Pipeline Stages', icon: <Milestone size={14} /> },
     ],

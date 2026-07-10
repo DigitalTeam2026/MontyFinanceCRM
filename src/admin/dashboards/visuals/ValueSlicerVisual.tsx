@@ -14,7 +14,7 @@ import type {
   DashboardVisual, DashboardDefinition, ThemeConfig, VisualFilter, ValueSlicerConfig, SlicerBroadcastOpts,
 } from '../types/dashboard';
 import { runDistinctValues, type DistinctSource } from '../services/queryEngine';
-import { buildSlicerSources, type SlicerSelection } from './slicerValues';
+import { buildSlicerSources, loadChoiceSlicerLabels, type SlicerSelection } from './slicerValues';
 import { fetchEntitiesCached } from '../services/relationshipService';
 import { isAuthError } from '../../../lib/supabase';
 import FilterSelect from '../../../app/components/FilterSelect';
@@ -95,12 +95,17 @@ export default function ValueSlicerVisual({
         labelField = te?.primary_field_name;
       }
 
+      // Choice slicers have no label entity — resolve labels from the field's inline choices.
+      const choiceLabels = (sf.data_type === 'choice' && definition)
+        ? await loadChoiceSlicerLabels(definition, sf)
+        : {};
+
       try {
         const res = await runDistinctValues({ sources, labelEntity, labelField });
         if (!alive || id !== reqId.current) return;
         const options: Opt[] = res.options.length
           ? res.options
-          : res.values.map((v) => ({ id: v, label: v }));
+          : res.values.map((v) => ({ id: v, label: choiceLabels[String(v)] ?? v }));
         setState({ kind: 'ready', options });
       } catch (e) {
         if (!alive || id !== reqId.current) return;

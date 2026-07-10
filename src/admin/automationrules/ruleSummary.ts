@@ -1,4 +1,4 @@
-import type { AutomationRule, AutomationOperator, AutomationActionType } from '../../types/automationRule';
+import type { AutomationRule, AutomationOperator, AutomationActionType, AutomationRunAfter } from '../../types/automationRule';
 
 const OPERATOR_LABEL: Record<AutomationOperator, string> = {
   changes_to: 'changes to',
@@ -50,4 +50,28 @@ export function actionLabel(t: AutomationActionType): string {
 export function actionsSummary(types: AutomationActionType[]): string {
   if (types.length === 0) return 'No actions';
   return types.map(actionLabel).join(', ');
+}
+
+/** "Configure run after" labels + branch styling, shared by the flow editor. */
+export const RUN_AFTER_META: Record<AutomationRunAfter, { label: string; short: string; hint: string; cls: string }> = {
+  success: { label: 'On success', short: 'Success', hint: 'Runs only if every earlier action succeeded.', cls: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
+  failure: { label: 'On failure', short: 'Failure', hint: 'Runs only if an earlier action failed — a "catch" step.', cls: 'text-red-600 bg-red-50 border-red-200' },
+  always:  { label: 'Always',     short: 'Always',  hint: 'Runs regardless of earlier results — a "finally" step.', cls: 'text-slate-600 bg-slate-100 border-slate-200' },
+};
+
+/** Compact relative time, e.g. "3m ago", "2h ago", "5d ago". Falls back to a date. */
+export function timeAgo(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const s = Math.round((Date.now() - then) / 1000);
+  if (s < 45) return 'just now';
+  if (s < 90) return '1m ago';
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
 }

@@ -1,4 +1,4 @@
-import { supabase } from '../../lib/supabase';
+import { sendRaw } from '../../lib/api';
 import type { AppEntity } from '../types';
 
 export interface DeleteRuleCheckResult {
@@ -19,55 +19,53 @@ export interface DeleteResult {
   error?: string;
 }
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-
-async function getAuthHeader(): Promise<string> {
-  const { data } = await supabase.auth.getSession();
-  return `Bearer ${data.session?.access_token ?? SUPABASE_ANON_KEY}`;
-}
-
+// The Supabase edge function `execute-delete-rules` was removed with Supabase
+// cloud. Delete now goes through the local Node API (server/deleteRules.js),
+// reached same-origin at /api/delete-rules (IIS/Vite proxy the API). sendRaw
+// always resolves (never throws) and attaches the Bearer token, so callers can
+// no longer hang on a rejected fetch.
 async function callDeleteEngine(body: {
   entity: string;
   record_ids: string[];
   confirmed?: boolean;
   dry_run?: boolean;
-}): Promise<Response> {
-  const url = `${SUPABASE_URL}/functions/v1/execute-delete-rules`;
-  return fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: await getAuthHeader(),
-      'Content-Type': 'application/json',
-      Apikey: SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify(body),
-  });
+}): Promise<Record<string, unknown>> {
+  const { ok, status, body: resBody } = await sendRaw<Record<string, unknown>>(
+    '/api/delete-rules',
+    { method: 'POST', body: JSON.stringify(body) },
+  );
+  const json = (resBody ?? {}) as Record<string, unknown>;
+  // Carry the HTTP status through so executeDelete() can map non-2xx to errors,
+  // mirroring the previous `res.ok` check on the raw Response.
+  return { ...json, __ok: ok, __status: status };
 }
 
 export async function checkDeleteRules(
   entity: AppEntity | string,
   recordIds: string[]
 ): Promise<DeleteRuleCheckResult> {
-  const res = await callDeleteEngine({
+  const json = await callDeleteEngine({
     entity: entity as string,
     record_ids: recordIds,
     dry_run: true,
   });
-  const json = await res.json();
+  const asStrings = (v: unknown): string[] =>
+    Array.isArray(v) ? v.map(String) : [];
   if (json.blocked) {
     return {
       requires_confirmation: false,
       confirmation_messages: [],
       rules_matched: [],
       blocked: true,
-      block_messages: json.block_messages ?? [json.error ?? 'Delete blocked'],
+      block_messages: json.block_messages
+        ? asStrings(json.block_messages)
+        : [String(json.error ?? 'Delete blocked')],
     };
   }
   return {
-    requires_confirmation: json.requires_confirmation ?? false,
-    confirmation_messages: json.confirmation_messages ?? [],
-    rules_matched: json.rules_matched ?? [],
+    requires_confirmation: Boolean(json.requires_confirmation),
+    confirmation_messages: asStrings(json.confirmation_messages),
+    rules_matched: asStrings(json.rules_matched),
   };
 }
 
@@ -76,12 +74,16 @@ export async function executeDelete(
   recordIds: string[],
   confirmed = false
 ): Promise<DeleteResult> {
-  const res = await callDeleteEngine({
+  const json = await callDeleteEngine({
     entity: entity as string,
     record_ids: recordIds,
     confirmed,
   });
-  const json = await res.json();
+
+  const asStrings = (v: unknown): string[] =>
+    Array.isArray(v) ? v.map(String) : [];
+  const num = (v: unknown, fallback: number): number =>
+    typeof v === 'number' ? v : fallback;
 
   if (json.requires_confirmation && !confirmed) {
     return {
@@ -90,7 +92,7 @@ export async function executeDelete(
       errors: 0,
       actions_executed: [],
       blocked: false,
-      block_messages: json.confirmation_messages,
+      block_messages: asStrings(json.confirmation_messages),
     };
   }
 
@@ -101,24 +103,26 @@ export async function executeDelete(
       errors: 0,
       actions_executed: [],
       blocked: true,
-      block_messages: json.block_messages ?? [json.error ?? 'Delete blocked'],
+      block_messages: json.block_messages
+        ? asStrings(json.block_messages)
+        : [String(json.error ?? 'Delete blocked')],
     };
   }
 
-  if (!res.ok) {
+  if (!json.__ok) {
     return {
       success: false,
       deleted: 0,
       errors: recordIds.length,
-      actions_executed: json.actions_executed ?? [],
-      error: json.error ?? 'Delete failed',
+      actions_executed: asStrings(json.actions_executed),
+      error: String(json.error ?? 'Delete failed'),
     };
   }
 
   return {
-    success: json.success ?? true,
-    deleted: json.deleted ?? recordIds.length,
-    errors: json.errors ?? 0,
-    actions_executed: json.actions_executed ?? [],
+    success: json.success !== false,
+    deleted: num(json.deleted, recordIds.length),
+    errors: num(json.errors, 0),
+    actions_executed: asStrings(json.actions_executed),
   };
 }

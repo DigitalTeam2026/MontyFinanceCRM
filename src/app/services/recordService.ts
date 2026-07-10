@@ -88,6 +88,13 @@ export async function getEntityTable(entity: AppEntity): Promise<string> {
   const { table } = await resolveEntityMeta(entity);
   return table;
 }
+/** Resolve the entity_definition_id for an AppEntity slug (handles plural slugs and
+ *  custom entities via resolveEntityMeta). Distinct from getEntityDefinitionId, which
+ *  takes a logical name. */
+export async function getAppEntityDefinitionId(entity: AppEntity): Promise<string | undefined> {
+  const { entityDefinitionId } = await resolveEntityMeta(entity);
+  return entityDefinitionId;
+}
 export async function getEntityPK(entity: AppEntity): Promise<string> {
   const { pk } = await resolveEntityMeta(entity);
   return pk;

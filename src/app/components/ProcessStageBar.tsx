@@ -64,6 +64,8 @@ function humanizeFieldName(logicalName: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+const STAGE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * A stage field is required to advance when it is statically flagged required on the stage
  * (process_stage_fields.is_required) OR a business rule set it required at runtime. Rule-hidden
@@ -267,7 +269,12 @@ function StagePopup({
     }
 
     if (typeName === 'lookup' || typeName === 'owner') {
-      const displayLabel = lookupLabels[sf.field_logical_name] ?? (strVal || '');
+      // Never surface a raw GUID as the label. If the parent-supplied label map has no
+      // entry and the stored value is a UUID, pass an empty label so LookupField
+      // self-resolves the related record's name (its on-demand effect), instead of
+      // rendering the id. See FormField LookupField `resolvedLabel` precedence.
+      const rawLabel = lookupLabels[sf.field_logical_name] ?? strVal;
+      const displayLabel = STAGE_UUID_RE.test(rawLabel) ? '' : rawLabel;
       // When editable, render the same inline lookup picker the form uses so the value can be
       // selected directly in the stage popup (search + browse dialog) without leaving for the
       // form. The browse dialog opens as a top-level modal, so it is never clipped by the popup.
@@ -301,7 +308,26 @@ function StagePopup({
           </button>
         );
       }
-      // Locked lookup: show the resolved label as read-only text (no form navigation).
+      // Locked lookup: reuse LookupField (read-only) so it self-resolves the related
+      // record's name rather than leaking the stored id when no label was supplied.
+      if (sf.lookup_entity_slug) {
+        return (
+          <LookupField
+            entitySlug={sf.lookup_entity_slug}
+            value={strVal}
+            displayLabel={displayLabel}
+            readonly
+            inputBase={`${inputBase} bg-slate-50`}
+            ds={{ input: 'px-3 py-[7px] text-[13px] text-slate-800' }}
+            borderCls="border-slate-200"
+            label={sf.display_label || sf.display_name || humanizeFieldName(sf.field_logical_name)}
+            onChange={() => {}}
+            onBlur={() => {}}
+            lookupConfig={(sf.config_json as unknown as LookupConfig) ?? null}
+            formValues={values}
+          />
+        );
+      }
       return (
         <div className={`${inputBase} text-left truncate ${strVal ? '' : 'text-slate-400'} bg-slate-50`}>
           {displayLabel || '—'}

@@ -254,6 +254,27 @@ export interface FieldMeta {
   lookupEntitySlug?: string | null;
   optionSetName?: string | null;
   entityDefinitionId?: string | null;
+  /** Inline choices from field_definition.config_json.choices. Choice options in this
+   *  system are stored inline (the option_set/option_set_value tables are empty), so a
+   *  choice field with no named option set MUST resolve through these or the raw code leaks. */
+  inlineChoices?: { value: string; label: string }[] | null;
+}
+
+/** Map a single stored choice code (or a JSON array of codes) to its label(s) using inline choices. */
+function mapInlineChoice(rawValue: unknown, choices: { value: string; label: string }[]): string | null {
+  const map: Record<string, string> = {};
+  for (const ch of choices) map[String(ch.value)] = ch.label;
+  const raw = rawValue as unknown;
+  let vals: string[] | null = null;
+  if (Array.isArray(raw)) vals = (raw as unknown[]).map(String).filter(Boolean);
+  else if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+    try { vals = (JSON.parse(raw) as unknown[]).map(String).filter(Boolean); } catch { /* single */ }
+  }
+  if (vals !== null) {
+    const labels = vals.map((v) => map[v] ?? v).filter(Boolean);
+    return labels.length > 0 ? labels.join(', ') : null;
+  }
+  return map[String(rawValue)] ?? null;
 }
 
 export async function resolveDisplayValue(
@@ -276,7 +297,14 @@ export async function resolveDisplayValue(
     case 'boolean':
       return formatBoolean(rawValue);
     case 'choice':
-    case 'multi_choice': {
+    case 'multi_choice':
+    case 'option_set':
+    case 'multi_option_set': {
+      // Inline choices are the primary storage in this system; try them first.
+      if (fieldMeta.inlineChoices && fieldMeta.inlineChoices.length > 0) {
+        const label = mapInlineChoice(rawValue, fieldMeta.inlineChoices);
+        if (label) return label;
+      }
       if (fieldMeta.optionSetName) {
         const label = await resolveOptionSetLabel(fieldMeta.optionSetName, str);
         if (label) return label;

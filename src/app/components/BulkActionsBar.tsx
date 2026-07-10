@@ -1111,20 +1111,27 @@ export default function BulkActionsBar({
     if (!userId) return;
     setBusy(true);
     const ids = Array.from(selected);
-    const r = await executeDelete(entity, ids, true);
-    if (r.success) {
-      await Promise.all(
-        ids.flatMap((id) => [
-          removeRecentItem(userId, entity, id),
-          removePinnedRecord(userId, entity, id),
-        ])
-      );
+    try {
+      const r = await executeDelete(entity, ids, true);
+      if (r.success) {
+        await Promise.all(
+          ids.flatMap((id) => [
+            removeRecentItem(userId, entity, id),
+            removePinnedRecord(userId, entity, id),
+          ])
+        );
+      }
+      const failed = r.success ? r.errors : (r.errors || ids.length);
+      setResult({ deleted: r.deleted, errors: failed, message: r.blocked ? r.block_messages?.[0] : r.error });
+    } catch (e) {
+      // Never leave the button spinning: surface the failure instead.
+      setResult({ deleted: 0, errors: ids.length, message: e instanceof Error ? e.message : 'Delete failed' });
+    } finally {
+      setBusy(false);
+      closeModal();
+      onClear();
+      onComplete();
     }
-    setBusy(false);
-    setResult({ deleted: r.deleted, errors: r.errors });
-    closeModal();
-    onClear();
-    onComplete();
   };
 
   const showActivateDeactivate = entity !== 'leads' && entity !== 'opportunities';

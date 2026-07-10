@@ -7,6 +7,7 @@ import { checkForDuplicates } from './duplicateCheckingEngine';
 import type { DuplicateMatch } from './duplicateCheckingEngine';
 import type { LoadedProcessFlow } from './processFlowEngine';
 import { buildStageEntityContext } from './processFlowEngine';
+import { copyTimelineEntries } from './timelineService';
 
 export interface ExistingOpportunity {
   opportunity_id: string;
@@ -365,7 +366,7 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
     }
     const { data, error } = await supabase
       .from('account')
-      .insert({ ...accountPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: 'active' })
+      .insert({ ...accountPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: '1' })
       .select('account_id')
       .single();
     if (error) throw new Error(`Failed to create Account: ${error.message}`);
@@ -377,7 +378,7 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
     if (accountId) contactPhys['account_id'] = accountId;
     const { data, error } = await supabase
       .from('contact')
-      .insert({ ...contactPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: 'active' })
+      .insert({ ...contactPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: '1' })
       .select('contact_id')
       .single();
     if (error) throw new Error(`Failed to create Contact: ${error.message}`);
@@ -415,22 +416,32 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
 
       const { data, error } = await supabase
         .from('opportunity')
-        .insert({ ...oppPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: 'active' })
+        .insert({ ...oppPhys, created_by: userId, owner_id: userId, owner_type: 'user', state_code: '1' })
         .select('opportunity_id')
         .single();
       if (error) throw new Error(`Failed to create Opportunity: ${error.message}`);
       opportunityId = data.opportunity_id as string;
+
+      // Carry the lead's timeline (notes, appointments, emails, attachments) onto the
+      // brand-new opportunity so they surface in its timeline too. Best-effort: a copy
+      // failure must not fail an otherwise-successful qualification.
+      try {
+        await copyTimelineEntries('lead', leadId, 'opportunity', opportunityId);
+      } catch (copyErr) {
+        console.warn('Failed to copy lead timeline to opportunity:', copyErr);
+      }
     }
   }
 
   const leadDefId = ENTITY_DEFINITION_ID['leads'];
   const qualifiedStatus = leadDefId ? await getDefaultStatusForState(leadDefId, 2) : null;
+  const qualifiedStateValue = qualifiedStatus?.stateValue ?? 2;
   const qualifiedReasonValue = qualifiedStatus?.reasonValue ?? 4;
 
   const { error: leadUpdateErr } = await supabase
     .from('lead')
     .update({
-      state_code: 'inactive', status_reason: String(qualifiedReasonValue),
+      state_code: String(qualifiedStateValue), status_reason: String(qualifiedReasonValue),
       is_qualified: true,
       modified_at: new Date().toISOString(),
       modified_by: userId,

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import type { MergeAuditEntry, MergeChangeType } from '../../types/mergeCenter';
 import { fetchMergeAuditLog } from '../../services/mergeCenterService';
+import { loadEntityFieldCodeMetaByLogical, resolveFieldCode } from '../../app/services/fieldCodeResolver';
 
 const CHANGE_TYPE_META: Record<MergeChangeType, {
   label: string; icon: React.ReactNode; color: string; bg: string;
@@ -53,12 +54,39 @@ export default function MergeAuditLogPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // choice / statecode / statusreason codes → labels, keyed by `${entity}::${field}::${value}`.
+  const [codeLabels, setCodeLabels] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setEntries(await fetchMergeAuditLog({ limit: 500 }));
+      const rows = await fetchMergeAuditLog({ limit: 500 });
+      setEntries(rows);
+
+      // Resolve merged field old/new codes to labels, per entity, so the audit
+      // trail shows "Active" instead of "1". Lookups (UUIDs) stay as stored.
+      const labels: Record<string, string> = {};
+      const byEntity = new Map<string, MergeAuditEntry[]>();
+      for (const e of rows) {
+        if (e.change_type !== 'field_merged' || !e.field_name) continue;
+        if (!byEntity.has(e.entity_logical_name)) byEntity.set(e.entity_logical_name, []);
+        byEntity.get(e.entity_logical_name)!.push(e);
+      }
+      await Promise.all([...byEntity.entries()].map(async ([logical, es]) => {
+        const cm = await loadEntityFieldCodeMetaByLogical(logical);
+        if (!cm) return;
+        await Promise.all(es.map(async (e) => {
+          for (const val of [e.old_value, e.new_value]) {
+            if (val == null || val === '') continue;
+            const key = `${logical}::${e.field_name}::${val}`;
+            if (labels[key] !== undefined) continue;
+            const lbl = await resolveFieldCode(cm, e.field_name ?? '', val);
+            if (lbl) labels[key] = lbl;
+          }
+        }));
+      }));
+      setCodeLabels(labels);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load audit log');
     } finally { setLoading(false); }
@@ -183,15 +211,23 @@ export default function MergeAuditLogPage() {
                               {meta.icon}{meta.label}
                             </span>
                             <div className="flex-1 min-w-0 text-xs text-gray-600">
-                              {entry.change_type === 'field_merged' && (
-                                <span>
-                                  <span className="font-mono font-semibold text-gray-800">{entry.field_name}</span>
-                                  {entry.old_value && <span className="text-gray-400"> {entry.old_value} </span>}
-                                  <span className="text-gray-400">→ </span>
-                                  <span className="font-semibold text-gray-800">{entry.new_value ?? '—'}</span>
-                                  <span className="ml-1.5 text-gray-400">(from {entry.source_record})</span>
-                                </span>
-                              )}
+                              {entry.change_type === 'field_merged' && (() => {
+                                const oldDisp = entry.old_value != null
+                                  ? (codeLabels[`${group.entity_logical_name}::${entry.field_name}::${entry.old_value}`] ?? entry.old_value)
+                                  : null;
+                                const newDisp = entry.new_value != null
+                                  ? (codeLabels[`${group.entity_logical_name}::${entry.field_name}::${entry.new_value}`] ?? entry.new_value)
+                                  : null;
+                                return (
+                                  <span>
+                                    <span className="font-mono font-semibold text-gray-800">{entry.field_name}</span>
+                                    {oldDisp && <span className="text-gray-400"> {oldDisp} </span>}
+                                    <span className="text-gray-400">→ </span>
+                                    <span className="font-semibold text-gray-800">{newDisp ?? '—'}</span>
+                                    <span className="ml-1.5 text-gray-400">(from {entry.source_record})</span>
+                                  </span>
+                                );
+                              })()}
                               {entry.change_type === 'record_retired' && (
                                 <span className="text-red-600">Loser record archived</span>
                               )}

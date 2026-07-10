@@ -173,8 +173,14 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
       if (sort.field && sort.dir) {
         const sf = active.find((f) => f.field_definition_id === sort.field);
         if (sf) query = query.order(sf.physical_column_name, { ascending: sort.dir === 'asc' });
-      } else {
+      } else if (tCols.has('created_at')) {
         query = query.order('created_at', { ascending: false });
+      } else {
+        // Some tables (e.g. currency) have no created_at column. Ordering by a
+        // missing column makes PostgREST reject the whole select, so the grid
+        // showed "No records found" even though the count was non-zero. Fall
+        // back to the PK so rows still load.
+        query = query.order(pk, { ascending: false });
       }
 
       const { data, error } = await query;

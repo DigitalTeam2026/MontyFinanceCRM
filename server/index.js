@@ -28,6 +28,8 @@ const path = require("path");
 const { hashPassword, verifyPassword, signToken, verifyToken, TOKEN_TTL_MS } = require("./auth");
 const totp = require("./totp");
 const { startAutomationWorker } = require("./automationWorker");
+const { executeDeleteRules } = require("./deleteRules");
+const { buildFlowFromPrompt } = require("./aiFlowBuilder");
 
 const app = express();
 
@@ -199,7 +201,10 @@ function coerceValue(meta, table, column, value) {
     return Array.isArray(value) ? value : value;
   }
   if (isJsonCol) {
-    return typeof value === "object" ? JSON.stringify(value) : value;
+    // jsonb wants a valid JSON literal. Objects/arrays AND scalars must be
+    // JSON-encoded — a bare string like `Lead` is invalid JSON (needs `"Lead"`)
+    // and 500s with 22P02. JSON.stringify handles every case: "Lead", true, 3, [...].
+    return JSON.stringify(value);
   }
   // Unknown column type: best-effort. Objects/arrays are most likely json(b).
   if (Array.isArray(value)) return JSON.stringify(value);
@@ -1037,6 +1042,43 @@ app.post("/api/rpc/:functionName", async (req, res) => {
     res.json(result);
   } catch (error) {
     sendError(res, error);
+  }
+});
+
+// Delete engine — local port of the removed `execute-delete-rules` edge function.
+// Evaluates before_delete Digital Rules then soft-deletes the records.
+// MUST be registered before the generic /api/:table routes (otherwise
+// "delete-rules" would be matched as a table name).
+app.post("/api/delete-rules", async (req, res) => {
+  try {
+    const header = req.headers.authorization || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+    let actorId = null;
+    if (token) {
+      try {
+        const payload = verifyToken(token);
+        actorId = payload && payload.sub ? payload.sub : null;
+      } catch {
+        actorId = null; // invalid/expired token -> treated as unauthenticated
+      }
+    }
+    const { status, body } = await executeDeleteRules(pool, req.body || {}, actorId);
+    res.status(status).json(body);
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+// Power Automation — AI flow builder. Turns a plain-language prompt into a flow
+// spec (trigger + actions) via Claude; the browser previews + applies it.
+app.post("/api/automation/ai-build", async (req, res) => {
+  try {
+    const result = await buildFlowFromPrompt(pool, req.body || {});
+    res.json(result);
+  } catch (error) {
+    const status = error.statusCode || 500;
+    if (status >= 500) console.error("[automation.ai-build]", error.message);
+    res.status(status).json({ error: { message: error.message, status } });
   }
 });
 

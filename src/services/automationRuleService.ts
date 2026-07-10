@@ -1,9 +1,11 @@
 import { supabase } from '../lib/supabase';
+import { sendRaw } from '../lib/api';
 import type {
   AutomationRule,
   AutomationRuleAction,
   AutomationActionType,
   AutomationActionConfig,
+  AutomationRunAfter,
   AutomationJob,
   AutomationJobActionLog,
   AutomationRunHistoryRow,
@@ -115,7 +117,7 @@ export async function createAction(
 ): Promise<AutomationRuleAction> {
   const { data, error } = await supabase
     .from('automation_rule_action')
-    .insert({ rule_id: ruleId, action_type: actionType, config, sort_order: sortOrder })
+    .insert({ rule_id: ruleId, action_type: actionType, config, sort_order: sortOrder, run_after: 'success' })
     .select()
     .single();
   if (error) throw error;
@@ -124,7 +126,7 @@ export async function createAction(
 
 export async function updateAction(
   actionId: string,
-  updates: Partial<Pick<AutomationRuleAction, 'config' | 'sort_order' | 'action_type'>>,
+  updates: Partial<Pick<AutomationRuleAction, 'config' | 'sort_order' | 'action_type' | 'run_after'>>,
 ): Promise<void> {
   const { error } = await supabase
     .from('automation_rule_action')
@@ -173,6 +175,78 @@ export async function fetchFieldChoices(config: Record<string, unknown> | null):
     value: String(v.value),
     label: v.display_label,
   }));
+}
+
+/** Latest failure message for a rule (for the list card's error banner), or null. */
+export async function fetchLatestError(ruleId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('automation_job')
+    .select('error, finished_at')
+    .eq('rule_id', ruleId)
+    .in('status', ['failed', 'dead'])
+    .order('finished_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as { error?: string | null } | null)?.error ?? null;
+}
+
+// ── AI flow builder ──────────────────────────────────────────────────────────
+
+export interface AiFlowSpec {
+  name: string;
+  summary: string;
+  trigger: {
+    trigger_event: AutomationRule['trigger_event'];
+    field_logical_name: string | null;
+    operator: AutomationRule['operator'];
+    trigger_value: unknown;
+    conditions: AutomationRule['conditions'];
+  };
+  actions: Array<{
+    action_type: AutomationActionType;
+    run_after: AutomationRunAfter;
+    config: AutomationActionConfig;
+  }>;
+}
+
+export interface AiFlowResult { spec: AiFlowSpec; warnings: string[] }
+
+/** Ask the server's AI builder to draft a flow from a plain-language prompt. */
+export async function aiBuildFlow(tableLogicalName: string, prompt: string): Promise<AiFlowResult> {
+  const { ok, status, body } = await sendRaw<AiFlowResult>('/api/automation/ai-build', {
+    method: 'POST',
+    body: JSON.stringify({ table_logical_name: tableLogicalName, prompt }),
+  });
+  if (!ok) {
+    const msg = (body as { error?: { message?: string } })?.error?.message ?? `AI build failed (${status})`;
+    throw new Error(msg);
+  }
+  return body as AiFlowResult;
+}
+
+/**
+ * Apply an AI-drafted spec to a rule: overwrite the trigger and REPLACE all
+ * actions with the generated ones (in order, carrying run_after). Returns after
+ * every write completes.
+ */
+export async function applyAiFlow(rule: AutomationRule, spec: AiFlowSpec): Promise<void> {
+  await updateRule(rule.automation_rule_id, {
+    trigger_event: spec.trigger.trigger_event,
+    field_logical_name: spec.trigger.field_logical_name,
+    operator: spec.trigger.operator,
+    trigger_value: spec.trigger.trigger_value,
+    conditions: Array.isArray(spec.trigger.conditions) ? spec.trigger.conditions : [],
+  });
+  // Replace existing actions with the generated set.
+  const existing = await fetchActions(rule.automation_rule_id);
+  await Promise.all(existing.map((a) => deleteAction(a.automation_rule_action_id)));
+  for (let i = 0; i < spec.actions.length; i++) {
+    const a = spec.actions[i];
+    const created = await createAction(rule.automation_rule_id, a.action_type, a.config, i);
+    if (a.run_after && a.run_after !== 'success') {
+      await updateAction(created.automation_rule_action_id, { run_after: a.run_after });
+    }
+  }
 }
 
 export async function getCurrentUserId(): Promise<string | null> {

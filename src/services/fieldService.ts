@@ -184,6 +184,28 @@ async function dropPhysicalColumn(table: string, column: string): Promise<void> 
   catch { /* rollback is best-effort */ }
 }
 
+/**
+ * Whether the entity's physical column holds any data (at least one non-null value).
+ * Used by the field editor to lock the data type once a column is populated —
+ * changing a type under existing data would corrupt or fail to convert it.
+ * Counts every row (including soft-deleted) because the physical value is still there.
+ * Returns false for JSONB-mapped columns (physical_column_name like 'x.y') and on any error.
+ */
+export async function fieldColumnHasData(table: string, column: string): Promise<boolean> {
+  if (!table || !column || column.includes('.')) return false;
+  try {
+    const { count, error } = await supabase
+      .from(table)
+      .select(column, { count: 'exact', head: true })
+      .not(column, 'is', null);
+    if (error) throw error;
+    return (count ?? 0) > 0;
+  } catch (e) {
+    console.warn('[Columns] has-data check failed:', e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
 /** Whether a physical column already exists on the entity's table (pre-creation check). */
 async function columnExists(entityId: string, column: string): Promise<boolean> {
   try {
@@ -331,6 +353,11 @@ export async function softDeleteField(field: FieldDefinition): Promise<void> {
       const { data, error } = await supabase.rpc('drop_field_column', {
         p_table: table,
         p_column: phys,
+        // Deliberate user delete: cascade so the column's own dependents
+        // (FK, indexes, and any WHEN-clause trigger like the product-access
+        // validator) are removed with it. The create-flow rollback path below
+        // deliberately omits this and keeps the safe non-cascade default.
+        p_cascade: true,
       });
       if (error) throw new Error(`Failed to drop database column: ${error.message}`);
       const r = data as { ok: boolean; error?: string } | null;

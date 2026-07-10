@@ -29,6 +29,9 @@ function isEmpty(v) {
 }
 
 function conditionHolds(cond, after) {
+  // Related-record conditions ("lookup.field") are deferred to the worker, which
+  // follows the lookup. Passing here lets the job enqueue; the worker gates them.
+  if (cond && typeof cond.field === "string" && cond.field.includes(".")) return true;
   const actual = after ? after[cond.field] : undefined;
   switch (cond.operator) {
     case "equals": return valuesEqual(actual, cond.value);

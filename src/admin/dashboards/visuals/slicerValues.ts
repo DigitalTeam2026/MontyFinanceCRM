@@ -18,6 +18,32 @@ import { activeMappingsFor, mappingForEntity } from './semanticRuntime';
 
 export interface SlicerSelection { filters: VisualFilter[]; pageId: string }
 
+/**
+ * For a CHOICE slicer there is no target entity to resolve labels from — the
+ * options are stored inline on the field (config_json.choices). Resolve them from
+ * the semantic filter's first mapped field so the slicer shows labels, not codes.
+ * Returns a value→label map ({} when the field has no inline choices).
+ */
+export async function loadChoiceSlicerLabels(
+  def: DashboardDefinition,
+  sf: DashboardSemanticFilter,
+): Promise<Record<string, string>> {
+  const mappings = activeMappingsFor(def, sf.dashboard_semantic_filter_id);
+  for (const m of mappings) {
+    const fieldId = hasSteps(m.relationship_path)
+      ? (m.relationship_path as RelationshipPath).targetFieldId
+      : m.target_field_id;
+    const r = await resolveFieldById(fieldId);
+    const choices = (r?.field.config_json as { choices?: { value: string; label: string }[] } | null)?.choices;
+    if (Array.isArray(choices) && choices.length > 0) {
+      const map: Record<string, string> = {};
+      for (const ch of choices) map[String(ch.value)] = ch.label;
+      return map;
+    }
+  }
+  return {};
+}
+
 const hasSteps = (p: unknown): p is RelationshipPath =>
   !!p && Array.isArray((p as RelationshipPath).steps) && (p as RelationshipPath).steps.length > 0
   && !!(p as RelationshipPath).targetFieldId;

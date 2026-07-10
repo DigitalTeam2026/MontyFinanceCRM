@@ -6,6 +6,7 @@ import type {
   TimelineAttachment,
   TimelineEntry,
 } from '../../types/timeline';
+import { dispatchAutomationForEvent } from './automation/dispatch';
 
 export async function fetchTimelineEntries(
   entityName: string,
@@ -72,6 +73,11 @@ export async function createNote(
     .select()
     .single();
   if (error) throw error;
+  // Fire Power Automation for note-create (e.g. "when a Note is created on an
+  // Opportunity"). The note's own columns — incl. regarding_entity_name /
+  // regarding_record_id / body — are the trigger record. Fire-and-forget: never
+  // let an automation hiccup break note creation.
+  void dispatchAutomationForEvent('note', 'create', (data as TimelineNote).note_id, data as Record<string, unknown>, null, userId);
   return data as TimelineNote;
 }
 
@@ -201,4 +207,45 @@ export async function createAttachment(
 export async function deleteAttachment(attachmentId: string): Promise<void> {
   const { error } = await supabase.from('timeline_attachment').delete().eq('attachment_id', attachmentId);
   if (error) throw error;
+}
+
+// ── Cross-record copy (Lead → Opportunity qualify) ──────────────────────────────
+
+/**
+ * Copies every timeline activity (notes, appointments, emails, attachments) from
+ * one record onto another as brand-new, independent rows. Used when a Lead is
+ * qualified so the resulting Opportunity carries its own copy of the lead's
+ * timeline. Original authorship (owner_id / created_by) is preserved. Attachments
+ * reuse the same stored file (file_url / storage_path) — nothing is re-uploaded.
+ * Returns the total number of activities copied.
+ */
+export async function copyTimelineEntries(
+  fromEntityName: string,
+  fromRecordId: string,
+  toEntityName: string,
+  toRecordId: string,
+): Promise<number> {
+  const regarding = { regarding_entity_name: toEntityName, regarding_record_id: toRecordId };
+  let copied = 0;
+
+  const copyTable = async (table: string, columns: string): Promise<void> => {
+    const { data, error: readError } = await supabase
+      .from(table)
+      .select(columns)
+      .eq('regarding_entity_name', fromEntityName)
+      .eq('regarding_record_id', fromRecordId);
+    if (readError) throw readError;
+    if (!data || data.length === 0) return;
+    const rows = data.map((row) => ({ ...regarding, ...(row as Record<string, unknown>) }));
+    const { error: insertError } = await supabase.from(table).insert(rows);
+    if (insertError) throw insertError;
+    copied += rows.length;
+  };
+
+  await copyTable('timeline_note', 'title, body, is_pinned, owner_id, created_by, modified_by');
+  await copyTable('timeline_appointment', 'subject, description, start_time, end_time, location, status, owner_id, created_by, modified_by');
+  await copyTable('timeline_email', 'subject, body, from_address, to_addresses, direction, status, sent_on, owner_id, created_by, modified_by');
+  await copyTable('timeline_attachment', 'file_name, file_url, file_type, file_size_bytes, storage_path, owner_id, uploaded_by, created_by');
+
+  return copied;
 }

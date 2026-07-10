@@ -16,6 +16,7 @@ import FormManagementPage from './forms/FormManagementPage';
 import ViewManagementPage from './views/ViewManagementPage';
 import BusinessRulesPage from './rules/BusinessRulesPage';
 import PowerAutomationPage from './automationrules/PowerAutomationPage';
+import EmailAccountsPage from './automationrules/EmailAccountsPage';
 import SecurityManagementPage from './security/SecurityManagementPage';
 import NavigationPage from './navigation/NavigationPage';
 import CurrenciesPage from './currencies/CurrenciesPage';
@@ -293,6 +294,12 @@ export default function AdminStudio() {
         subtitle: 'Automation rules — when a record changes, run actions',
       };
     }
+    if (activeModule === 'emailaccounts') {
+      return {
+        title: 'Email Accounts',
+        subtitle: 'Sender mailboxes your flows can send from (Microsoft 365)',
+      };
+    }
     if (activeModule === 'security') {
       return { title: 'Security Management', subtitle: 'Users, teams, business units, and role privileges' };
     }
@@ -470,6 +477,7 @@ export default function AdminStudio() {
       return <BusinessRulesPage preselectedEntityId={entityState.selectedEntity?.entity_definition_id} />;
     }
     if (activeModule === 'automationrules') return <PowerAutomationPage />;
+    if (activeModule === 'emailaccounts') return <EmailAccountsPage />;
     if (activeModule === 'security') return <SecurityManagementPage />;
     if (activeModule === 'navigation') return <NavigationPage />;
     if (activeModule === 'currencies') return <CurrenciesPage />;

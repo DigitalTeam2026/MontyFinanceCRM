@@ -18,6 +18,7 @@ import {
   fetchViewColumnsForSubgrid,
   fetchDefaultViewForEntity,
   resolveSubgridLookups,
+  buildStaticResolutionColumns,
   SUBGRID_CONFIGS,
   type SubgridRow,
   type SubgridColumn,
@@ -250,6 +251,15 @@ export default function FormSubgrid({
   const [rawViewCols, setRawViewCols] = useState<ViewDrivenColumn[]>([]);
   const [viewLoading, setViewLoading] = useState(!!viewId);
 
+  // Resolution specs for the static-config path (state_code / status_reason → label).
+  // The static path has no view columns, so without these the Status badge shows the
+  // raw code (e.g. "1") instead of "Active". See resolveSubgridLookups.
+  const [staticResCols, setStaticResCols] = useState<ViewDrivenColumn[]>([]);
+  useEffect(() => {
+    if (!staticConf) { setStaticResCols([]); return; }
+    buildStaticResolutionColumns(configKey).then(setStaticResCols).catch(() => setStaticResCols([]));
+  }, [configKey, staticConf]);
+
   useEffect(() => {
     if (!usingRelDef || !relationshipDefinitionId) return;
     setRelConfLoading(true);
@@ -369,14 +379,17 @@ export default function FormSubgrid({
       const result = await fetchSubgridRowsPaged(configKey, parentId, {
         sort: sort ?? undefined, filters, page, pageSize,
       });
-      const resolved = rawViewCols.length > 0
-        ? await resolveSubgridLookups(result.rows, rawViewCols)
+      // Prefer view columns when present; otherwise resolve the static config's
+      // status columns so the Status badge shows the label, not the raw code.
+      const resolveCols = rawViewCols.length > 0 ? rawViewCols : staticResCols;
+      const resolved = resolveCols.length > 0
+        ? await resolveSubgridLookups(result.rows, resolveCols)
         : result.rows;
       setRows(resolved); setTotalCount(result.totalCount);
     } catch {
       setError('Unable to load records.');
     } finally { setLoading(false); }
-  }, [configKey, parentId, staticConf, relConf, usingRelDef, sort, filters, page, pageSize, refreshTrigger, rawViewCols]);
+  }, [configKey, parentId, staticConf, relConf, usingRelDef, sort, filters, page, pageSize, refreshTrigger, rawViewCols, staticResCols]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [sort, filters]);
