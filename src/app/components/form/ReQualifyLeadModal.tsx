@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Briefcase, Plus, Loader2, AlertTriangle } from 'lucide-react';
 import type { RecordData } from '../../services/recordService';
-import { executeQualifyLead } from '../../services/leadQualificationEngine';
+import { executeQualifyLead, buildQualifyPreview } from '../../services/leadQualificationEngine';
 import type { LoadedProcessFlow } from '../../services/processFlowEngine';
 import { supabase } from '../../../lib/supabase';
 
@@ -25,7 +25,6 @@ export default function ReQualifyLeadModal({
     setSubmitting(true);
     setError(null);
     try {
-      const { buildQualifyPreview } = await import('../../services/leadQualificationEngine');
       const preview = await buildQualifyPreview(leadValues);
       if (!preview) throw new Error('No active qualification rule found.');
 

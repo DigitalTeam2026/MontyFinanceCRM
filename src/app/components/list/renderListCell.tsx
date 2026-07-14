@@ -74,6 +74,9 @@ export function renderListCell(row: ListRow, col: ColumnState, opts: RenderListC
   }
 
   if (colType === 'badge') {
+    // Inline-choice options can carry an uploaded SVG icon; the grid value is already
+    // resolved to the label, so match the option by label to recover its icon.
+    const icon = col.inline_choices?.find((o) => o.label === strVal)?.icon;
     if (isRedesign) {
       const lc = strVal.toLowerCase();
       let pillCls = 'rd-pill-blue';
@@ -83,12 +86,19 @@ export function renderListCell(row: ListRow, col: ColumnState, opts: RenderListC
       else if (lc.includes('lost') || lc.includes('won') || lc === 'dead') pillCls = 'rd-pill-red';
       return (
         <span className={`rd-pill ${pillCls}`}>
-          <span className="rd-pill-dot" />
+          {icon
+            ? <img src={icon} alt="" className="w-3.5 h-3.5 object-contain shrink-0" />
+            : <span className="rd-pill-dot" />}
           {strVal}
         </span>
       );
     }
-    return <StatusBadge value={strVal} />;
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        {icon && <img src={icon} alt="" className="w-3.5 h-3.5 object-contain shrink-0" />}
+        <StatusBadge value={strVal} />
+      </span>
+    );
   }
 
   if (colType === 'multi_badge') {
@@ -97,11 +107,15 @@ export function renderListCell(row: ListRow, col: ColumnState, opts: RenderListC
     if (parts.length === 0) return <span className="text-[var(--ink-300)] text-[12px]">—</span>;
     return (
       <span className="inline-flex flex-wrap gap-1">
-        {parts.map((p, i) => (
-          <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
-            {p}
-          </span>
-        ))}
+        {parts.map((p, i) => {
+          const icon = col.inline_choices?.find((o) => o.label === p)?.icon;
+          return (
+            <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap">
+              {icon && <img src={icon} alt="" className="w-3 h-3 object-contain shrink-0" />}
+              {p}
+            </span>
+          );
+        })}
       </span>
     );
   }

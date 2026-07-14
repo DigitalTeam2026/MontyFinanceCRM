@@ -2,7 +2,7 @@ import { uuid } from '../../lib/uuid';
 import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Trash2, Calculator, CheckCircle2, AlertCircle, CornerDownRight } from 'lucide-react';
+import { X, Plus, Trash2, Calculator, CheckCircle2, AlertCircle, CornerDownRight, FunctionSquare } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
   CalculationConfig, CalcResultType, CalcBranch, CalcConditionRow, CalcOperand,
@@ -10,8 +10,10 @@ import type {
 } from '../../types/field';
 import {
   operatorsForType, operatorNeedsValue, OPERATOR_LABELS, ARITH_LABELS,
-  isNumericType, validateCalculation, summarizeCalculation, referencedFields,
+  isNumericType, isDateType, isBoolType, validateCalculation, summarizeCalculation, referencedFields,
+  CALC_FUNCTIONS, calcFunctionMeta,
 } from '../../app/services/calcEngine';
+import type { CalcFunctionMeta, CalcOutputType } from '../../app/services/calcEngine';
 
 export { summarizeCalculation } from '../../app/services/calcEngine';
 
@@ -132,9 +134,6 @@ export default function CalcBuilderModal({
 
   const numericResult = config.resultType === 'number' || config.resultType === 'currency';
   const conditionFields = fields;
-  const operandFields = numericResult
-    ? fields.filter((f) => isNumericType(f.field_type))
-    : fields;
 
   const validation = useMemo(
     () => validateCalculation(config, { selfLogical: currentFieldLogicalName, otherCalcDeps }),
@@ -226,7 +225,7 @@ export default function CalcBuilderModal({
                   isFirstIf={config.branches.filter((b) => !b.isDefault).indexOf(branch) === 0}
                   numericResult={numericResult}
                   conditionFields={conditionFields}
-                  operandFields={operandFields}
+                  operandFields={fields}
                   resultType={config.resultType}
                   canRemove={config.branches.length > 1}
                   onChange={(patch) => patchBranch(branch.id, patch)}
@@ -424,6 +423,48 @@ function ConditionRowEditor({
   );
 }
 
+// ── Type-aware helpers for the Formula Builder ───────────────────────────────
+/** The output type the result must produce, derived from the calculated field's data type. */
+function resultExpectType(rt: CalcResultType): CalcOutputType {
+  if (rt === 'number' || rt === 'currency') return 'number';
+  if (rt === 'date') return 'date';
+  if (rt === 'boolean') return 'boolean';
+  return 'any'; // text / choice
+}
+
+/** Source fields whose type can satisfy an expected operand type. */
+function fieldsForExpect(fields: SourceField[], expect: CalcOutputType): SourceField[] {
+  if (expect === 'number') return fields.filter((f) => isNumericType(f.field_type));
+  if (expect === 'date') return fields.filter((f) => isDateType(f.field_type));
+  if (expect === 'boolean') return fields.filter((f) => isBoolType(f.field_type));
+  return fields;
+}
+
+/** Functions whose return type can satisfy an expected operand type. */
+function functionsForExpect(expect: CalcOutputType): CalcFunctionMeta[] {
+  return CALC_FUNCTIONS.filter((fn) => expect === 'any' || fn.outputType === expect);
+}
+
+/** Default value-input type for an expected operand slot. */
+function inputTypeForExpect(expect: CalcOutputType): string {
+  return expect === 'number' ? 'number' : expect === 'date' ? 'date' : expect === 'boolean' ? 'boolean' : 'text';
+}
+
+/** Best default operand for a freshly-added slot expecting `expect`. */
+function defaultOperandFor(expect: CalcOutputType, fields: SourceField[]): CalcOperand {
+  const ff = fieldsForExpect(fields, expect);
+  if (expect !== 'any' && ff.length) {
+    const f = ff[0];
+    return { kind: 'field', field: f.logical_name, column: f.physical_column_name, fieldType: f.field_type, displayName: f.display_name };
+  }
+  return { kind: 'value', value: '' };
+}
+
+/** Build a function operand, seeding its parameters with sensible defaults. */
+function makeFunctionOperand(meta: CalcFunctionMeta, fields: SourceField[]): CalcOperand {
+  return { kind: 'function', fn: meta.fn, args: Array.from({ length: meta.arity }, () => defaultOperandFor(meta.paramType, fields)) };
+}
+
 // ── Result expression ──────────────────────────────────────────────────────
 function ResultExpression({
   expr, numericResult, resultType, fields, onChange,
@@ -432,11 +473,13 @@ function ResultExpression({
   numericResult: boolean; resultType: CalcResultType; fields: SourceField[];
   onChange: (e: { operands: CalcOperand[]; operators: CalcArithOp[] }) => void;
 }) {
+  const expect = resultExpectType(resultType);
+
   function setOperand(i: number, op: CalcOperand) {
     onChange({ ...expr, operands: expr.operands.map((o, idx) => (idx === i ? op : o)) });
   }
   function addOperation() {
-    onChange({ operands: [...expr.operands, { kind: 'value', value: '' }], operators: [...expr.operators, '+'] });
+    onChange({ operands: [...expr.operands, defaultOperandFor(expect, fields)], operators: [...expr.operators, '+'] });
   }
   function removeOperand(i: number) {
     onChange({
@@ -451,20 +494,15 @@ function ResultExpression({
   return (
     <div className="space-y-1.5">
       {expr.operands.map((op, i) => (
-        <div key={i} className="flex items-center gap-1.5">
+        <div key={i} className="flex items-start gap-1.5">
           {i > 0 && (
-            <FilterSelect value={expr.operators[i - 1] ?? '+'} onChange={(e) => setOperator(i - 1, e.target.value as CalcArithOp)} className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white w-24">
+            <FilterSelect value={expr.operators[i - 1] ?? '+'} onChange={(e) => setOperator(i - 1, e.target.value as CalcArithOp)} className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white w-24 mt-0.5">
               {(['+', '-', '*', '/'] as CalcArithOp[]).map((o) => <option key={o} value={o}>{ARITH_LABELS[o]}</option>)}
             </FilterSelect>
           )}
-          <OperandEditor
-            operand={op}
-            resultType={resultType}
-            fields={fields}
-            onChange={(o) => setOperand(i, o)}
-          />
+          <OperandEditor operand={op} expect={expect} fields={fields} onChange={(o) => setOperand(i, o)} />
           {expr.operands.length > 1 && (
-            <button onClick={() => removeOperand(i)} className="p-1.5 rounded hover:bg-red-100 text-[#cbd2dc] hover:text-red-500 transition shrink-0">
+            <button onClick={() => removeOperand(i)} className="p-1.5 rounded hover:bg-red-100 text-[#cbd2dc] hover:text-red-500 transition shrink-0 mt-0.5">
               <Trash2 size={12} />
             </button>
           )}
@@ -479,49 +517,117 @@ function ResultExpression({
   );
 }
 
+// ── Recursive operand / formula editor ───────────────────────────────────────
+// One of: a Field, a static Value, or a Function whose parameters are themselves
+// operands (Field / Value / Function). This is the dynamic Formula Builder.
+type OperandKind = 'field' | 'value' | 'function';
+
 function OperandEditor({
-  operand, resultType, fields, onChange,
+  operand, expect, fields, depth = 0, onChange,
 }: {
-  operand: CalcOperand; resultType: CalcResultType; fields: SourceField[];
+  operand: CalcOperand; expect: CalcOutputType; fields: SourceField[]; depth?: number;
   onChange: (o: CalcOperand) => void;
 }) {
-  const isField = operand.kind === 'field';
-  const selected = isField ? fields.find((f) => f.logical_name === operand.field) : undefined;
+  const fnChoices = functionsForExpect(expect);
+  const typedFields = fieldsForExpect(fields, expect);
+  const selectedFieldMeta = operand.kind === 'field' ? fields.find((f) => f.logical_name === operand.field) : undefined;
 
-  function switchKind(kind: 'field' | 'value') {
+  // Which kinds are offered here. Functions only when at least one fits the slot,
+  // and we cap nesting depth so the UI stays readable.
+  const kinds: OperandKind[] = ['field', 'value'];
+  if (fnChoices.length && depth < 4) kinds.push('function');
+
+  function switchKind(kind: OperandKind) {
+    if (kind === operand.kind) return;
     if (kind === 'field') {
-      const f = fields[0];
+      const f = (typedFields.length ? typedFields : fields)[0];
       onChange(f
         ? { kind: 'field', field: f.logical_name, column: f.physical_column_name, fieldType: f.field_type, displayName: f.display_name }
         : { kind: 'field', field: '', column: '', fieldType: 'text', displayName: '' });
-    } else {
+    } else if (kind === 'value') {
       onChange({ kind: 'value', value: '' });
+    } else {
+      onChange(makeFunctionOperand(fnChoices[0], fields));
     }
   }
   function pickField(logical: string) {
     const f = fields.find((x) => x.logical_name === logical);
     if (f) onChange({ kind: 'field', field: f.logical_name, column: f.physical_column_name, fieldType: f.field_type, displayName: f.display_name });
   }
+  function pickFunction(fn: string) {
+    const meta = calcFunctionMeta(fn);
+    if (meta) onChange(makeFunctionOperand(meta, fields));
+  }
+  function setArg(i: number, arg: CalcOperand) {
+    if (operand.kind !== 'function') return;
+    onChange({ ...operand, args: operand.args.map((a, idx) => (idx === i ? arg : a)) });
+  }
+
+  const fieldOptions = typedFields.length ? typedFields : fields; // fall back to all if none match
 
   return (
-    <div className="flex items-center gap-1.5 flex-1">
-      <FilterSelect value={operand.kind} onChange={(e) => switchKind(e.target.value as 'field' | 'value')} className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white w-20">
-        <option value="field">Field</option>
-        <option value="value">Value</option>
-      </FilterSelect>
-      {isField ? (
-        <FilterSelect value={operand.field} onChange={(e) => pickField(e.target.value)} className="flex-1 text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white">
-          <option value="">Select field…</option>
-          {fields.map((f) => <option key={f.logical_name} value={f.logical_name}>{f.display_name}</option>)}
+    <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-1.5">
+        <FilterSelect
+          value={operand.kind}
+          onChange={(e) => switchKind(e.target.value as OperandKind)}
+          className="text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white w-[92px] shrink-0"
+        >
+          {kinds.map((k) => (
+            <option key={k} value={k}>{k === 'field' ? 'Field' : k === 'value' ? 'Value' : 'Function'}</option>
+          ))}
         </FilterSelect>
-      ) : (
-        <ValueInput
-          fieldType={resultType}
-          choices={selected?.choices ?? []}
-          value={operand.kind === 'value' ? operand.value : ''}
-          onChange={(v) => onChange({ kind: 'value', value: v })}
-        />
-      )}
+
+        {operand.kind === 'field' && (
+          <FilterSelect value={operand.field} onChange={(e) => pickField(e.target.value)} className="flex-1 min-w-0 text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white">
+            <option value="">Select field…</option>
+            {fieldOptions.map((f) => <option key={f.logical_name} value={f.logical_name}>{f.display_name}</option>)}
+          </FilterSelect>
+        )}
+
+        {operand.kind === 'value' && (
+          <ValueInput
+            fieldType={inputTypeForExpect(expect)}
+            choices={selectedFieldMeta?.choices ?? []}
+            value={operand.value}
+            onChange={(v) => onChange({ kind: 'value', value: v })}
+          />
+        )}
+
+        {operand.kind === 'function' && (
+          <FilterSelect value={operand.fn} onChange={(e) => pickFunction(e.target.value)} className="flex-1 min-w-0 text-[12px] border border-[#e7eaf1] rounded-lg px-2 py-1.5 bg-white">
+            {fnChoices.map((fn) => <option key={fn.fn} value={fn.fn}>{fn.label}</option>)}
+          </FilterSelect>
+        )}
+      </div>
+
+      {/* Function parameters (recursive) */}
+      {operand.kind === 'function' && (() => {
+        const meta = calcFunctionMeta(operand.fn);
+        if (!meta) return null;
+        if (meta.arity === 0) {
+          return <p className="ml-[100px] mt-1 text-[10.5px] text-[#9ca3af] italic">{meta.hint} — no parameters</p>;
+        }
+        return (
+          <div className="ml-3 mt-1.5 pl-3 border-l-2 border-[#e7eaf1] space-y-1.5">
+            <p className="text-[10px] font-medium text-[#9ca3af]">
+              <FunctionSquare size={10} className="inline mr-1 -mt-0.5" />{meta.hint}
+            </p>
+            {Array.from({ length: meta.arity }).map((_, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="text-[10px] text-[#9ca3af] w-14 shrink-0 uppercase tracking-wide">Param {i + 1}</span>
+                <OperandEditor
+                  operand={operand.args[i] ?? { kind: 'value', value: '' }}
+                  expect={meta.paramType}
+                  fields={fields}
+                  depth={depth + 1}
+                  onChange={(a) => setArg(i, a)}
+                />
+              </div>
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }

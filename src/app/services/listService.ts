@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase';
 import { type AppEntity, ENTITY_DEFINITION_ID } from '../types';
-import { getTableColumns, translateKeysToPhysical, clearTableColumnsCache, filterToExistingColumns } from './recordService';
+import { getTableColumns, translateKeysToPhysical, clearTableColumnsCache, filterToExistingColumns, fetchRecord } from './recordService';
+import { dispatchAutomationForEvent } from './automation/dispatch';
 import { reloadPostgrestSchema, isSchemaCacheError } from '../../services/schemaService';
 import { getTable } from './metadata/metadataStore';
 import type { AccessLevel, UserAccessContext } from './permissionService';
@@ -995,11 +996,24 @@ export async function updateRowFields(
   const payload: Record<string, unknown> = filterToExistingColumns(physical, tableCols);
   if (tableCols.has('modified_at')) payload.modified_at = new Date().toISOString();
   if (tableCols.has('modified_by')) payload.modified_by = userId;
+
+  // Snapshot the row BEFORE the write so Power Automation can evaluate transition
+  // triggers (changes_to / changes_from_to) on an inline-grid edit. Best-effort.
+  const before = await fetchRecord(entity, id).catch(() => null);
+
   const { error } = await supabase
     .from(table)
     .update(payload)
     .eq(pk, id);
   if (error) throw error;
+
+  // Power Automation: inline-grid edits are real record updates too — detect and
+  // enqueue jobs (the form path does this in saveRecord). Fire-and-forget; never
+  // let an automation hiccup surface as a failed inline save. `fields` is
+  // logical-keyed, so the post-save `after` is the before-snapshot with the edits
+  // applied. Pass `table` (matches saveRecord's entitySlug) so rule matching lines up.
+  const after = { ...(before ?? {}), ...fields, modified_at: new Date().toISOString() };
+  void dispatchAutomationForEvent(table, 'update', id, after, before, userId);
 }
 
 export async function fetchSavedFilters(entity: AppEntity): Promise<SavedFilter[]> {
@@ -1099,6 +1113,16 @@ export async function bulkUpdateRows(
 
   if (tableCols.has('modified_at')) payload.modified_at = new Date().toISOString();
   if (tableCols.has('modified_by')) payload.modified_by = userId;
+
+  // Snapshot the affected rows BEFORE the write (one query) so Power Automation can
+  // evaluate transition triggers and access the prior values. Best-effort.
+  const beforeById = new Map<string, Record<string, unknown>>();
+  try {
+    const priors = await Promise.all(ids.map((id) => fetchRecord(entity, id).catch(() => null)));
+    ids.forEach((id, i) => { if (priors[i]) beforeById.set(id, priors[i] as Record<string, unknown>); });
+  } catch { /* dispatch still runs with a null before */ }
+
+  const succeededIds: string[] = [];
   const CHUNK = 50;
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK);
@@ -1106,7 +1130,7 @@ export async function bulkUpdateRows(
       .from(table)
       .update(payload)
       .in(pk, chunk);
-    if (!error) { updated += chunk.length; continue; }
+    if (!error) { updated += chunk.length; succeededIds.push(...chunk); continue; }
     // A row-level rejection (e.g. a read-only/converted record blocked by a BEFORE UPDATE
     // trigger or RLS) aborts the entire IN(...) statement, which would otherwise sink every
     // other row in the chunk. Retry each row on its own so the good rows still update and
@@ -1118,9 +1142,19 @@ export async function bulkUpdateRows(
         if (!firstError) firstError = friendlyDbError(rowErr);
       } else {
         updated += 1;
+        succeededIds.push(id);
       }
     }
   }
+
+  // Power Automation: enqueue one job per successfully-updated row (fire-and-forget).
+  const stamp = new Date().toISOString();
+  for (const id of succeededIds) {
+    const before = beforeById.get(id) ?? null;
+    const after = { ...(before ?? {}), ...fields, modified_at: stamp };
+    void dispatchAutomationForEvent(table, 'update', id, after, before, userId);
+  }
+
   return { updated, errors, message: errors > 0 || dropped.length > 0 ? firstError : undefined };
 }
 

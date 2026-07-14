@@ -43,7 +43,7 @@ export interface ColumnState {
   /** For choice/option-set columns: the option_set.name used to load filter options */
   option_set_name?: string;
   /** For inline-choice columns: the choices stored directly in config_json */
-  inline_choices?: { value: string; label: string }[];
+  inline_choices?: { value: string; label: string; color?: string; icon?: string }[];
 }
 
 interface AvailableField {

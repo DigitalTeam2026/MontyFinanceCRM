@@ -77,7 +77,13 @@ export async function dispatchAutomationForEvent(
           record_table: table,
           record_id: recordId,
           trigger_event: event,
-          change_snapshot: { before, after, changed_fields: changed },
+          // `origin` = the host the user is actually working on, so email
+          // {{record.url}} links open the record on that same address (the worker
+          // falls back to APP_BASE_URL for scheduled/server runs with no origin).
+          change_snapshot: {
+            before, after, changed_fields: changed,
+            origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+          },
           status: 'pending',
           depth: 0,
           idempotency_key: `${r.automation_rule_id}:${recordId}:${version}`,

@@ -1,250 +1,100 @@
-import type { AppEntity } from '../types';
+import { supabase } from '../../lib/supabase';
+import { getTable } from './metadata/metadataStore';
+import { ENTITY_DEFINITION_ID, ENTITY_LOGICAL_NAME } from '../types';
 import type { ListRow } from './listService';
 
-export type HighlightColor =
-  | 'red'
-  | 'amber'
-  | 'green'
-  | 'blue'
-  | 'sky'
-  | 'emerald'
-  | 'orange'
-  | 'rose'
-  | 'teal';
+/**
+ * Row highlighting is driven ENTIRELY by each entity's real Status Reason
+ * option set (`status_reason_definition`) — never by hardcoded rules. The
+ * reasons, their labels, and their colors are exactly the ones an admin has
+ * configured for that entity, so the legend and row accents always reflect the
+ * data that actually exists in the entity.
+ *
+ * `status_reason_definition` ships in the published metadata snapshot (full row
+ * via to_jsonb), so `color` is available synchronously in the Sales app; we
+ * fall back to a live query when the snapshot is not hydrated (e.g. Admin).
+ */
 
-export interface HighlightRule {
-  id: string;
+export interface ReasonHighlight {
+  /** Raw stored code, e.g. "3". */
+  value: string;
+  /** Human label, e.g. "Won". */
   label: string;
-  color: HighlightColor;
-  priority: number;
-  test: (row: ListRow) => boolean;
+  /** Hex color from the reason definition, e.g. "#10B981". */
+  color: string;
+  sortOrder: number;
 }
 
-export interface HighlightResult {
-  rule: HighlightRule;
-  rowClass: string;
-  leftBorderClass: string;
-  badgeClass: string;
-  badgeDotClass: string;
+/** Fallback when a reason row has no color configured. */
+const DEFAULT_REASON_COLOR = '#6B7280';
+
+interface RawReason {
+  reason_value: string | number;
+  display_label: string;
+  color: string | null;
+  sort_order: number | null;
+  entity_definition_id: string;
 }
 
-const COLOR_CLASSES: Record<HighlightColor, { row: string; leftBorder: string; badge: string; dot: string }> = {
-  red:     { row: '',  leftBorder: 'border-l-[3px] border-l-red-500',     badge: 'bg-red-100 text-red-700',        dot: 'bg-red-500' },
-  rose:    { row: '',  leftBorder: 'border-l-[3px] border-l-rose-400',    badge: 'bg-rose-100 text-rose-700',      dot: 'bg-rose-400' },
-  amber:   { row: '',  leftBorder: 'border-l-[3px] border-l-amber-400',   badge: 'bg-amber-100 text-amber-700',    dot: 'bg-amber-400' },
-  orange:  { row: '',  leftBorder: 'border-l-[3px] border-l-orange-400',  badge: 'bg-orange-100 text-orange-700',  dot: 'bg-orange-400' },
-  green:   { row: '',  leftBorder: 'border-l-[3px] border-l-green-500',   badge: 'bg-green-100 text-green-700',    dot: 'bg-green-500' },
-  emerald: { row: '',  leftBorder: 'border-l-[3px] border-l-emerald-500', badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
-  teal:    { row: '',  leftBorder: 'border-l-[3px] border-l-teal-500',    badge: 'bg-teal-100 text-teal-700',      dot: 'bg-teal-500' },
-  sky:     { row: '',  leftBorder: 'border-l-[3px] border-l-sky-500',     badge: 'bg-sky-100 text-sky-700',        dot: 'bg-sky-500' },
-  blue:    { row: '',  leftBorder: 'border-l-[3px] border-l-blue-500',    badge: 'bg-blue-100 text-blue-700',      dot: 'bg-blue-500' },
-};
-
-function daysAgo(isoDate: string): number {
-  return (Date.now() - new Date(isoDate).getTime()) / 86_400_000;
+async function resolveEntityDefId(entity: string): Promise<string | null> {
+  const known = ENTITY_DEFINITION_ID[entity];
+  if (known) return known;
+  const logical = ENTITY_LOGICAL_NAME[entity] ?? entity;
+  const snap = getTable<{ entity_definition_id: string; logical_name: string }>('entity_definition');
+  if (snap !== null) {
+    return snap.find((e) => e.logical_name === logical)?.entity_definition_id ?? null;
+  }
+  const { data } = await supabase
+    .from('entity_definition')
+    .select('entity_definition_id')
+    .eq('logical_name', logical)
+    .maybeSingle();
+  return (data as { entity_definition_id: string } | null)?.entity_definition_id ?? null;
 }
 
-function daysUntil(isoDate: string): number {
-  return (new Date(isoDate).getTime() - Date.now()) / 86_400_000;
+/**
+ * Load the Status Reason highlights for an entity, ordered by sort_order.
+ * Returns [] when the entity has no reasons configured (→ no legend, no accents).
+ */
+export async function loadReasonHighlights(entity: string): Promise<ReasonHighlight[]> {
+  const entityDefId = await resolveEntityDefId(entity);
+  if (!entityDefId) return [];
+
+  let rows: RawReason[];
+  const snap = getTable<RawReason>('status_reason_definition');
+  if (snap !== null) {
+    rows = snap.filter((r) => r.entity_definition_id === entityDefId);
+  } else {
+    // No is_active filter: an inactive reason still needs a color for existing
+    // rows that carry it, and the legend should mirror every reason that exists.
+    const { data } = await supabase
+      .from('status_reason_definition')
+      .select('reason_value, display_label, color, sort_order, entity_definition_id')
+      .eq('entity_definition_id', entityDefId);
+    rows = (data ?? []) as RawReason[];
+  }
+
+  return rows
+    .map((r) => ({
+      value: String(r.reason_value),
+      label: r.display_label,
+      color: r.color || DEFAULT_REASON_COLOR,
+      sortOrder: r.sort_order ?? 0,
+    }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-function statusIs(val: unknown, ...targets: string[]): boolean {
-  if (val == null) return false;
-  const s = String(val).toLowerCase();
-  return targets.some((t) => t === s);
-}
-
-const ENTITY_RULES: Record<AppEntity, HighlightRule[]> = {
-  opportunities: [
-    {
-      id: 'opp_won',
-      label: 'Won',
-      color: 'emerald',
-      priority: 10,
-      test: (r) => statusIs(r.state_code, 'won') || statusIs(r.stage, 'won'),
-    },
-    {
-      id: 'opp_lost',
-      label: 'Lost',
-      color: 'red',
-      priority: 10,
-      test: (r) => statusIs(r.state_code, 'lost') || statusIs(r.stage, 'lost'),
-    },
-    {
-      id: 'opp_closing_soon',
-      label: 'Closing soon',
-      color: 'amber',
-      priority: 8,
-      test: (r) => {
-        const closeDate = r.estimated_close_date as string | null;
-        if (!closeDate) return false;
-        const d = daysUntil(closeDate);
-        return d >= 0 && d <= 14;
-      },
-    },
-    {
-      id: 'opp_overdue_close',
-      label: 'Overdue',
-      color: 'red',
-      priority: 9,
-      test: (r) => {
-        const closeDate = r.estimated_close_date as string | null;
-        if (!closeDate || statusIs(r.state_code, 'won', 'lost')) return false;
-        return daysUntil(closeDate) < 0;
-      },
-    },
-    {
-      id: 'opp_high_value',
-      label: 'High value',
-      color: 'sky',
-      priority: 5,
-      test: (r) => {
-        const v = Number(r.estimated_value ?? 0);
-        return v >= 50_000;
-      },
-    },
-  ],
-  tickets: [
-    {
-      id: 'ticket_urgent',
-      label: 'Urgent',
-      color: 'red',
-      priority: 10,
-      test: (r) => r.priority === 'urgent',
-    },
-    {
-      id: 'ticket_high',
-      label: 'High priority',
-      color: 'orange',
-      priority: 9,
-      test: (r) => r.priority === 'high',
-    },
-    {
-      id: 'ticket_overdue',
-      label: 'Overdue (7+ days open)',
-      color: 'rose',
-      priority: 8,
-      test: (r) => {
-        const created = r.created_at as string | null;
-        if (!created) return false;
-        return statusIs(r.state_code, 'open', 'in_progress', 'active') && daysAgo(created) >= 7;
-      },
-    },
-    {
-      id: 'ticket_resolved',
-      label: 'Resolved',
-      color: 'emerald',
-      priority: 5,
-      test: (r) => statusIs(r.state_code, 'resolved', 'closed', 'inactive'),
-    },
-    {
-      id: 'ticket_pending',
-      label: 'Pending',
-      color: 'amber',
-      priority: 6,
-      test: (r) => statusIs(r.state_code, 'pending'),
-    },
-  ],
-  leads: [
-    {
-      id: 'lead_hot',
-      label: 'Hot lead',
-      color: 'red',
-      priority: 10,
-      test: (r) => r.rating === 'hot',
-    },
-    {
-      id: 'lead_warm',
-      label: 'Warm lead',
-      color: 'amber',
-      priority: 9,
-      test: (r) => r.rating === 'warm',
-    },
-    {
-      id: 'lead_qualified',
-      label: 'Qualified',
-      color: 'green',
-      priority: 8,
-      test: (r) => statusIs(r.state_code, 'qualified'),
-    },
-    {
-      id: 'lead_disqualified',
-      label: 'Disqualified',
-      color: 'rose',
-      priority: 7,
-      test: (r) => statusIs(r.state_code, 'disqualified'),
-    },
-    {
-      id: 'lead_stale',
-      label: 'Stale (30+ days)',
-      color: 'orange',
-      priority: 5,
-      test: (r) => {
-        const created = r.created_at as string | null;
-        return !!created && daysAgo(created) >= 30 && statusIs(r.state_code, 'new', 'open');
-      },
-    },
-  ],
-  accounts: [
-    {
-      id: 'account_inactive',
-      label: 'Inactive',
-      color: 'red',
-      priority: 9,
-      test: (r) => statusIs(r.state_code, 'inactive'),
-    },
-    {
-      id: 'account_new',
-      label: 'New (last 7 days)',
-      color: 'green',
-      priority: 5,
-      test: (r) => {
-        const created = r.created_at as string | null;
-        return !!created && daysAgo(created) <= 7;
-      },
-    },
-  ],
-  contacts: [
-    {
-      id: 'contact_inactive',
-      label: 'Inactive',
-      color: 'red',
-      priority: 9,
-      test: (r) => statusIs(r.state_code, 'inactive'),
-    },
-    {
-      id: 'contact_new',
-      label: 'New (last 7 days)',
-      color: 'green',
-      priority: 5,
-      test: (r) => {
-        const created = r.created_at as string | null;
-        return !!created && daysAgo(created) <= 7;
-      },
-    },
-  ],
-};
-
-export function evaluateRowHighlight(entity: AppEntity, row: ListRow): HighlightResult | null {
-  const rules = ENTITY_RULES[entity] ?? [];
-  const matching = rules
-    .filter((r) => r.test(row))
-    .sort((a, b) => b.priority - a.priority);
-
-  if (matching.length === 0) return null;
-
-  const rule = matching[0];
-  const colors = COLOR_CLASSES[rule.color];
-
-  return {
-    rule,
-    rowClass: colors.row,
-    leftBorderClass: colors.leftBorder,
-    badgeClass: colors.badge,
-    badgeDotClass: colors.dot,
-  };
-}
-
-export function getEntityRules(entity: AppEntity): HighlightRule[] {
-  return ENTITY_RULES[entity] ?? [];
+/**
+ * Match a row to its Status Reason highlight. The list grid resolves
+ * `status_reason` to its label before render (applyStatusLabels), so we match
+ * on label first and fall back to the raw code for any unresolved path.
+ */
+export function evaluateReasonHighlight(
+  reasons: ReasonHighlight[],
+  row: ListRow,
+): ReasonHighlight | null {
+  const raw = row.status_reason;
+  if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+  const s = String(raw);
+  return reasons.find((r) => r.label === s) ?? reasons.find((r) => r.value === s) ?? null;
 }

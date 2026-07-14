@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import type { Session } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import { ToastProvider } from '../app/context/ToastContext';
@@ -6,39 +6,43 @@ import LoginPage from '../LoginPage';
 import StudioSidebar from './components/StudioSidebar';
 import { useCurrentUserName } from '../app/hooks/useCurrentUserName';
 import StudioHeader from './components/StudioHeader';
-import EntityListPage from './entities/EntityListPage';
-import EntityDesignerPage from './entities/EntityDesignerPage';
-import EntityDetailPage from './entities/EntityDetailPage';
-import FullDataGridPage from './entities/FullDataGridPage';
-import EntityRecycleBinPage from './entities/EntityRecycleBinPage';
-import FieldManagementPage from './fields/FieldManagementPage';
-import FormManagementPage from './forms/FormManagementPage';
-import ViewManagementPage from './views/ViewManagementPage';
-import BusinessRulesPage from './rules/BusinessRulesPage';
-import PowerAutomationPage from './automationrules/PowerAutomationPage';
-import EmailAccountsPage from './automationrules/EmailAccountsPage';
-import SecurityManagementPage from './security/SecurityManagementPage';
-import NavigationPage from './navigation/NavigationPage';
-import CurrenciesPage from './currencies/CurrenciesPage';
-import ProcessFlowsPage from './processflows/ProcessFlowsPage';
-import PipelineStagesPage from './stages/PipelineStagesPage';
-import DuplicateDetectionPage from './duplicates/DuplicateDetectionPage';
-import ApprovalProcessesPage from './approvals/ApprovalProcessesPage';
-import DataPoliciesPage from './policies/DataPoliciesPage';
-import MergeCenterPage from './merges/MergeCenterPage';
-import ColumnSecurityPage from './columnsecurity/ColumnSecurityPage';
-import DigitalRulesPage from './digitalrules/DigitalRulesPage';
-import RelationshipListPage from './relationships/RelationshipListPage';
-import RelationshipEditorPage from './relationships/RelationshipEditorPage';
-import ImportRelationsPage from './relationimport/ImportRelationsPage';
-import DatabaseValidationPage from './validation/DatabaseValidationPage';
-import SystemHealthPage from './system/SystemHealthPage';
-import ApiIntegrationsPage from './integrations/ApiIntegrationsPage';
-import CompanyProfilePage from './companyprofile/CompanyProfilePage';
-import DocumentLocationPage from './documents/DocumentLocationPage';
 import PublishAllButton from './publish/PublishAllButton';
-import PublicationHistoryPage from './publish/PublicationHistoryPage';
-import DashboardsPage from './dashboards/DashboardsPage';
+// Every admin page is lazy-loaded so each becomes its own chunk fetched only when
+// its module is opened. Without this, all ~32 pages bundle into one ~1.4MB
+// AdminStudio chunk even though only one module is ever shown at a time.
+const EntityListPage = lazy(() => import('./entities/EntityListPage'));
+const EntityDesignerPage = lazy(() => import('./entities/EntityDesignerPage'));
+const EntityDetailPage = lazy(() => import('./entities/EntityDetailPage'));
+const FullDataGridPage = lazy(() => import('./entities/FullDataGridPage'));
+const EntityRecycleBinPage = lazy(() => import('./entities/EntityRecycleBinPage'));
+const FieldManagementPage = lazy(() => import('./fields/FieldManagementPage'));
+const FormManagementPage = lazy(() => import('./forms/FormManagementPage'));
+const ViewManagementPage = lazy(() => import('./views/ViewManagementPage'));
+const BusinessRulesPage = lazy(() => import('./rules/BusinessRulesPage'));
+const PowerAutomationPage = lazy(() => import('./automationrules/PowerAutomationPage'));
+const EmailAccountsPage = lazy(() => import('./automationrules/EmailAccountsPage'));
+const SecurityManagementPage = lazy(() => import('./security/SecurityManagementPage'));
+const NavigationPage = lazy(() => import('./navigation/NavigationPage'));
+const CurrenciesPage = lazy(() => import('./currencies/CurrenciesPage'));
+const ProcessFlowsPage = lazy(() => import('./processflows/ProcessFlowsPage'));
+const PipelineStagesPage = lazy(() => import('./stages/PipelineStagesPage'));
+const DuplicateDetectionPage = lazy(() => import('./duplicates/DuplicateDetectionPage'));
+const ApprovalProcessesPage = lazy(() => import('./approvals/ApprovalProcessesPage'));
+const DataPoliciesPage = lazy(() => import('./policies/DataPoliciesPage'));
+const MergeCenterPage = lazy(() => import('./merges/MergeCenterPage'));
+const ColumnSecurityPage = lazy(() => import('./columnsecurity/ColumnSecurityPage'));
+const DigitalRulesPage = lazy(() => import('./digitalrules/DigitalRulesPage'));
+const RelationshipListPage = lazy(() => import('./relationships/RelationshipListPage'));
+const RelationshipEditorPage = lazy(() => import('./relationships/RelationshipEditorPage'));
+const ImportRelationsPage = lazy(() => import('./relationimport/ImportRelationsPage'));
+const DatabaseValidationPage = lazy(() => import('./validation/DatabaseValidationPage'));
+const SystemHealthPage = lazy(() => import('./system/SystemHealthPage'));
+const ApiIntegrationsPage = lazy(() => import('./integrations/ApiIntegrationsPage'));
+const CompanyProfilePage = lazy(() => import('./companyprofile/CompanyProfilePage'));
+const DocumentLocationPage = lazy(() => import('./documents/DocumentLocationPage'));
+const PublicationHistoryPage = lazy(() => import('./publish/PublicationHistoryPage'));
+const DashboardsPage = lazy(() => import('./dashboards/DashboardsPage'));
+const ClearDataPage = lazy(() => import('./cleardata/ClearDataPage'));
 import type { EntityDefinition } from '../types/entity';
 import type { RelationshipDefinitionWithEntities } from '../types/relationship';
 import { fetchEntities } from '../services/entityService';
@@ -357,6 +361,9 @@ export default function AdminStudio() {
     if (activeModule === 'dashboards') {
       return { title: 'Dashboards', subtitle: 'Design interactive analytical dashboards from CRM entities, fields, and views' };
     }
+    if (activeModule === 'cleardata') {
+      return { title: 'Clear Data', subtitle: 'Permanently delete row data and definitions per category — tables, views, forms, rules, process flows, security roles, field security, and categories' };
+    }
     return { title: 'Admin Studio' };
   };
 
@@ -499,6 +506,7 @@ export default function AdminStudio() {
     if (activeModule === 'dashboards') {
       return <DashboardsPage state={dashboardState} onStateChange={setDashboardState} />;
     }
+    if (activeModule === 'cleardata') return <ClearDataPage />;
 
     return (
       <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
@@ -526,7 +534,15 @@ export default function AdminStudio() {
               actions={<PublishAllButton />}
             />
           )}
-          {renderContent()}
+          <Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            }
+          >
+            {renderContent()}
+          </Suspense>
         </div>
       </div>
     </ToastProvider>

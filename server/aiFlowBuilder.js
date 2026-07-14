@@ -19,6 +19,59 @@ const ACTION_TYPES = ["list_rows", "send_email", "update_field", "generate_docum
 const TRIGGER_OPERATORS = ["changes_to", "equals", "is_any_of", "changes_from_to", "changed"];
 const RUN_AFTER = ["success", "failure", "always"];
 
+/**
+ * When the caller doesn't pick a table, ask Claude to choose one from the full
+ * list purely from the prompt. Keeps this cheap: no field context, just table
+ * names, and we constrain the answer to a known logical_name.
+ */
+async function pickTableFromPrompt(pool, apiKey, prompt) {
+  const tables = (
+    await pool.query(
+      "select logical_name, display_name from entity_definition order by display_name"
+    )
+  ).rows;
+  const valid = new Set(tables.map((t) => t.logical_name));
+  const list = tables.map((t) => `  - ${t.logical_name} (${t.display_name})`).join("\n");
+
+  const resp = await fetch(ANTHROPIC_URL, {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 64,
+      system: `Pick the single table this automation request is about. Reply with ONLY the table's logical_name (exactly as listed) and nothing else.\n\nTABLES:\n${list}`,
+      messages: [{ role: "user", content: String(prompt).trim() }],
+    }),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    const err = new Error(`Anthropic API ${resp.status}: ${body.slice(0, 300)}`);
+    err.statusCode = 502;
+    throw err;
+  }
+  const data = await resp.json();
+  const answer = (data.content || [])
+    .filter((b) => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .trim();
+  // The model may wrap it in quotes/backticks or add a trailing period.
+  const cleaned = answer.replace(/[`'".]/g, "").trim();
+  if (valid.has(cleaned)) return cleaned;
+  // Fall back to a substring match against the raw answer.
+  const hit = tables.find((t) => answer.includes(t.logical_name));
+  if (hit) return hit.logical_name;
+  const err = new Error(
+    "Couldn't tell which table this flow is for — pick a table and try again."
+  );
+  err.statusCode = 422;
+  throw err;
+}
+
 async function loadTableContext(pool, tableLogical) {
   const ent = (
     await pool.query(
@@ -156,9 +209,14 @@ async function buildFlowFromPrompt(pool, { prompt, table_logical_name }) {
     throw err;
   }
   if (!prompt || !String(prompt).trim()) throw new Error("prompt is required");
-  if (!table_logical_name) throw new Error("table_logical_name is required");
 
-  const { ent, fields, tables } = await loadTableContext(pool, table_logical_name);
+  // Table is optional: when the caller doesn't pick one, let the AI infer it
+  // from the prompt so the user can build a flow from text alone.
+  const tableLogical = table_logical_name
+    ? table_logical_name
+    : await pickTableFromPrompt(pool, apiKey, prompt);
+
+  const { ent, fields, tables } = await loadTableContext(pool, tableLogical);
 
   const resp = await fetch(ANTHROPIC_URL, {
     method: "POST",
@@ -195,7 +253,10 @@ async function buildFlowFromPrompt(pool, { prompt, table_logical_name }) {
     .join("");
 
   const raw = extractJson(text);
-  return normalizeSpec(raw, fields);
+  const result = normalizeSpec(raw, fields);
+  // Surface the table we ran on so callers that omitted it know what was picked.
+  result.table_logical_name = ent.logical_name;
+  return result;
 }
 
 module.exports = { buildFlowFromPrompt };

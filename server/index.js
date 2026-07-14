@@ -1356,6 +1356,316 @@ app.post("/api/admin/users/:id/password", async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Admin "Clear data" — permanently delete rows/definitions per category.
+//
+// Categories:
+//   - tables:          every physical public table; clearing DELETEs all rows.
+//   - views/forms/...:  a metadata definition table; clearing DELETEs the
+//                       selected definition rows (their child rows cascade).
+//
+// The UI presents each item in a Protected / To-be-deleted split. "Protected"
+// items are only a safe DEFAULT — the admin can unlock and move any of them,
+// including system tables, so nothing is permanently un-clearable. The actual
+// delete only ever touches the ids the client explicitly sends, and the caller
+// must type the confirm phrase (mirrored here so a direct API call is guarded).
+// ---------------------------------------------------------------------------
+
+const CLEAR_CONFIRM_PHRASE = "DELETE";
+
+// Metadata categories: { key, label, table }. PK + label column are resolved
+// from live schema metadata so we never hardcode column names.
+const CLEAR_META_CATEGORIES = [
+  { key: "views", label: "Views", table: "view_definition" },
+  { key: "forms", label: "Forms", table: "form_definition" },
+  { key: "business_rules", label: "Business Rules", table: "business_rule" },
+  { key: "process_flows", label: "Business Process Flows", table: "process_flow" },
+  { key: "security_roles", label: "Security Roles", table: "security_role" },
+  { key: "field_security", label: "Field Security", table: "column_security_profile" },
+  { key: "categories", label: "Categories", table: "option_set" },
+];
+
+// Physical tables that hold configuration / metadata / security / system data.
+// These DEFAULT to Protected (they still can be unlocked and cleared). Anything
+// not matched here is treated as clearable transactional data by default.
+const PROTECTED_TABLE_EXACT = new Set([
+  "entity_definition", "field_definition", "field_type", "field_permission",
+  "action_permission", "business_rule", "security_role", "role_privilege",
+  "crm_user", "organization", "business_unit", "team", "team_user",
+  "company_profile", "document_location_config", "admin_grid_column_pref",
+  "industry", "country", "line_of_business", "crm_source", "contact_source",
+  "contact_subsource", "view_definition", "form_definition", "process_flow",
+  "option_set", "option_set_value", "column_security_profile", "currency",
+]);
+const PROTECTED_TABLE_PREFIX = [
+  "admin_", "system_", "auth_", "form_", "view_", "process_", "nav_",
+  "dashboard", "api_integration", "automation_", "approval_", "digital_rule",
+  "data_policy", "column_security", "lead_qualification", "merge_",
+  "duplicate_detection", "product_", "customization_", "published_metadata",
+  "publication", "entity_conversion", "currency", "option_set", "relationship",
+  "field_", "security_", "role_",
+];
+
+function isProtectedTable(name) {
+  if (PROTECTED_TABLE_EXACT.has(name)) return true;
+  return PROTECTED_TABLE_PREFIX.some((p) => name.startsWith(p));
+}
+
+function resolvePk(meta, table) {
+  const pks = meta.pksByTable.get(table);
+  return pks && pks.length ? pks[0] : null;
+}
+function resolveLabelCol(meta, table) {
+  const cols = meta.columnsByTable.get(table);
+  if (!cols) return null;
+  for (const c of ["display_name", "name", "title", "label"]) {
+    if (cols.has(c)) return c;
+  }
+  return null;
+}
+
+// Build the manifest: for each category, the list of clearable items with a
+// default `protected` flag and a `locked` flag (system rows start locked).
+app.get("/api/admin/clear/manifest", async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const meta = await loadMeta();
+
+    // Physical tables + estimated row counts (reltuples is cheap and avoids a
+    // full COUNT(*) on large tables; it can be -1 before the first ANALYZE).
+    const tblRes = await pool.query(`
+      SELECT c.relname AS name, c.reltuples::bigint AS est
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'r'
+      ORDER BY c.relname
+    `);
+    const tableItems = tblRes.rows.map((r) => {
+      const protectedByDefault = isProtectedTable(r.name);
+      return {
+        id: r.name,
+        label: r.name,
+        count: r.est != null && r.est >= 0 ? Number(r.est) : null,
+        protected: protectedByDefault,
+        locked: protectedByDefault,
+      };
+    });
+
+    const categories = [
+      { key: "tables", label: "Tables", kind: "physical", items: tableItems },
+    ];
+
+    for (const cat of CLEAR_META_CATEGORIES) {
+      const pk = resolvePk(meta, cat.table);
+      const labelCol = resolveLabelCol(meta, cat.table) || pk;
+      if (!pk) {
+        categories.push({ key: cat.key, label: cat.label, kind: "metadata", items: [] });
+        continue;
+      }
+      const cols = meta.columnsByTable.get(cat.table);
+      const hasSystem = cols?.has("is_system") ?? false;
+      const selectCols = [
+        `${ident(pk)} AS id`,
+        `${ident(labelCol)} AS label`,
+        hasSystem ? `${ident("is_system")} AS is_system` : `false AS is_system`,
+      ].join(", ");
+      const rows = await pool.query(
+        `SELECT ${selectCols} FROM ${ident(cat.table)} ORDER BY ${ident(labelCol)}`
+      );
+      categories.push({
+        key: cat.key,
+        label: cat.label,
+        kind: "metadata",
+        // Config definitions default to Protected — the admin opts in to
+        // deleting them, so a clear can't wipe every form/view/rule by
+        // accident. System rows are additionally locked (unlock to move).
+        items: rows.rows.map((r) => ({
+          id: String(r.id),
+          label: r.label != null ? String(r.label) : String(r.id),
+          count: null,
+          protected: true,
+          locked: !!r.is_system,
+        })),
+      });
+    }
+
+    res.json({ data: { confirmPhrase: CLEAR_CONFIRM_PHRASE, categories } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+// Attempt a list of delete operations inside an existing transaction, retrying
+// FK-blocked ops until no further progress is made (so child tables selected in
+// the same run free their parents without us computing a topological order).
+// Foreign-key enforcement stays ON, so real ON DELETE CASCADE / SET NULL rules
+// apply. Ops still blocked by a FK after the loop stalls are returned in
+// `blocked` (a genuine dependency the caller decides how to handle).
+async function runClearOperations(client, operations) {
+  const done = [];
+  const failed = [];
+  let pending = operations.slice();
+  while (pending.length) {
+    const stillPending = [];
+    let progressed = false;
+    for (const op of pending) {
+      await client.query("SAVEPOINT clr");
+      try {
+        const r = await client.query(op.sql, op.params || []);
+        await client.query("RELEASE SAVEPOINT clr");
+        done.push({ category: op.category, label: op.label, rows: r.rowCount });
+        progressed = true;
+      } catch (e) {
+        await client.query("ROLLBACK TO SAVEPOINT clr");
+        await client.query("RELEASE SAVEPOINT clr");
+        if (e.code === "23503") {
+          stillPending.push(op); // FK violation — try again after other ops
+        } else {
+          failed.push({ category: op.category, label: op.label, error: e.message });
+        }
+      }
+    }
+    pending = stillPending;
+    if (!progressed) break; // remaining ops are truly blocked
+  }
+  return { done, failed, blocked: pending };
+}
+
+// Clear all rows from the selected physical tables. The FK-enforced retry loop
+// drains everything acyclic; whatever remains is stuck in a foreign-key cycle
+// (e.g. account <-> contact). Those residual tables can only be cleared by
+// bypassing FK enforcement — but ONLY if no KEPT (unselected) table still has
+// rows pointing at them, otherwise the bypass would orphan kept data. If a kept
+// table does reference a residual, we refuse to bypass and report it instead.
+async function clearPhysicalTables(client, meta, selectedSet) {
+  const ops = [...selectedSet].map((t) => ({
+    category: "tables", label: t, sql: `DELETE FROM ${ident(t)}`,
+  }));
+  const { done, failed, blocked } = await runClearOperations(client, ops);
+  if (!blocked.length) return { done, failed };
+
+  const residual = blocked.map((op) => op.label);
+  const conflicts = [];
+  for (const r of residual) {
+    for (const inc of meta.incomingByTable.get(r) || []) {
+      if (inc.fromTable === r || selectedSet.has(inc.fromTable)) continue; // self / peer
+      const q = await client.query(
+        `SELECT 1 FROM ${ident(inc.fromTable)} WHERE ${ident(inc.fromColumn)} IS NOT NULL LIMIT 1`
+      );
+      if (q.rowCount) conflicts.push({ table: r, referencedBy: inc.fromTable });
+    }
+  }
+
+  if (conflicts.length) {
+    // Genuine dependency on kept data — don't risk orphaning it.
+    for (const op of blocked) {
+      const c = conflicts.find((x) => x.table === op.label);
+      failed.push({
+        category: "tables", label: op.label,
+        error: c
+          ? `Still referenced by kept table "${c.referencedBy}" — add it to To-be-deleted to clear this.`
+          : "Blocked by a foreign-key cycle involving a table referenced by kept data.",
+      });
+    }
+    return { done, failed };
+  }
+
+  // Residuals form a self-contained FK cycle among selected tables: safe to
+  // clear with enforcement off, then restore it immediately.
+  await client.query("SET session_replication_role = replica");
+  try {
+    for (const op of blocked) {
+      await client.query("SAVEPOINT cyc");
+      try {
+        const r = await client.query(op.sql);
+        await client.query("RELEASE SAVEPOINT cyc");
+        done.push({ category: "tables", label: op.label, rows: r.rowCount });
+      } catch (e) {
+        await client.query("ROLLBACK TO SAVEPOINT cyc");
+        await client.query("RELEASE SAVEPOINT cyc");
+        failed.push({ category: "tables", label: op.label, error: e.message });
+      }
+    }
+  } finally {
+    await client.query("SET session_replication_role = origin");
+  }
+  return { done, failed };
+}
+
+// Execute the clear. Body: { confirm: "DELETE", selections: { <category>: [id, ...] } }.
+app.post("/api/admin/clear", async (req, res) => {
+  try {
+    await requireAdmin(req);
+    const body = req.body || {};
+    if (String(body.confirm) !== CLEAR_CONFIRM_PHRASE) {
+      throw new ApiError(`Type "${CLEAR_CONFIRM_PHRASE}" to confirm this permanent deletion.`, 400);
+    }
+    const selections = body.selections && typeof body.selections === "object" ? body.selections : {};
+    const meta = await loadMeta();
+
+    // Physical tables → clear all rows.
+    const selectedTables = new Set();
+    for (const name of Array.isArray(selections.tables) ? selections.tables : []) {
+      if (typeof name !== "string" || !meta.columnsByTable.has(name)) {
+        throw new ApiError(`Unknown table: ${String(name)}`, 400);
+      }
+      selectedTables.add(name);
+    }
+
+    // Metadata categories → delete the selected definition rows by primary key.
+    // These run FK-enforced so ON DELETE CASCADE removes their child rows.
+    const metaOps = [];
+    for (const cat of CLEAR_META_CATEGORIES) {
+      const ids = Array.isArray(selections[cat.key]) ? selections[cat.key] : [];
+      if (!ids.length) continue;
+      const pk = resolvePk(meta, cat.table);
+      if (!pk) throw new ApiError(`Cannot resolve primary key for ${cat.table}.`, 500);
+      metaOps.push({
+        category: cat.key,
+        label: cat.label,
+        sql: `DELETE FROM ${ident(cat.table)} WHERE ${ident(pk)}::text = ANY($1::text[])`,
+        params: [ids.map((v) => String(v))],
+      });
+    }
+
+    if (!selectedTables.size && !metaOps.length) {
+      throw new ApiError("Nothing selected to clear.", 400);
+    }
+
+    const client = await pool.connect();
+    const cleared = [];
+    const failed = [];
+    try {
+      await client.query("BEGIN");
+      if (selectedTables.size) {
+        const p = await clearPhysicalTables(client, meta, selectedTables);
+        cleared.push(...p.done); failed.push(...p.failed);
+      }
+      if (metaOps.length) {
+        const m = await runClearOperations(client, metaOps);
+        cleared.push(...m.done); failed.push(...m.failed);
+        for (const op of m.blocked) {
+          failed.push({
+            category: op.category, label: op.label,
+            error: "Blocked by foreign-key references from data not selected for clearing.",
+          });
+        }
+      }
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    const totalRows = cleared.reduce((s, d) => s + (d.rows || 0), 0);
+    res.json({ data: { cleared, failed, totalRows } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 // Convenience count endpoint (kept for manual testing / api helper).
 app.get("/api/:table/count", async (req, res) => {
   try {

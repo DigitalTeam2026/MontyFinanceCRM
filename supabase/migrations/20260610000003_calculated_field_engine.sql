@@ -314,12 +314,19 @@ END; $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 7. Grants
+--    This deployment has NO `anon` / `authenticated` / `service_role` roles
+--    (roles are absent locally), so referencing them here — as the original
+--    `REVOKE ... FROM public, anon` / `GRANT ... TO authenticated` did — aborts
+--    the ENTIRE migration with `role "anon" does not exist`, which is why the
+--    whole calc engine (evaluator, trigger fn, RPCs, trigger attachment) never
+--    got installed and calculated columns never computed. Grant TO public
+--    instead — the two admin RPCs already enforce security.is_system_admin()
+--    in their own bodies, so public EXECUTE is safe. See the runtime-DDL
+--    convention used elsewhere that avoids the same "role does not exist" error.
 -- ─────────────────────────────────────────────────────────────────────────────
-REVOKE ALL ON FUNCTION public.ensure_calc_trigger(text) FROM public, anon;
-REVOKE ALL ON FUNCTION public.recalc_calculated_fields(text) FROM public, anon;
-GRANT EXECUTE ON FUNCTION public.ensure_calc_trigger(text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.recalc_calculated_fields(text) TO authenticated;
-GRANT EXECUTE ON FUNCTION security.crm_compute_calculated() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.ensure_calc_trigger(text) TO public;
+GRANT EXECUTE ON FUNCTION public.recalc_calculated_fields(text) TO public;
+GRANT EXECUTE ON FUNCTION security.crm_compute_calculated() TO public;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 8. Attach the trigger to every table that already has a calculated field

@@ -1,0 +1,275 @@
+{
+  "dashboard": {
+    "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+    "name": "Sales Pipeline",
+    "description": "Prospects -> Leads -> Opportunities pipeline with live status composition, KPIs, breakdowns, ownership and weekly trend.",
+    "dashboard_type": "system",
+    "primary_entity_id": null,
+    "default_date_field_id": null,
+    "default_date_range": "this_year",
+    "theme_id": null,
+    "refresh_interval": "manual",
+    "owner_id": null,
+    "business_unit_id": null,
+    "status": "draft",
+    "is_default": false,
+    "published_version_id": null,
+    "created_by": null,
+    "modified_by": null,
+    "created_at": "2026-07-13T00:00:00.000Z",
+    "modified_at": "2026-07-13T00:00:00.000Z",
+    "deleted_at": null
+  },
+  "pages": [
+    {
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "name": "Overview",
+      "display_name": "Overview",
+      "page_order": 0,
+      "icon": null,
+      "is_default": true,
+      "is_hidden": false,
+      "background_config": { "color": "#f6f7fb" },
+      "canvas_config": { "columns": 24, "rowHeight": 26, "gap": 16, "width": 1440, "heightMode": "auto", "dashboardLayoutDirection": "left-to-right" }
+    }
+  ],
+  "filters": [],
+  "measures": [],
+  "visuals": [
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v001",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "timeline",
+      "title": "Date range",
+      "x": 0, "y": 0, "width": 24, "height": 4, "min_width": 6, "min_height": 3, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "lead" },
+      "data_config": { "dateSlicer": {
+        "dateField": "created_at", "filterMode": "between", "defaultRange": "this_year",
+        "granularity": "week", "applyTo": "dashboard", "filterScope": "dashboard",
+        "style": "button_presets", "orientation": "horizontal",
+        "showClearButton": true, "showTodayButton": true, "showPresetRanges": true, "autoApply": true,
+        "activePresetColor": "#eef1fe", "activePresetTextColor": "#4f6df5", "selectedRangeColor": "#4f6df5"
+      } },
+      "format_config": { "showHeader": false, "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 16, "fontFamily": "'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v002",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "funnel_stage",
+      "title": "Pipeline Overview",
+      "x": 0, "y": 4, "width": 24, "height": 9, "min_width": 12, "min_height": 6, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": {},
+      "data_config": { "stages": [
+        {
+          "id": "stage_prospects", "label": "Prospects", "entity": "crm_prospect", "measure": "count",
+          "color": "#4f6df5", "icon": "Users", "totalLabel": "Prospects",
+          "displayMode": "breakdown", "breakdownField": "status_reason",
+          "breakdownValues": ["Active", "In Progress", "Converted to Lead", "Inactive"],
+          "showPercentages": true, "showProgressBars": true,
+          "colorByValue": { "1": "#4f6df5", "3": "#e08a2b", "2": "#9aa0b4", "7": "#8b5cf6" }
+        },
+        {
+          "id": "stage_leads", "label": "Leads", "entity": "lead", "measure": "count",
+          "color": "#8b5cf6", "icon": "UserPlus", "totalLabel": "Leads",
+          "displayMode": "breakdown", "breakdownField": "status_reason",
+          "breakdownValues": ["New", "Qualified", "Lost"],
+          "showPercentages": true, "showProgressBars": true,
+          "colorByValue": { "1": "#4f6df5", "4": "#17a673", "5": "#e35d5d" }
+        },
+        {
+          "id": "stage_opps", "label": "Opportunities", "entity": "opportunity", "measure": "count",
+          "color": "#12b3a6", "icon": "Target", "totalLabel": "Opportunities",
+          "displayMode": "breakdown", "breakdownField": "status_reason",
+          "breakdownValues": ["In Progress", "Won", "Canceled"],
+          "showPercentages": true, "showProgressBars": true,
+          "colorByValue": { "1": "#e08a2b", "3": "#17a673", "4": "#e35d5d" }
+        }
+      ] },
+      "format_config": {
+        "showHeader": true, "funnelLayout": "horizontal", "showArrows": true, "showConversion": true,
+        "conversionDecimals": 0, "showStageSubtitle": false, "scrollStages": true, "stageGap": 8, "numberFormat": "number",
+        "arrowColor": "#4f6df5", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 18,
+        "titleColor": "#171a29", "valueColor": "#171a29", "breakdownTrackColor": "#eef0f6",
+        "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif"
+      },
+      "interaction_config": {}, "filter_config": {}
+    },
+
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v010",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "kpi", "title": "Products",
+      "x": 0, "y": 13, "width": 5, "height": 5, "min_width": 3, "min_height": 4, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "product" },
+      "data_config": { "kpiMode": "simple", "mainAgg": "count", "kpiLayout": "compact" },
+      "format_config": { "showHeader": true, "numberFormat": "number", "accentColor": "#4f6df5", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 14, "titleColor": "#8a8fa3", "valueColor": "#171a29", "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v011",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "kpi", "title": "Accounts",
+      "x": 5, "y": 13, "width": 5, "height": 5, "min_width": 3, "min_height": 4, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "account" },
+      "data_config": { "kpiMode": "simple", "mainAgg": "count", "kpiLayout": "compact" },
+      "format_config": { "showHeader": true, "numberFormat": "number", "accentColor": "#8b5cf6", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 14, "titleColor": "#8a8fa3", "valueColor": "#171a29", "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v012",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "kpi", "title": "Sources",
+      "x": 10, "y": 13, "width": 5, "height": 5, "min_width": 3, "min_height": 4, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "lead" },
+      "data_config": { "kpiMode": "simple", "mainAgg": "count_distinct", "mainField": "lead_source", "kpiLayout": "compact" },
+      "format_config": { "showHeader": true, "numberFormat": "number", "accentColor": "#12b3a6", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 14, "titleColor": "#8a8fa3", "valueColor": "#171a29", "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v013",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "kpi", "title": "Industries",
+      "x": 15, "y": 13, "width": 5, "height": 5, "min_width": 3, "min_height": 4, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "account" },
+      "data_config": { "kpiMode": "simple", "mainAgg": "count_distinct", "mainField": "industry", "kpiLayout": "compact" },
+      "format_config": { "showHeader": true, "numberFormat": "number", "accentColor": "#e08a2b", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 14, "titleColor": "#8a8fa3", "valueColor": "#171a29", "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v014",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "kpi", "title": "Campaigns",
+      "x": 20, "y": 13, "width": 4, "height": 5, "min_width": 3, "min_height": 4, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "campaign" },
+      "data_config": { "kpiMode": "simple", "mainAgg": "count", "kpiLayout": "compact" },
+      "format_config": { "showHeader": true, "numberFormat": "number", "accentColor": "#17a673", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 14, "titleColor": "#8a8fa3", "valueColor": "#171a29", "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v020",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "area", "title": "Leads created / week",
+      "x": 0, "y": 18, "width": 8, "height": 7, "min_width": 4, "min_height": 5, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "lead", "groupBy": [{ "field": "created_at", "dateGrain": "week", "alias": "created_at" }], "aggregations": [{ "field": "*", "fn": "count", "alias": "count" }], "orderBy": [{ "key": "created_at", "dir": "asc" }] },
+      "data_config": { "category": "created_at", "values": [{ "field": "*", "fn": "count", "alias": "count" }] },
+      "format_config": { "showHeader": true, "showLegend": false, "seriesColors": ["#8b5cf6"], "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 16, "titleColor": "#171a29", "gridLineColor": "#f0f1f6", "fontFamily": "'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v021",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "area", "title": "Opportunities created / week",
+      "x": 8, "y": 18, "width": 8, "height": 7, "min_width": 4, "min_height": 5, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "opportunity", "groupBy": [{ "field": "created_at", "dateGrain": "week", "alias": "created_at" }], "aggregations": [{ "field": "*", "fn": "count", "alias": "count" }], "orderBy": [{ "key": "created_at", "dir": "asc" }] },
+      "data_config": { "category": "created_at", "values": [{ "field": "*", "fn": "count", "alias": "count" }] },
+      "format_config": { "showHeader": true, "showLegend": false, "seriesColors": ["#12b3a6"], "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 16, "titleColor": "#171a29", "gridLineColor": "#f0f1f6", "fontFamily": "'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v022",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "donut", "title": "Lead sources",
+      "x": 16, "y": 18, "width": 8, "height": 7, "min_width": 4, "min_height": 5, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "lead" },
+      "data_config": { "category": "lead_source", "values": [{ "field": "*", "fn": "count", "alias": "count" }] },
+      "format_config": { "showHeader": true, "legendPosition": "right", "seriesColors": ["#4f6df5", "#8b5cf6", "#12b3a6", "#e08a2b", "#17a673", "#e35d5d", "#9aa0b4"], "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 16, "titleColor": "#171a29", "fontFamily": "'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v030",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "donut", "title": "Industries",
+      "x": 0, "y": 25, "width": 8, "height": 9, "min_width": 4, "min_height": 5, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "account" },
+      "data_config": { "category": "industry", "values": [{ "field": "*", "fn": "count", "alias": "count" }] },
+      "format_config": { "showHeader": true, "legendPosition": "right", "seriesColors": ["#4f6df5", "#8b5cf6", "#12b3a6", "#e08a2b", "#17a673", "#e35d5d", "#9aa0b4"], "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 16, "titleColor": "#171a29", "fontFamily": "'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v031",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "bar", "title": "Top products",
+      "x": 8, "y": 25, "width": 8, "height": 9, "min_width": 4, "min_height": 5, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "opportunity", "limit": 8 },
+      "data_config": { "category": "product_id", "values": [{ "field": "*", "fn": "count", "alias": "count" }] },
+      "format_config": { "showHeader": true, "showLegend": false, "orientation": "horizontal", "seriesColors": ["#4f6df5"], "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 16, "titleColor": "#171a29", "fontFamily": "'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v032",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "bar", "title": "Top accounts",
+      "x": 16, "y": 25, "width": 8, "height": 9, "min_width": 4, "min_height": 5, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "opportunity", "limit": 8 },
+      "data_config": { "category": "account_id", "values": [{ "field": "*", "fn": "count", "alias": "count" }] },
+      "format_config": { "showHeader": true, "showLegend": false, "orientation": "horizontal", "seriesColors": ["#12b3a6"], "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 16, "titleColor": "#171a29", "fontFamily": "'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v040",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "kpi", "title": "Leads by owner",
+      "x": 0, "y": 34, "width": 8, "height": 9, "min_width": 4, "min_height": 5, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "lead" },
+      "data_config": { "kpiMode": "breakdown", "mainAgg": "count", "breakdownField": "owner_id", "breakdownLimit": 8, "breakdownSort": "value_desc", "showPercentages": true, "kpiLayout": "detailed" },
+      "format_config": { "showHeader": true, "numberFormat": "number", "accentColor": "#8b5cf6", "breakdownTrackColor": "#eef0f6", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 16, "titleColor": "#171a29", "valueColor": "#171a29", "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v041",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "kpi", "title": "Opportunities by owner",
+      "x": 8, "y": 34, "width": 8, "height": 9, "min_width": 4, "min_height": 5, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "opportunity" },
+      "data_config": { "kpiMode": "breakdown", "mainAgg": "count", "breakdownField": "owner_id", "breakdownLimit": 8, "breakdownSort": "value_desc", "showPercentages": true, "kpiLayout": "detailed" },
+      "format_config": { "showHeader": true, "numberFormat": "number", "accentColor": "#12b3a6", "breakdownTrackColor": "#eef0f6", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 16, "titleColor": "#171a29", "valueColor": "#171a29", "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    },
+    {
+      "dashboard_visual_id": "00000000-0000-0000-0000-00000000v042",
+      "dashboard_page_id": "00000000-0000-0000-0000-0000000000p1",
+      "dashboard_id": "00000000-0000-0000-0000-0000000000d0",
+      "visual_type": "kpi", "title": "Campaigns",
+      "x": 16, "y": 34, "width": 8, "height": 9, "min_width": 4, "min_height": 5, "z_index": 0,
+      "is_visible": true, "is_locked": false,
+      "query_config": { "entity": "lead" },
+      "data_config": { "kpiMode": "breakdown", "mainAgg": "count", "breakdownField": "campaign_id", "breakdownLimit": 8, "breakdownSort": "value_desc", "showPercentages": true, "kpiLayout": "detailed", "totalLabel": "Active this period" },
+      "format_config": { "showHeader": true, "numberFormat": "number", "accentColor": "#4f6df5", "breakdownTrackColor": "#eef0f6", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 16, "titleColor": "#171a29", "valueColor": "#171a29", "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif" },
+      "interaction_config": {}, "filter_config": {}
+    }
+  ]
+}

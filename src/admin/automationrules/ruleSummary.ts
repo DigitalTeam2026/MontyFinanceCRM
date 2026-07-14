@@ -1,4 +1,4 @@
-import type { AutomationRule, AutomationOperator, AutomationActionType, AutomationRunAfter } from '../../types/automationRule';
+import type { AutomationRule, AutomationOperator, AutomationActionType, AutomationRunAfter, ScheduleConfig } from '../../types/automationRule';
 
 const OPERATOR_LABEL: Record<AutomationOperator, string> = {
   changes_to: 'changes to',
@@ -38,10 +38,40 @@ export function triggerSummary(
 
 const ACTION_LABEL: Record<AutomationActionType, string> = {
   list_rows: 'List rows',
+  get_row: 'Get row by ID',
   send_email: 'Send email',
   update_field: 'Update field',
   generate_document: 'Generate document',
+  export_view_email: 'Export view & email',
+  related_export_email: 'Related export & email',
+  create_related_record: 'Create related record',
+  update_related_record: 'Update related record',
+  condition: 'Condition',
 };
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const ORDINAL = (n: number) => {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+};
+function hhmm(cfg: ScheduleConfig): string {
+  const h = Math.min(23, Math.max(0, Math.trunc(cfg.hour ?? 8)));
+  const m = Math.min(59, Math.max(0, Math.trunc(cfg.minute ?? 0)));
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Plain-language cadence, e.g. "Every Monday at 08:00". */
+export function scheduleSummary(cfg: ScheduleConfig | null | undefined): string {
+  if (!cfg || !cfg.frequency) return 'Not scheduled';
+  switch (cfg.frequency) {
+    case 'hourly':  return `Every hour at :${String(Math.min(59, Math.max(0, Math.trunc(cfg.minute ?? 0)))).padStart(2, '0')}`;
+    case 'daily':   return `Every day at ${hhmm(cfg)}`;
+    case 'weekly':  return `Every ${WEEKDAYS[Math.min(6, Math.max(0, Math.trunc(cfg.weekday ?? 1)))]} at ${hhmm(cfg)}`;
+    case 'monthly': return `Every ${ORDINAL(Math.min(31, Math.max(1, Math.trunc(cfg.monthday ?? 1))))} of the month at ${hhmm(cfg)}`;
+    default:        return 'Custom schedule';
+  }
+}
 
 export function actionLabel(t: AutomationActionType): string {
   return ACTION_LABEL[t] ?? t;

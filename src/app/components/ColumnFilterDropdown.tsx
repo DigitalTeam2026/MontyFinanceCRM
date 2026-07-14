@@ -237,6 +237,24 @@ export default function ColumnFilterDropdown({
         setChoiceOptions(
           (data ?? []).map((r) => ({ value: String(r.reason_value), label: r.display_label }))
         );
+      } else if (column.inline_choices && column.inline_choices.length) {
+        // Inline-choice field (choices stored on config_json): the stored value is a
+        // code; render the label. This is why "Campaign Source" showed 1/2 not labels.
+        setChoiceOptions(
+          column.inline_choices.map((c) => ({ value: String(c.value), label: c.label }))
+        );
+      } else if (column.option_set_name) {
+        // Named option-set field: option_set_name holds the option_set_id. Load
+        // value→label from option_set_value. No is_active filter — seeded rows may
+        // have is_active=null and would otherwise be dropped, leaking raw codes.
+        const { data } = await supabase
+          .from('option_set_value')
+          .select('value, display_label, display_order')
+          .eq('option_set_id', column.option_set_name)
+          .order('display_order', { ascending: true });
+        setChoiceOptions(
+          (data ?? []).map((r) => ({ value: String(r.value), label: r.display_label }))
+        );
       } else if (entityTable && physCol) {
         const { data } = await supabase
           .from(entityTable)
@@ -252,7 +270,7 @@ export default function ColumnFilterDropdown({
     };
 
     load().catch(() => setChoiceLoading(false));
-  }, [colType, entityDefinitionId, entityTable, column.field_definition_id, column.field_physical_column, column.key]);
+  }, [colType, entityDefinitionId, entityTable, column.field_definition_id, column.field_physical_column, column.key, column.option_set_name, column.inline_choices]);
 
   /* ── Search lookup records ── */
   const searchLookup = useCallback(async (q: string) => {

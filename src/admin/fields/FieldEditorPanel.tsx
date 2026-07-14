@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, AlertCircle, Plus, Trash2, GripVertical, Shield, Lock, MoreHorizontal, ArrowUp, ArrowDown, Palette, Pencil, Star, Calculator } from 'lucide-react';
+import { X, Save, AlertCircle, Plus, Trash2, GripVertical, Shield, Lock, MoreHorizontal, ArrowUp, ArrowDown, Palette, Pencil, Star, Calculator, Image as ImageIcon } from 'lucide-react';
 import SearchableSelect from '../../app/components/SearchableSelect';
 import type { FieldDefinition, FieldFormData, FieldType, ChoiceOption, CalcFormula, CalculationConfig } from '../../types/field';
 import type { EntityDefinition } from '../../types/entity';
@@ -8,6 +8,26 @@ import CalcBuilderModal, { summarizeCalculation } from './CalcBuilderModal';
 import { useToast } from '../../app/context/ToastContext';
 import { supabase } from '../../lib/supabase';
 import { fieldColumnHasData } from '../../services/fieldService';
+
+// SVG icons for choice options are stored inline in config_json as a data URI, so
+// they travel with the field metadata (no separate upload/storage). Keep them small.
+const MAX_CHOICE_ICON_BYTES = 64 * 1024;
+function readChoiceIcon(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (file.type !== 'image/svg+xml' && !file.name.toLowerCase().endsWith('.svg')) {
+      reject(new Error('Please choose an SVG file.'));
+      return;
+    }
+    if (file.size > MAX_CHOICE_ICON_BYTES) {
+      reject(new Error('Icon must be under 64 KB.'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result)); // data:image/svg+xml;base64,...
+    reader.onerror = () => reject(new Error('Could not read the file.'));
+    reader.readAsDataURL(file);
+  });
+}
 
 // ─── Status manager types ─────────────────────────────────────────────────────
 
@@ -768,6 +788,7 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
   const [autoSlug, setAutoSlug] = useState(!isEdit);
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [iconError, setIconError] = useState<string | null>(null);
 
   const selectedType = fieldTypes.find((t) => t.field_type_id === form.field_type_id);
   const typeName = selectedType?.name ?? '';
@@ -1046,6 +1067,47 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
                           placeholder="Label (displayed)"
                           className="flex-1 px-2 py-1.5 text-[11px] border border-slate-300 rounded focus:outline-none focus:border-blue-400 bg-white"
                         />
+                        <label
+                          className="relative shrink-0 w-7 h-7 flex items-center justify-center border border-slate-300 rounded cursor-pointer hover:border-blue-400 bg-white overflow-hidden"
+                          title={choice.icon ? 'Change SVG icon' : 'Upload SVG icon'}
+                        >
+                          {choice.icon
+                            ? <img src={choice.icon} alt="" className="w-4 h-4 object-contain" />
+                            : <ImageIcon size={12} className="text-slate-400" />}
+                          <input
+                            type="file"
+                            accept=".svg,image/svg+xml"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              if (!file) return;
+                              setIconError(null);
+                              try {
+                                const dataUri = await readChoiceIcon(file);
+                                const next = [...form.inline_choices];
+                                next[idx] = { ...next[idx], icon: dataUri };
+                                set('inline_choices', next);
+                              } catch (err) {
+                                setIconError(err instanceof Error ? err.message : 'Could not read icon.');
+                              }
+                            }}
+                          />
+                        </label>
+                        {choice.icon && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = [...form.inline_choices];
+                              next[idx] = { ...next[idx], icon: undefined };
+                              set('inline_choices', next);
+                            }}
+                            className="p-1 text-slate-300 hover:text-red-500"
+                            title="Remove icon"
+                          >
+                            <X size={11} />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => set('inline_choices', form.inline_choices.filter((_, i) => i !== idx))}
@@ -1057,6 +1119,7 @@ export default function FieldEditorPanel({ entityId, field, fieldTypes, entities
                       </div>
                       );
                     })}
+                    {iconError && <p className="text-[10px] text-red-500 px-1">{iconError}</p>}
                     <button
                       type="button"
                       onClick={() => set('inline_choices', [...form.inline_choices, { value: '', label: '', sort_order: form.inline_choices.length }])}

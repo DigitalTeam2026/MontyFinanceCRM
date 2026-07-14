@@ -25,7 +25,7 @@ import { ENTITY_LOGICAL_NAME, ENTITY_DEFINITION_ID } from '../types';
 import { supabase } from '../../lib/supabase';
 import type { ActiveFilter, ListRow, RelatedColumnSpec } from '../services/listService';
 import { fetchEntityList, ENTITY_COLUMNS, updateRowFields, fetchCrmUsers } from '../services/listService';
-import { evaluateRowHighlight, getEntityRules } from '../services/rowHighlightService';
+import { evaluateReasonHighlight, loadReasonHighlights, type ReasonHighlight } from '../services/rowHighlightService';
 import { hasAnyEntityPrivilege } from '../services/permissionService';
 import FilterPanel from '../components/FilterPanel';
 import InlineRowActions from '../components/InlineRowActions';
@@ -61,29 +61,16 @@ const INLINE_EDITABLE_COLS: Partial<Record<AppEntity, string[]>> = {
   tickets:       [],
 };
 
-const HIGHLIGHT_DOT_COLORS: Record<string, string> = {
-  red:     'bg-red-500',
-  rose:    'bg-rose-500',
-  amber:   'bg-amber-500',
-  orange:  'bg-orange-500',
-  green:   'bg-green-500',
-  emerald: 'bg-emerald-500',
-  teal:    'bg-teal-500',
-  sky:     'bg-sky-500',
-  blue:    'bg-blue-500',
-};
-
-function HighlightLegend({ entity }: { entity: AppEntity }) {
-  const rules = getEntityRules(entity);
-  if (rules.length === 0) return null;
+function HighlightLegend({ reasons }: { reasons: ReasonHighlight[] }) {
+  if (reasons.length === 0) return null;
   return (
     <div
       className="flex items-center justify-end gap-4 px-5 py-1.5 overflow-x-auto shrink-0"
       style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
     >
-      {rules.map((r) => (
-        <span key={r.id} className="flex items-center gap-1.5 shrink-0">
-          <span className={`w-2 h-2 rounded-full ${HIGHLIGHT_DOT_COLORS[r.color] ?? 'bg-[var(--ink-300)]'}`} />
+      {reasons.map((r) => (
+        <span key={r.value} className="flex items-center gap-1.5 shrink-0">
+          <span className="w-2 h-2 rounded-full" style={{ background: r.color }} />
           <span className="text-[11px] text-[#5b6472]">{r.label}</span>
         </span>
       ))}
@@ -197,6 +184,8 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
 
   const [crmUsers, setCrmUsers] = useState<{ id: string; email: string }[]>([]);
+  // Row-highlight legend, built from the entity's real Status Reason option set.
+  const [reasonHighlights, setReasonHighlights] = useState<ReasonHighlight[]>([]);
   const [columnStates, setColumnStates] = useState<ColumnState[]>(() => buildColumnState(entity));
   const [showColCustomizer, setShowColCustomizer] = useState(false);
   const colBtnRef = useRef<HTMLDivElement>(null);
@@ -243,6 +232,17 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch]);
+
+  // Load the entity's Status Reason option set to drive the highlight legend and
+  // per-row accents. Cleared first so a fast entity switch never shows stale reasons.
+  useEffect(() => {
+    let alive = true;
+    setReasonHighlights([]);
+    loadReasonHighlights(entity)
+      .then((reasons) => { if (alive) setReasonHighlights(reasons); })
+      .catch(() => { if (alive) setReasonHighlights([]); });
+    return () => { alive = false; };
+  }, [entity]);
 
   // Ref populated before the save/load callbacks so they always read latest state
   const columnStatesRef = useRef<ColumnState[]>([]);
@@ -913,8 +913,8 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
           </div>
         </div>
 
-        {getEntityRules(entity).length > 0 && (
-          <HighlightLegend entity={entity} />
+        {reasonHighlights.length > 0 && (
+          <HighlightLegend reasons={reasonHighlights} />
         )}
 
         {activeParentFilter && (
@@ -1052,7 +1052,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                     const isSelected = selected.has(row.id);
                     const isEditingThis = editingRowId === row.id;
                     const isSaving = savingRowId === row.id;
-                    const highlight = !isEditingThis && !isSelected ? evaluateRowHighlight(entity, row) : null;
+                    const highlight = !isEditingThis && !isSelected ? evaluateReasonHighlight(reasonHighlights, row) : null;
 
                     return (
                       <tr
@@ -1067,11 +1067,10 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                             onOpenRecord?.(row.id, label);
                           }
                         }}
-                        className={`group transition-colors duration-100 cursor-pointer${isRedesign ? ' rd-row' : ''} ${
-                          !isEditingThis && !isSelected && highlight ? highlight.leftBorderClass : ''
-                        } ${isSaving ? 'opacity-60' : ''}`}
+                        className={`group transition-colors duration-100 cursor-pointer${isRedesign ? ' rd-row' : ''} ${isSaving ? 'opacity-60' : ''}`}
                         style={{
                           height: 44,
+                          borderLeft: highlight ? `3px solid ${highlight.color}` : undefined,
                           background: isEditingThis
                             ? 'color-mix(in srgb, var(--link) 14%, transparent)'
                             : isSelected
@@ -1111,9 +1110,12 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
                         >
                           <div className="flex items-center justify-end gap-2">
                             {highlight && !isEditingThis && (
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-100 ${highlight.badgeClass}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${highlight.badgeDotClass}`} />
-                                {highlight.rule.label}
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity duration-100"
+                                style={{ background: `${highlight.color}22`, color: highlight.color }}
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full" style={{ background: highlight.color }} />
+                                {highlight.label}
                               </span>
                             )}
                             {isEditingThis && (

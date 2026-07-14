@@ -19,7 +19,7 @@ function mapViewColumnRow(row: Record<string, unknown>): ViewColumn {
     field_physical_column: fd?.physical_column_name as string | undefined,
     field_type_name: ft?.name as string | undefined,
     option_set_name: fd?.option_set_id as string | undefined,
-    inline_choices: ((fd?.config_json as Record<string, unknown> | null)?.choices as { value: string; label: string }[] | undefined) ?? undefined,
+    inline_choices: ((fd?.config_json as Record<string, unknown> | null)?.choices as { value: string; label: string; color?: string; icon?: string }[] | undefined) ?? undefined,
     lookup_table: le?.physical_table_name as string | undefined,
     // crm_user primary_field_name is 'full_name' but filter/display uses email
     lookup_label_field: le?.physical_table_name === 'crm_user'
@@ -140,8 +140,11 @@ export async function fetchViewById(viewId: string): Promise<ViewDefinition> {
   const snap = getTable<ViewDefinition>('view_definition');
   if (snap !== null) {
     const v = snap.find((x) => x.view_id === viewId);
-    if (!v) throw new Error('View not found in published customizations');
-    return v;
+    if (v) return v;
+    // Snapshot miss: a view created/edited since the last Publish lives only in
+    // the live tables. Fall back to the DB rather than throwing — otherwise
+    // saving a freshly created view shows a spurious "not found" error and the
+    // user retries, creating duplicate rows.
   }
   const { data, error } = await supabase
     .from('view_definition')
@@ -155,7 +158,15 @@ export async function fetchViewById(viewId: string): Promise<ViewDefinition> {
 export async function fetchViewColumns(viewId: string): Promise<ViewColumn[]> {
   const snapCols = getTable<Record<string, unknown>>('view_column');
   if (snapCols !== null) {
-    return fetchViewColumnsFromSnapshot(viewId, snapCols);
+    // Only trust the snapshot when this view is actually published. A view
+    // created/edited since the last Publish has no snapshot columns yet, and an
+    // empty result there would look identical to a real zero-column view — so
+    // fall back to the live query in that case instead.
+    const viewSnap = getTable<ViewDefinition>('view_definition');
+    const isPublished = viewSnap === null || viewSnap.some((v) => v.view_id === viewId);
+    if (isPublished) {
+      return fetchViewColumnsFromSnapshot(viewId, snapCols);
+    }
   }
   const { data, error } = await supabase
     .from('view_column')

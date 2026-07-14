@@ -3,6 +3,7 @@ import type {
   CalcConditionGroup,
   CalcConditionRow,
   CalcExpression,
+  CalcFunction,
   CalcOperand,
   CalcOperator,
   CalcResultType,
@@ -30,6 +31,48 @@ const BOOL_TYPES = new Set(['boolean', 'two_options', 'twooptions', 'yesno']);
 export function isNumericType(t: string): boolean { return NUMERIC_TYPES.has(t); }
 export function isDateType(t: string): boolean { return DATE_TYPES.has(t); }
 export function isBoolType(t: string): boolean { return BOOL_TYPES.has(t); }
+
+// ── Formula functions ─────────────────────────────────────────────────────────
+/** Output kind used for both type-checking and picker filtering. */
+export type CalcOutputType = 'number' | 'date' | 'text' | 'boolean' | 'any';
+
+export interface CalcFunctionMeta {
+  fn: CalcFunction;
+  label: string;
+  /** Number of parameters (fixed arity). */
+  arity: number;
+  /** What the function returns. */
+  outputType: CalcOutputType;
+  /** Required type of every parameter (used for validation + picker filtering). */
+  paramType: CalcOutputType;
+  /** Short description shown in the builder. */
+  hint: string;
+}
+
+export const CALC_FUNCTIONS: CalcFunctionMeta[] = [
+  { fn: 'DiffInDays',    label: 'DiffInDays(a, b)',    arity: 2, outputType: 'number', paramType: 'date', hint: 'Whole days from a to b' },
+  { fn: 'DiffInHours',   label: 'DiffInHours(a, b)',   arity: 2, outputType: 'number', paramType: 'date', hint: 'Whole hours from a to b' },
+  { fn: 'DiffInMinutes', label: 'DiffInMinutes(a, b)', arity: 2, outputType: 'number', paramType: 'date', hint: 'Whole minutes from a to b' },
+  { fn: 'Now',           label: 'Now()',               arity: 0, outputType: 'date',   paramType: 'any',  hint: 'Current date & time' },
+  { fn: 'Today',         label: 'Today()',             arity: 0, outputType: 'date',   paramType: 'any',  hint: 'Current date' },
+];
+
+const CALC_FN_MAP: Record<string, CalcFunctionMeta> =
+  Object.fromEntries(CALC_FUNCTIONS.map((f) => [f.fn, f]));
+
+export function calcFunctionMeta(fn: string): CalcFunctionMeta | undefined { return CALC_FN_MAP[fn]; }
+
+/** The output type an operand produces — drives type-checking and picker filtering. */
+export function operandOutputType(op: CalcOperand): CalcOutputType {
+  if (op.kind === 'field') {
+    if (isNumericType(op.fieldType)) return 'number';
+    if (isDateType(op.fieldType)) return 'date';
+    if (isBoolType(op.fieldType)) return 'boolean';
+    return 'text';
+  }
+  if (op.kind === 'function') return CALC_FN_MAP[op.fn]?.outputType ?? 'text';
+  return 'any'; // literal value — accepted anywhere, coerced at evaluation
+}
 
 /** Operators valid for a given source field type. */
 export function operatorsForType(t: string): CalcOperator[] {
@@ -132,8 +175,36 @@ function evalGroup(group: CalcConditionGroup, values: Record<string, unknown>): 
 }
 
 // ── Expression evaluation ─────────────────────────────────────────────────────
-function operandValue(op: CalcOperand, values: Record<string, unknown>): unknown {
-  return op.kind === 'field' ? values[op.field] : op.value;
+function twoDigit(n: number): string { return n < 10 ? `0${n}` : String(n); }
+
+/** Evaluate a formula function. Returns null when a required parameter is missing. */
+function evalFunction(op: Extract<CalcOperand, { kind: 'function' }>, values: Record<string, unknown>): unknown {
+  const now = new Date();
+  switch (op.fn) {
+    case 'Now':
+      return now.toISOString();
+    case 'Today':
+      return `${now.getFullYear()}-${twoDigit(now.getMonth() + 1)}-${twoDigit(now.getDate())}`;
+    case 'DiffInDays':
+    case 'DiffInHours':
+    case 'DiffInMinutes': {
+      const a = toTime(operandValue(op.args?.[0], values));
+      const b = toTime(operandValue(op.args?.[1], values));
+      if (a === null || b === null) return null;
+      const ms = b - a;
+      const div = op.fn === 'DiffInDays' ? 86_400_000 : op.fn === 'DiffInHours' ? 3_600_000 : 60_000;
+      return Math.trunc(ms / div);
+    }
+    default:
+      return null;
+  }
+}
+
+function operandValue(op: CalcOperand | undefined, values: Record<string, unknown>): unknown {
+  if (!op) return null;
+  if (op.kind === 'field') return values[op.field];
+  if (op.kind === 'function') return evalFunction(op, values);
+  return op.value;
 }
 
 function evalExpression(
@@ -238,12 +309,18 @@ export function formatCalcValue(value: number | string | boolean | null, resultT
 
 // ── Validation ──────────────────────────────────────────────────────────────────
 
+/** Every field logical-name an operand references, recursing through function args. */
+function collectOperandFields(op: CalcOperand, out: Set<string>): void {
+  if (op.kind === 'field') { if (op.field) out.add(op.field); return; }
+  if (op.kind === 'function') { for (const a of op.args ?? []) collectOperandFields(a, out); }
+}
+
 /** All field logical-names referenced by conditions and expressions in a config. */
 export function referencedFields(config: CalculationConfig): string[] {
   const out = new Set<string>();
   for (const b of config.branches) {
     if (!b.isDefault) for (const r of b.condition.rows) if (r.field) out.add(r.field);
-    for (const op of b.result.operands) if (op.kind === 'field' && op.field) out.add(op.field);
+    for (const op of b.result.operands) collectOperandFields(op, out);
   }
   return [...out];
 }
@@ -285,6 +362,36 @@ export interface CalcValidationResult {
   errors: string[];
 }
 
+/** Is an operand's produced type acceptable where `expect` is required? Literals fit anywhere. */
+function typeFits(produced: CalcOutputType, expect: CalcOutputType): boolean {
+  if (expect === 'any' || produced === 'any') return true;
+  return produced === expect;
+}
+
+/** Validate one operand (recursing through function parameters) against an expected output type. */
+function validateOperand(op: CalcOperand, expect: CalcOutputType, path: string, errors: string[]): void {
+  if (op.kind === 'field') {
+    if (!op.field) { errors.push(`${path}: choose a field.`); return; }
+    if (!typeFits(operandOutputType(op), expect))
+      errors.push(`${path}: ${op.displayName} is not a ${expect} field.`);
+    return;
+  }
+  if (op.kind === 'value') {
+    if ((op.value ?? '') === '') errors.push(`${path}: enter a value.`);
+    else if (expect === 'number' && toNum(op.value) === null) errors.push(`${path}: "${op.value}" is not a number.`);
+    return;
+  }
+  // function
+  const meta = CALC_FN_MAP[op.fn];
+  if (!meta) { errors.push(`${path}: "${op.fn}" is not a supported function.`); return; }
+  if (!typeFits(meta.outputType, expect))
+    errors.push(`${path}: ${meta.fn}() returns a ${meta.outputType}, but a ${expect} is required here.`);
+  const args = op.args ?? [];
+  if (args.length !== meta.arity)
+    errors.push(`${path}: ${meta.fn}() expects ${meta.arity} parameter${meta.arity === 1 ? '' : 's'}.`);
+  args.forEach((arg, i) => validateOperand(arg, meta.paramType, `${path} → ${meta.fn}() parameter ${i + 1}`, errors));
+}
+
 export function validateCalculation(
   config: CalculationConfig,
   opts: { selfLogical?: string; otherCalcDeps?: Record<string, string[]> } = {}
@@ -317,13 +424,9 @@ export function validateCalculation(
     if (!b.result.operands.length) {
       errors.push(`${label}: set a result value.`);
     } else {
+      const expect: CalcOutputType = numeric ? 'number' : config.resultType === 'date' ? 'date' : 'any';
       b.result.operands.forEach((op, oi) => {
-        if (op.kind === 'field' && !op.field) errors.push(`${label} result part ${oi + 1}: choose a field.`);
-        if (op.kind === 'value' && (op.value ?? '') === '') errors.push(`${label} result part ${oi + 1}: enter a value.`);
-        if (op.kind === 'value' && numeric && op.value !== '' && toNum(op.value) === null)
-          errors.push(`${label} result: "${op.value}" is not a number.`);
-        if (op.kind === 'field' && numeric && !NUMERIC_TYPES.has(op.fieldType))
-          errors.push(`${label} result: ${op.displayName} is not a numeric field.`);
+        validateOperand(op, expect, `${label} result part ${oi + 1}`, errors);
       });
       if (!numeric && b.result.operands.length > 1)
         errors.push(`${label}: arithmetic is only supported for Number/Currency results. Use a single value.`);
@@ -340,12 +443,19 @@ export function validateCalculation(
   return { valid: errors.length === 0, errors };
 }
 
+/** Render a single operand (recursing into function args) for the summary line. */
+export function summarizeOperand(op: CalcOperand): string {
+  if (op.kind === 'field') return op.displayName || '(field)';
+  if (op.kind === 'function') return `${op.fn}(${(op.args ?? []).map(summarizeOperand).join(', ')})`;
+  return `"${op.value}"`;
+}
+
 /** Human-readable one-line summary of a calculation, for the field editor. */
 export function summarizeCalculation(config: CalculationConfig): string {
   const exprStr = (e: CalcExpression): string =>
     e.operands
       .map((op, i) => {
-        const part = op.kind === 'field' ? op.displayName : `"${op.value}"`;
+        const part = summarizeOperand(op);
         return i === 0 ? part : `${ARITH_SYMBOLS[e.operators[i - 1] ?? '+']} ${part}`;
       })
       .join(' ');

@@ -53,6 +53,19 @@ async function graphToken({ tenant, clientId, clientSecret }) {
   return json.access_token;
 }
 
+// Map our attachment shape to Graph fileAttachment objects (base64 contentBytes).
+// Graph accepts inline attachments up to ~3 MB via the sendMail message payload.
+function graphAttachments(attachments) {
+  return (attachments || [])
+    .filter((a) => a && a.filename && a.contentBytes)
+    .map((a) => ({
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      name: a.filename,
+      contentType: a.contentType || "application/octet-stream",
+      contentBytes: a.contentBytes, // base64 string
+    }));
+}
+
 async function sendViaGraph(gcfg, msg) {
   const token = await graphToken(gcfg);
   const message = {
@@ -61,6 +74,8 @@ async function sendViaGraph(gcfg, msg) {
     toRecipients: recip(msg.to),
     ccRecipients: recip(msg.cc),
   };
+  const atts = graphAttachments(msg.attachments);
+  if (atts.length) message.attachments = atts;
   const res = await fetch(
     `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(gcfg.from)}/sendMail`,
     {
@@ -89,6 +104,7 @@ async function sendViaEdgeFn(url, token, msg) {
       subject: msg.subject,
       html: msg.html,
       ...(msg.from ? { from: msg.from } : {}),
+      ...(msg.attachments && msg.attachments.length ? { attachments: msg.attachments } : {}),
     }),
   });
   const text = await res.text();
@@ -109,6 +125,7 @@ async function sendViaEdgeFn(url, token, msg) {
  * worker can retry / dead-letter; the stub driver never throws.
  *
  * @param {{to: string[], cc?: string[], subject: string, html: string,
+ *          attachments?: {filename: string, contentBytes: string, contentType?: string}[],
  *          account?: {from_address?: string, tenant_id?: string, client_id?: string, client_secret?: string}}} msg
  * @returns {Promise<{transport: string, messageId: string, from?: string}>}
  */
@@ -136,8 +153,10 @@ async function sendEmail(msg) {
 
   // 3. Stub fallback — record + log, do not throw.
   const ccStr = cc.length ? ` cc=${cc.join(",")}` : "";
+  const atts = (msg.attachments || []).filter(Boolean);
+  const attStr = atts.length ? ` attachments=[${atts.map((a) => a.filename).join(",")}]` : "";
   console.log(
-    `[automation.email:stub] to=${to.join(",")}${ccStr} subject=${JSON.stringify(msg.subject)}`
+    `[automation.email:stub] to=${to.join(",")}${ccStr} subject=${JSON.stringify(msg.subject)}${attStr}`
   );
   return { transport: "stub", messageId: `stub-${Date.now()}` };
 }

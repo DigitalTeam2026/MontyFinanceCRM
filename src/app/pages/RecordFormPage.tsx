@@ -2291,6 +2291,17 @@ export default function RecordFormPage({
 
   // Auto-save disabled: users must explicitly click Save.
 
+  // Resolve a control's current value the SAME way the field render does
+  // (logical key first, then the mapped physical column) — see the value binding
+  // at the FormField render site. A default seeded under the physical key (e.g.
+  // currency_id) shows in the field via this fallback, so required-field checks
+  // must use it too; otherwise the field visibly shows a value (e.g. USD) yet
+  // validation reports it as empty and blocks the save.
+  const resolveControlValue = (logicalName: string): unknown => {
+    const physCol = fieldMapping?.logicalToPhysical?.[logicalName];
+    return values[logicalName] ?? (physCol ? values[physCol] : undefined);
+  };
+
   const validate = (): boolean => {
     if (!layout) return true;
     const errors: Record<string, string> = {};
@@ -2310,7 +2321,7 @@ export default function RecordFormPage({
           if (rs?.isHidden) continue;
           const isRequired = rs?.isRequired || control.is_required_override || !!fieldRequiredMap[control.field_logical_name ?? ''];
           if (isRequired) {
-            const v = values[control.field_logical_name];
+            const v = resolveControlValue(control.field_logical_name);
             const isEmpty = v == null
               || (Array.isArray(v) ? (v as unknown[]).length === 0 : String(v).trim() === '');
             if (isEmpty) {
@@ -2576,7 +2587,7 @@ export default function RecordFormPage({
     for (const section of tab.sections) {
       for (const control of section.controls) {
         if (!control.field_logical_name || control.control_type !== 'field') continue;
-        const v = values[control.field_logical_name];
+        const v = resolveControlValue(control.field_logical_name);
         const isEmpty = v == null || String(v).trim() === '';
         // Count post-validation errors
         if (mergedErrors[control.field_logical_name] && isEmpty) {

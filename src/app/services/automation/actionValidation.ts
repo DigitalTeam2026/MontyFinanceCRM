@@ -3,7 +3,8 @@
 // execution time). Returns an array of human-readable problems ([] = valid).
 
 import type {
-  AutomationActionType, AutomationRuleAction, SendEmailConfig, UpdateFieldConfig, ListRowsConfig,
+  AutomationActionType, AutomationRuleAction, SendEmailConfig, UpdateFieldConfig, ListRowsConfig, GetRowConfig,
+  ExportViewEmailConfig, RelatedExportEmailConfig, CreateRelatedRecordConfig, UpdateRelatedRecordConfig,
 } from '../../../types/automationRule';
 
 export function validateActionConfig(
@@ -17,11 +18,86 @@ export function validateActionConfig(
       return validateUpdateField(config as unknown as UpdateFieldConfig);
     case 'list_rows':
       return validateListRows(config as unknown as ListRowsConfig);
+    case 'get_row':
+      return validateGetRow(config as unknown as GetRowConfig);
     case 'generate_document':
       return [];
+    case 'export_view_email':
+      return validateExportViewEmail(config as unknown as ExportViewEmailConfig);
+    case 'related_export_email':
+      return validateRelatedExportEmail(config as unknown as RelatedExportEmailConfig);
+    case 'create_related_record':
+      return validateCreateRelated(config as unknown as CreateRelatedRecordConfig);
+    case 'update_related_record':
+      return validateUpdateRelated(config as unknown as UpdateRelatedRecordConfig);
+    case 'condition':
+      return validateCondition(config as unknown as { left?: string; operator?: string });
     default:
       return [`Unknown action type: ${type}`];
   }
+}
+
+function validateCondition(c: { left?: string; operator?: string }): string[] {
+  const errs: string[] = [];
+  if (!c.left || !String(c.left).trim()) errs.push('The condition needs a left-hand value (a field or token to compare).');
+  if (!c.operator) errs.push('Pick a comparison operator.');
+  return errs;
+}
+
+function validateMappings(mappings: { target_field?: string; mode?: string; value?: string }[] | undefined): string[] {
+  const errs: string[] = [];
+  const list = Array.isArray(mappings) ? mappings : [];
+  if (list.length === 0) errs.push('Add at least one field to set.');
+  for (const m of list) {
+    if (!m.target_field) errs.push('Every mapping needs a target field.');
+    else if (m.mode === 'field' && !m.value) errs.push(`Mapping for "${m.target_field}" needs a source field.`);
+  }
+  return errs;
+}
+
+function validateMatch(c: { target_entity?: string; match_field?: string; link_field_physical?: string; match_mode?: string; match_value?: string }, verb: string): string[] {
+  const errs: string[] = [];
+  if (!c.target_entity) errs.push(`Pick the table to ${verb}.`);
+  if (!c.match_field && !c.link_field_physical) errs.push('Pick the match field (which column links to the trigger record).');
+  if ((c.match_mode === 'field' || c.match_mode === 'static') && !c.match_value) {
+    errs.push('The match value is required (a source field or a value).');
+  }
+  return errs;
+}
+
+function validateCreateRelated(c: CreateRelatedRecordConfig): string[] {
+  return [...validateMatch(c, 'insert into'), ...validateMappings(c.mappings)];
+}
+
+function validateUpdateRelated(c: UpdateRelatedRecordConfig): string[] {
+  return [...validateMatch(c, 'update'), ...validateMappings(c.mappings)];
+}
+
+function hasRecipient(c: { to?: string; cc?: string; to_user_ids?: string[] }): boolean {
+  return !!(c.to && String(c.to).trim()) ||
+    !!(c.cc && String(c.cc).trim()) ||
+    (Array.isArray(c.to_user_ids) && c.to_user_ids.length > 0);
+}
+
+function validateRelatedExportEmail(c: RelatedExportEmailConfig): string[] {
+  const errs: string[] = [];
+  const cols = Array.isArray(c.columns) ? c.columns.filter((x) => x && x.source_id && x.field) : [];
+  if (cols.length === 0) errs.push('Add at least one column to the report.');
+  const childCount = (Array.isArray(c.sources) ? c.sources : []).filter((s) => s.kind === 'child').length;
+  if (childCount > 1) errs.push('Only one child list (row-expanding source) is supported.');
+  if (!hasRecipient(c)) errs.push('At least one recipient (address, user, or token) is required.');
+  return errs;
+}
+
+function validateExportViewEmail(c: ExportViewEmailConfig): string[] {
+  const errs: string[] = [];
+  if (!c.view_id) errs.push('A view to export is required.');
+  const hasRecipient =
+    !!(c.to && String(c.to).trim()) ||
+    !!(c.cc && String(c.cc).trim()) ||
+    (Array.isArray(c.to_user_ids) && c.to_user_ids.length > 0);
+  if (!hasRecipient) errs.push('At least one recipient (address, user, or token) is required.');
+  return errs;
 }
 
 function validateSendEmail(c: SendEmailConfig): string[] {
@@ -29,8 +105,8 @@ function validateSendEmail(c: SendEmailConfig): string[] {
   const staticTo = Array.isArray(c.to_static) ? c.to_static : [];
   const fieldTo = Array.isArray(c.to_fields) ? c.to_fields : [];
   const hasTokenTo = !!(c.to && String(c.to).trim()) || !!(c.cc && String(c.cc).trim());
-  if (staticTo.length === 0 && fieldTo.length === 0 && !hasTokenTo) {
-    errs.push('At least one recipient (address, record field, or token) is required.');
+  if (staticTo.length === 0 && fieldTo.length === 0 && !hasTokenTo && !c.send_to_owner) {
+    errs.push('At least one recipient (address, record field, owner, or token) is required.');
   }
   for (const addr of staticTo) {
     if (typeof addr !== 'string' || !addr.includes('@')) errs.push(`Invalid email address: ${String(addr)}`);
@@ -60,10 +136,21 @@ function validateListRows(c: ListRowsConfig): string[] {
   return errs;
 }
 
+function validateGetRow(c: GetRowConfig): string[] {
+  const errs: string[] = [];
+  if (!c.step_name || !String(c.step_name).trim()) errs.push('Step name is required.');
+  else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(c.step_name)) errs.push('Step name must be a simple identifier (letters, digits, underscore).');
+  if (!c.source_table) errs.push('Source table is required.');
+  if (c.match_value == null || String(c.match_value).trim() === '') errs.push('The id/value to look up is required.');
+  return errs;
+}
+
 // ── Cross-action token / step validation ─────────────────────────────────────
 
 const TOKEN_RE = /{{\s*([\s\S]+?)\s*}}/g;
 const JOIN_RE = /^join\(\s*([\w]+)\s*,\s*(?:(['"])([\s\S]*?)\2|([^)]*?))\s*\)$/;
+const FIRST_RE = /^first\(\s*([\w]+)\s*\)$/;
+const RAW_RE = /^raw\(\s*([\w]+)\s*\)$/;
 
 /** Collect the token expressions used in an action's config (deep string scan). */
 function tokensInConfig(config: unknown): string[] {
@@ -123,11 +210,15 @@ export function validateRuleTokens(actions: AutomationRuleAction[]): string[] {
           problems.push(`${label}: step "${name}" does not return column "${col}".`);
         }
       }
+      const fm = op.match(FIRST_RE) ?? op.match(RAW_RE);
+      if (fm && step.columns.length > 0 && !step.columns.includes(fm[1])) {
+        problems.push(`${label}: step "${name}" does not return column "${fm[1]}".`);
+      }
     }
 
     // Register this step so later actions can reference it.
-    if (action.action_type === 'list_rows') {
-      const cfg = action.config as unknown as ListRowsConfig;
+    if (action.action_type === 'list_rows' || action.action_type === 'get_row') {
+      const cfg = action.config as unknown as ListRowsConfig | GetRowConfig;
       if (cfg.step_name) stepsSoFar.set(cfg.step_name, { columns: Array.isArray(cfg.columns) ? cfg.columns : [] });
     }
   });

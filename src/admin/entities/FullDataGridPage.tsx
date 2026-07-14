@@ -1078,13 +1078,15 @@ function CellDisplay({ field, value, lookupCache }: { field: FieldDefinition; va
   }
 
   if ((typeName === 'choice' || typeName === 'optionset' || typeName === 'statecode' || typeName === 'statusreason') && field.config_json) {
-    const choices = (field.config_json as { choices?: { value: string; label: string; color?: string }[] })?.choices ?? [];
+    const choices = (field.config_json as { choices?: { value: string; label: string; color?: string; icon?: string }[] })?.choices ?? [];
     const match = choices.find((c) => c.value === String(value));
     if (match) {
       const color = match.color ?? '#64748b';
       return (
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+          {match.icon
+            ? <img src={match.icon} alt="" className="w-3.5 h-3.5 object-contain shrink-0" />
+            : <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />}
           <span>{match.label}</span>
         </span>
       );

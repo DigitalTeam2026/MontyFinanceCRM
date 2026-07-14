@@ -58,7 +58,7 @@ export interface ViewColumn {
   /** For choice/option-set fields: the option_set.name used to load options */
   option_set_name?: string;
   /** For inline-choice fields: choices stored directly in config_json */
-  inline_choices?: { value: string; label: string }[];
+  inline_choices?: { value: string; label: string; color?: string; icon?: string }[];
   /** Set when this column comes from a related entity via a lookup relationship */
   relationship_definition_id?: string | null;
   related_entity_logical_name?: string;

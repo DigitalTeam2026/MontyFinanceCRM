@@ -20,6 +20,8 @@ export interface ChoiceOption {
   value: string;
   label: string;
   color?: string;
+  /** Optional SVG icon stored inline as a data URI (data:image/svg+xml;...). Shown next to the label in views. */
+  icon?: string;
   sort_order: number;
 }
 
@@ -83,6 +85,14 @@ export type CalcOperator =
 
 export type CalcArithOp = '+' | '-' | '*' | '/';
 
+/**
+ * Supported formula functions. Date/time functions only — arithmetic
+ * (Add/Subtract/Multiply/Divide) is expressed with CalcArithOp operators between
+ * operands, which is nicer UX than nesting Add(a, b). New functions can be added
+ * here and to CALC_FUNCTIONS in calcEngine.ts + the server evaluator.
+ */
+export type CalcFunction = 'DiffInDays' | 'DiffInHours' | 'DiffInMinutes' | 'Now' | 'Today';
+
 /** One condition row: <field> <operator> <value>. */
 export interface CalcConditionRow {
   id: string;
@@ -99,10 +109,15 @@ export interface CalcConditionGroup {
   rows: CalcConditionRow[];
 }
 
-/** A single operand in a result expression — either a field or a literal value. */
+/**
+ * A single operand in a result expression. Recursive: a `function` operand's
+ * parameters are themselves operands, so formulas nest arbitrarily
+ * (e.g. DiffInDays(startApprovalOn, Now())).
+ */
 export type CalcOperand =
   | { kind: 'field'; field: string; column: string; fieldType: string; displayName: string }
-  | { kind: 'value'; value: string };
+  | { kind: 'value'; value: string }
+  | { kind: 'function'; fn: CalcFunction; args: CalcOperand[] };
 
 /** Result expression: operands folded left-to-right with arithmetic operators (numeric results only). */
 export interface CalcExpression {

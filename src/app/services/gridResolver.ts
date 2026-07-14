@@ -90,6 +90,11 @@ export function buildInlineChoiceSpecs(columns: ColumnState[]): InlineChoiceSpec
     if (!c.visible) continue;
     if (!c.inline_choices || c.inline_choices.length === 0) continue;
     const phys = c.field_physical_column ?? c.key;
+    // Lifecycle columns are owned by applyStatusLabels (state_code/status_reason →
+    // statecode_definition label). They must never be re-mapped by inline-choice
+    // resolution — a stray/corrupt choice set on a statecode field would otherwise
+    // clobber the correct "Active"/"Inactive" label (mirrors buildOptionSetSpecs).
+    if (phys === 'state_code' || phys === 'status_reason') continue;
     specs.push({ colKey: c.key, physicalColumn: phys, choices: c.inline_choices });
   }
   return specs;
