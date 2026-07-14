@@ -340,6 +340,10 @@ export interface FunnelStage {
   breakdownSort?: 'value_desc' | 'value_asc' | 'label';
   /** Optional whitelist of resolved labels to show. */
   breakdownValues?: string[];
+  /** Breakdown value (raw value or resolved label) whose records count as
+   *  "advanced to the next stage" — drives the connector's conversion %. When
+   *  unset the connector falls back to the raw next/current count ratio. */
+  conversionValue?: string;
   showPercentages?: boolean;
   showProgressBars?: boolean;
   showZeroValues?: boolean;
@@ -761,6 +765,7 @@ export interface FormatConfig {
   compactStages?: boolean;       // denser padding / smaller value text
   wrapStages?: boolean;          // allow cards to wrap to the next row
   scrollStages?: boolean;        // horizontal scroll when cards exceed width (default true)
+  fitStages?: boolean;           // stretch cards to fill the card width (horizontal, no wrap)
   // text / html / image / shape / button
   content?: string;
   imageUrl?: string;

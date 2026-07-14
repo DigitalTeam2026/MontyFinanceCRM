@@ -184,7 +184,10 @@ export default function FunnelStageVisual({ visual, theme, runtimeFilters, runti
   const cardW = fmt.stageCardWidth;
   const cardH = fmt.stageCardHeight;
   const wrap = !!fmt.wrapStages;
-  const scroll = fmt.scrollStages !== false && !vertical && !wrap;
+  // Stretch stages to fill the card width (horizontal, non-wrapping) instead of
+  // packing them left with dead space on the right.
+  const fit = !!fmt.fitStages && !vertical && !wrap;
+  const scroll = fmt.scrollStages !== false && !vertical && !wrap && !fit;
 
   const labelColor = pick(fmt.secondaryTextColor, theme.secondaryText);
   const valueColor = pick(fmt.valueColor, theme.primaryText);
@@ -217,12 +220,27 @@ export default function FunnelStageVisual({ visual, theme, runtimeFilters, runti
     });
   };
 
-  const conversion = (i: number): number | null => {
-    if (i === 0) return null;
-    const cur = results[i - 1]?.total;
-    const nxt = results[i]?.total;
-    if (cur == null || nxt == null || cur === 0) return null; // div-by-zero / no data
-    return (nxt / cur) * 100;
+  // Conversion shown on the connector AFTER stage i (the i → i+1 transition).
+  // Preferred: the share of THIS stage's own records that advanced — the breakdown
+  // rows whose value matches the stage's `conversionValue` (e.g. "Converted to
+  // Lead", "Qualified") over the stage total. That is a real pipeline conversion
+  // and is always ≤ 100%. When no conversionValue is configured it falls back to
+  // the raw count ratio next/current (a subset funnel where each stage ⊆ the prior).
+  const stageConversion = (i: number): number | null => {
+    const r = results[i];
+    const total = r?.total;
+    if (total == null || total === 0) return null; // div-by-zero / no data
+    const cv = stages[i]?.conversionValue;
+    if (cv != null && cv !== '') {
+      const want = String(cv);
+      const advanced = (r?.breakdown ?? [])
+        .filter((b) => String(b.raw) === want || b.label === want)
+        .reduce((sum, b) => sum + (b.value ?? 0), 0);
+      return (advanced / total) * 100;
+    }
+    const nxt = results[i + 1]?.total;
+    if (nxt == null) return null;
+    return (nxt / total) * 100;
   };
 
   const ArrowIcon = vertical ? ChevronDown : ChevronRight;
@@ -236,7 +254,7 @@ export default function FunnelStageVisual({ visual, theme, runtimeFilters, runti
         const r = results[i];
         const accent = pick(s.color ?? fmt.accentColor, theme.primaryAccent);
         const isSel = selected.has(s.id);
-        const conv = conversion(i);
+        const conv = stageConversion(i);
         const breakdown = r?.breakdown ?? [];
         const stageHasBreakdown = hasBreakdownMode(s) && breakdown.length > 0;
         const breakdownOnly = s.displayMode === 'breakdown_only';
@@ -256,7 +274,7 @@ export default function FunnelStageVisual({ visual, theme, runtimeFilters, runti
             : onSelect;
         const minW = vertical ? undefined : (cardW ?? (stageHasBreakdown ? 200 : compact ? 96 : 120));
         return (
-          <div key={s.id} className={`flex items-stretch ${vertical ? 'flex-col' : 'flex-row'} shrink-0`} style={{ gap }}>
+          <div key={s.id} className={`flex items-stretch ${vertical ? 'flex-col' : 'flex-row'} ${fit ? 'flex-1 min-w-0' : 'shrink-0'}`} style={{ gap }}>
             <div
               role={clickable ? 'button' : undefined}
               tabIndex={clickable ? 0 : undefined}
@@ -271,7 +289,7 @@ export default function FunnelStageVisual({ visual, theme, runtimeFilters, runti
                 minWidth: minW,
                 width: vertical ? (cardW ?? (stageHasBreakdown ? 240 : undefined)) : undefined,
                 minHeight: cardH ?? undefined,
-                flex: vertical ? '0 0 auto' : (wrap ? '1 1 auto' : '0 0 auto'),
+                flex: vertical ? '0 0 auto' : (wrap || fit ? '1 1 auto' : '0 0 auto'),
               }}
             >
               <div className="flex items-center gap-1.5 shrink-0">

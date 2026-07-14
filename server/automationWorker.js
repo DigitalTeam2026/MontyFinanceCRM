@@ -1240,6 +1240,13 @@ async function processJob(pool, job, opts = {}) {
     )
   ).rows;
   const done = new Set(doneRows.map((r) => r.action_id));
+  // For a Condition that already ran on a prior attempt, remember which branch it
+  // took so a retry recurses into the SAME branch (rather than re-evaluating with a
+  // possibly-different ctx) to finish any not-yet-done child steps.
+  const condBranch = new Map();
+  for (const d of doneRows) {
+    if (d.action_type === "condition" && d.output && d.output.branch) condBranch.set(d.action_id, d.output.branch);
+  }
 
   const after = job.change_snapshot?.after || {};
   // Prefer the host the user was working on (captured client-side at trigger time)
@@ -1369,7 +1376,16 @@ async function processJob(pool, job, opts = {}) {
   // `firstError` (closed over) tracks the run's first failure for run_after gating.
   const runList = async (list) => {
     for (const action of list) {
-      if (done.has(action.automation_rule_action_id)) continue;
+      const isDone = done.has(action.automation_rule_action_id);
+
+      // A Condition that already completed on a prior attempt: don't re-run it,
+      // but DO recurse into the branch it took so not-yet-done children finish.
+      if (action.action_type === "condition" && isDone) {
+        const branch = condBranch.get(action.automation_rule_action_id);
+        if (branch) await runList(childrenOf(action.automation_rule_action_id, branch));
+        continue;
+      }
+      if (isDone) continue;
 
       // Power Automate "Configure run after": does this action run given whether
       // an earlier action has already failed?

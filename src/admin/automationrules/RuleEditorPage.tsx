@@ -882,9 +882,8 @@ function RunAfterSelect({
   );
 }
 
-// "Only run if" gate — an optional per-step field-to-field condition that lets a
-// flow branch. Compares two token templates (e.g. {{record.owner_id}} vs
-// {{steps.Opp.raw(ownerid)}}); the step is skipped when the comparison fails.
+// Comparison operators for the Condition step (which compares two token
+// templates, e.g. {{record.owner_id}} vs {{steps.Opp.raw(ownerid)}}).
 const RC_OPERATORS: { value: AutomationActionRunCondition['operator']; label: string }[] = [
   { value: 'equals', label: 'equals' },
   { value: 'not_equals', label: 'does not equal' },
@@ -893,118 +892,24 @@ const RC_OPERATORS: { value: AutomationActionRunCondition['operator']; label: st
 ];
 const rcNeedsRight = (op: AutomationActionRunCondition['operator']) => op === 'equals' || op === 'not_equals';
 
-function OnlyRunIfControl({ action, fields, steps, onChange }: { action: AutomationRuleAction; fields: FieldDefinition[]; steps: EarlierStep[]; onChange: () => void }) {
-  const rc = action.run_condition ?? null;
-  const [open, setOpen] = useState(false);
-  const [left, setLeft] = useState(rc?.left ?? '');
-  const [op, setOp] = useState<AutomationActionRunCondition['operator']>(rc?.operator ?? 'equals');
-  const [right, setRight] = useState(rc?.right ?? '');
-  const [busy, setBusy] = useState(false);
-  const [tokenMenu, setTokenMenu] = useState<'left' | 'right' | null>(null);
-
-  const save = async () => {
-    setBusy(true);
-    try {
-      const next: AutomationActionRunCondition | null = left.trim()
-        ? { left: left.trim(), operator: op, right: rcNeedsRight(op) ? right.trim() : '' }
-        : null;
-      await updateAction(action.automation_rule_action_id, { run_condition: next });
-      onChange();
-      setOpen(false);
-    } finally { setBusy(false); }
-  };
-  const clear = async () => {
-    setBusy(true);
-    try {
-      await updateAction(action.automation_rule_action_id, { run_condition: null });
-      setLeft(''); setRight(''); setOp('equals');
-      onChange();
-      setOpen(false);
-    } finally { setBusy(false); }
-  };
-
-  const summary = rc
-    ? `Only if ${rc.left} ${RC_OPERATORS.find((o) => o.value === rc.operator)?.label ?? rc.operator}${rcNeedsRight(rc.operator) ? ` ${rc.right}` : ''}`
-    : 'Only run if…';
-
-  return (
-    <div className="relative inline-flex">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title="Run this step only when a condition holds (lets the flow branch)"
-        className={`inline-flex max-w-[280px] items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
-          rc ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-dashed border-slate-300 bg-white text-slate-500 hover:border-violet-400 hover:text-violet-600'
-        }`}
-      >
-        <Filter size={11} className="shrink-0" />
-        <span className="truncate">{summary}</span>
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-[320px] rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
-          <p className="mb-1.5 text-[11px] font-semibold text-slate-600">Run this step only if</p>
-          <div className="mb-1.5 flex items-center gap-1">
-            <input
-              value={left}
-              onChange={(e) => setLeft(e.target.value)}
-              placeholder="{{record.owner_id}}"
-              className="w-full rounded-md border border-slate-300 px-2 py-1 font-mono text-[11.5px] outline-none focus:border-violet-400"
-            />
-            <TokenMenu recordFields={fields} steps={steps} onPick={(t) => setLeft((v) => `${v}${t}`)} open={tokenMenu === 'left'} onOpenChange={(o) => setTokenMenu(o ? 'left' : null)} />
-          </div>
-          <select
-            value={op}
-            onChange={(e) => setOp(e.target.value as AutomationActionRunCondition['operator'])}
-            className="mb-1.5 w-full cursor-pointer rounded-md border border-slate-300 px-2 py-1 text-[11.5px] outline-none focus:border-violet-400"
-          >
-            {RC_OPERATORS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          {rcNeedsRight(op) && (
-            <div className="mb-2 flex items-center gap-1">
-              <input
-                value={right}
-                onChange={(e) => setRight(e.target.value)}
-                placeholder="{{steps.Opp.raw(ownerid)}}"
-                className="w-full rounded-md border border-slate-300 px-2 py-1 font-mono text-[11.5px] outline-none focus:border-violet-400"
-              />
-              <TokenMenu recordFields={fields} steps={steps} onPick={(t) => setRight((v) => `${v}${t}`)} open={tokenMenu === 'right'} onOpenChange={(o) => setTokenMenu(o ? 'right' : null)} />
-            </div>
-          )}
-          <p className="mb-2 text-[10.5px] leading-snug text-slate-400">
-            Both sides accept tokens (record fields, earlier steps). Compared as text.
-          </p>
-          <div className="flex items-center gap-2">
-            <button onClick={() => void save()} disabled={busy} className="rounded-md bg-violet-600 px-2.5 py-1 text-[11.5px] font-medium text-white hover:bg-violet-700 disabled:opacity-50">Save</button>
-            {rc && <button onClick={() => void clear()} disabled={busy} className="rounded-md border border-slate-300 px-2.5 py-1 text-[11.5px] text-slate-600 hover:border-red-300 hover:text-red-600 disabled:opacity-50">Remove</button>}
-            <button onClick={() => setOpen(false)} className="ml-auto text-[11.5px] text-slate-400 hover:text-slate-600">Cancel</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ActionsTab({
   rule, ruleId, fields, actions, onChange,
 }: { rule: AutomationRule; ruleId: string; fields: FieldDefinition[]; actions: AutomationRuleAction[]; onChange: () => void }) {
+  // Top-level "Add step" menu open state (Escape / outside-click handled inside
+  // AddStepButton). Kept here so the toolbar button and ActionsTab stay in sync.
   const [adding, setAdding] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const addMenuRef = useRef<HTMLDivElement>(null);
-
-  // Close the add-step menu on Escape or an outside click.
-  useEffect(() => {
-    if (!adding) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAdding(false); };
-    const onClick = (e: MouseEvent) => {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) setAdding(false);
-    };
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('mousedown', onClick);
-    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClick); };
-  }, [adding]);
 
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  // Steps the user has collapsed (by id). Collapsing a Condition also hides its
+  // branches, so a large flow stays scannable.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleCollapse = (id: string) => setCollapsed((s) => {
+    const next = new Set(s);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   const isSchedule = rule.trigger_type === 'schedule';
 
@@ -1103,24 +1008,24 @@ function ActionsTab({
         {list.map((a, i) => {
           const isCond = a.action_type === 'condition';
           const targetKey = a.automation_rule_action_id;
+          const isCollapsed = collapsed.has(a.automation_rule_action_id);
           return (
             <div key={a.automation_rule_action_id}>
               <FlowConnector>
-                <div className="flex flex-wrap items-center justify-center gap-1.5">
-                  {i > 0 && (
+                {i > 0 ? (
+                  <div className="flex flex-wrap items-center justify-center gap-1.5">
                     <RunAfterSelect
                       value={a.run_after ?? 'success'}
                       busy={busyId === a.automation_rule_action_id}
                       onChange={(ra) => setRunAfter(a, ra)}
                     />
-                  )}
-                  <OnlyRunIfControl action={a} fields={fields} steps={stepsBefore(a.automation_rule_action_id)} onChange={onChange} />
-                </div>
+                  </div>
+                ) : undefined}
               </FlowConnector>
               {/* drop-before target */}
               <div
-                onDragOver={(e) => { if (dragId) { e.preventDefault(); setDropTarget(targetKey); } }}
-                onDrop={(e) => { e.preventDefault(); void drop(parentId, branch, a.automation_rule_action_id); }}
+                onDragOver={(e) => { if (dragId) { e.preventDefault(); e.stopPropagation(); setDropTarget(targetKey); } }}
+                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); void drop(parentId, branch, a.automation_rule_action_id); }}
                 className={`relative rounded-xl transition-shadow ${dropTarget === targetKey && dragId ? 'ring-2 ring-blue-400' : ''} ${dragId === a.automation_rule_action_id ? 'opacity-40' : ''}`}
               >
                 <span className="absolute -left-2.5 -top-2.5 z-10 grid h-6 w-6 place-items-center rounded-full bg-slate-700 text-[11px] font-bold text-white shadow ring-2 ring-white">
@@ -1136,10 +1041,30 @@ function ActionsTab({
                 >
                   <GripVertical size={13} />
                 </button>
-                {!isCond && (
-                  <div className="px-4 pt-2"><ActionLabelInput action={a} onChange={onChange} /></div>
+                {/* collapse / expand toggle */}
+                <button
+                  type="button"
+                  onClick={() => toggleCollapse(a.automation_rule_action_id)}
+                  title={isCollapsed ? 'Expand step' : 'Collapse step'}
+                  className="absolute -right-2.5 -top-2.5 z-20 grid h-6 w-6 place-items-center rounded-full bg-white text-slate-400 shadow ring-1 ring-slate-200 hover:text-slate-700"
+                >
+                  <ChevronDown size={14} className={`transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+                </button>
+                {isCollapsed ? (
+                  <CollapsedActionBar
+                    action={a}
+                    yesCount={isCond ? childrenOf(a.automation_rule_action_id, 'yes').length : undefined}
+                    noCount={isCond ? childrenOf(a.automation_rule_action_id, 'no').length : undefined}
+                    onExpand={() => toggleCollapse(a.automation_rule_action_id)}
+                  />
+                ) : (
+                  <>
+                    {!isCond && (
+                      <div className="px-4 pt-2"><ActionLabelInput action={a} onChange={onChange} /></div>
+                    )}
+                    {renderCard(a)}
+                  </>
                 )}
-                {renderCard(a)}
               </div>
             </div>
           );
@@ -1147,9 +1072,22 @@ function ActionsTab({
 
         {/* End-of-list connector + Add step (drops here to append) */}
         <FlowConnector />
+        {/* While dragging, every group (incl. an empty Condition branch) shows an
+            explicit drop target so you can move a step INTO the branch. */}
+        {dragId && dragId !== parentId && (
+          <div
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDropTarget(`${groupKey(parentId, branch)}:end`); }}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); void drop(parentId, branch, null); }}
+            className={`mb-2 flex items-center justify-center gap-1.5 rounded-lg border-2 border-dashed py-2 text-[11.5px] font-medium transition-colors ${
+              dropTarget === `${groupKey(parentId, branch)}:end` ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-slate-300 text-slate-400'
+            }`}
+          >
+            <ArrowDown size={13} /> Drop step here
+          </div>
+        )}
         <div
-          onDragOver={(e) => { if (dragId) { e.preventDefault(); setDropTarget(`${groupKey(parentId, branch)}:end`); } }}
-          onDrop={(e) => { e.preventDefault(); void drop(parentId, branch, null); }}
+          onDragOver={(e) => { if (dragId) { e.preventDefault(); e.stopPropagation(); setDropTarget(`${groupKey(parentId, branch)}:end`); } }}
+          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); void drop(parentId, branch, null); }}
           className={`flex justify-center rounded-lg transition-shadow ${dropTarget === `${groupKey(parentId, branch)}:end` && dragId ? 'ring-2 ring-blue-400' : ''}`}
         >
           <AddStepButton isSchedule={isSchedule} onAdd={(t) => void add(t, { parent_action_id: parentId, branch })} />
@@ -1168,7 +1106,7 @@ function ActionsTab({
       )}
 
       {/* Top toolbar — Add step is always reachable without scrolling to the bottom */}
-      <div className="mb-3 flex justify-start" ref={addMenuRef}>
+      <div className="mb-3 flex justify-start">
         <AddStepButton isSchedule={isSchedule} onAdd={(t) => void add(t)} open={adding} onOpenChange={setAdding} openUp={false} />
       </div>
 
@@ -1187,9 +1125,7 @@ function ActionsTab({
         </div>
       </div>
 
-      {actions.length === 0
-        ? renderList(null, null)
-        : renderList(null, null)}
+      {renderList(null, null)}
 
       {hasFailureBranch && (
         <p className="mt-4 text-center text-[11.5px] text-slate-400">
@@ -1197,6 +1133,46 @@ function ActionsTab({
         </p>
       )}
     </div>
+  );
+}
+
+// Small type icon for a step, reused by the collapsed summary bar.
+function actionTypeIcon(t: AutomationActionType) {
+  const cls = t === 'condition' ? 'text-violet-600' : 'text-blue-600';
+  const Icon =
+    t === 'send_email' ? Mail
+    : t === 'update_field' ? PencilLine
+    : t === 'get_row' ? KeyRound
+    : t === 'list_rows' ? ListChecks
+    : t === 'condition' ? GitBranch
+    : (t === 'generate_document' || t === 'export_view_email' || t === 'related_export_email') ? FileSpreadsheet
+    : (t === 'create_related_record' || t === 'update_related_record') ? PencilLine
+    : Zap;
+  return <Icon size={14} className={cls} />;
+}
+
+// Compact one-line stand-in shown when a step is collapsed — click to expand.
+// For a Condition it also shows how many steps sit in each branch.
+function CollapsedActionBar({
+  action, yesCount, noCount, onExpand,
+}: { action: AutomationRuleAction; yesCount?: number; noCount?: number; onExpand: () => void }) {
+  const isCond = action.action_type === 'condition';
+  const title = action.label?.trim() || actionLabel(action.action_type);
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      title="Expand step"
+      className={`flex w-full items-center gap-2 rounded-xl border px-4 py-2.5 text-left transition-colors ${
+        isCond ? 'border-violet-200 bg-violet-50/40 hover:border-violet-300' : 'border-slate-200 bg-white hover:border-slate-300'
+      }`}
+    >
+      {actionTypeIcon(action.action_type)}
+      <span className="truncate text-[13px] font-medium text-slate-700">{title}</span>
+      {action.label?.trim() && <span className="shrink-0 text-[11px] text-slate-400">{actionLabel(action.action_type)}</span>}
+      {isCond && <span className="shrink-0 text-[11px] text-slate-400">· {yesCount ?? 0} yes / {noCount ?? 0} no</span>}
+      <span className="ml-auto shrink-0 text-[11px] text-slate-400">Expand</span>
+    </button>
   );
 }
 
@@ -2489,6 +2465,11 @@ function fmtCondVal(v: unknown): string {
 // Short one-line summary of an action's output, per action type.
 function stepOutputSummary(l: AutomationJobActionLog): string | null {
   const out = (l.output ?? {}) as Record<string, unknown>;
+  if (l.action_type === 'condition') {
+    const branch = out.branch === 'yes' ? 'If yes' : out.branch === 'no' ? 'If no' : null;
+    const cond = out.condition as { summary?: string } | undefined;
+    return branch ? `→ ${branch}${cond?.summary ? ` · ${cond.summary}` : ''}` : null;
+  }
   if ((l.action_type === 'list_rows' || l.action_type === 'get_row') && out.count != null) return `${out.count} row${out.count === 1 ? '' : 's'}`;
   if (l.action_type === 'send_email') {
     const recips = [...(Array.isArray(out.to) ? out.to as string[] : []), ...(Array.isArray(out.cc) ? out.cc as string[] : [])];

@@ -340,6 +340,8 @@ function StageBreakdownControls({ stage, fields, entityName, theme, onUpdate }: 
         </FilterSelect>
       </Field>
 
+      <StageConversionRow stage={stage} entityName={entityName} onUpdate={onUpdate} />
+
       <Toggle label="Show percentages" checked={!!stage.showPercentages} onChange={(v) => onUpdate({ showPercentages: v })} />
       <Toggle label="Show progress bars" checked={stage.showProgressBars !== false} onChange={(v) => onUpdate({ showProgressBars: v })} />
       <Toggle label="Show zero values" checked={!!stage.showZeroValues} onChange={(v) => onUpdate({ showZeroValues: v })} />
@@ -350,6 +352,41 @@ function StageBreakdownControls({ stage, fields, entityName, theme, onUpdate }: 
       <StageCustomRows stage={stage} fields={fields} entityName={entityName} onUpdate={onUpdate} />
       <StageValueColors stage={stage} entityName={entityName} theme={theme} onUpdate={onUpdate} />
     </div>
+  );
+}
+
+// The breakdown value whose records count as "advanced to the next stage" — the
+// connector between this card and the next shows (that value's count ÷ stage total),
+// i.e. a real pipeline conversion rate (always ≤ 100%). Loads the breakdown field's
+// options so the user picks a label; stores the stable raw value.
+function StageConversionRow({ stage, entityName, onUpdate }: {
+  stage: FunnelStage; entityName?: string; onUpdate: (patch: Partial<FunnelStage>) => void;
+}) {
+  const [info, setInfo] = useState<FilterFieldInfo | null>(null);
+  const field = stage.breakdownField;
+
+  useEffect(() => {
+    if (!entityName || !field) { setInfo(null); return; }
+    let cancelled = false;
+    getFilterFieldInfo(entityName, field)
+      .then((fi) => { if (!cancelled) setInfo(fi); })
+      .catch(() => { if (!cancelled) setInfo({ kind: 'text', options: [] }); });
+    return () => { cancelled = true; };
+  }, [entityName, field]);
+
+  const opts = info && info.kind !== 'text' ? info.options : [];
+  return (
+    <Field label="Conversion value (counts as advanced to next stage)">
+      {opts.length ? (
+        <FilterSelect value={stage.conversionValue ?? ''} onChange={(e) => onUpdate({ conversionValue: e.target.value || undefined })} className={inputCls}>
+          <option value="">— None (use count ratio) —</option>
+          {opts.map((o) => <option key={o.value} value={String(o.value)}>{o.label}</option>)}
+        </FilterSelect>
+      ) : (
+        <input value={stage.conversionValue ?? ''} onChange={(e) => onUpdate({ conversionValue: e.target.value || undefined })}
+          placeholder="breakdown value or label" className={inputCls} />
+      )}
+    </Field>
   );
 }
 
@@ -585,6 +622,7 @@ export function FunnelStageFormat({ visual, theme, setFmt }: {
         </div>
         <Toggle label="Compact mode" checked={!!fmt.compactStages} onChange={(v) => setFmt({ compactStages: v })} />
         <Toggle label="Wrap stages" checked={!!fmt.wrapStages} onChange={(v) => setFmt({ wrapStages: v })} />
+        <Toggle label="Stretch cards to fill width" checked={!!fmt.fitStages} onChange={(v) => setFmt({ fitStages: v })} />
         <Toggle label="Scroll horizontally when overflowing" checked={fmt.scrollStages !== false} onChange={(v) => setFmt({ scrollStages: v })} />
       </Section>
 

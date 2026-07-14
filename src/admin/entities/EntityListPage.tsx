@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   Plus, Search, Database, Trash2, RefreshCw, Lock,
   ChevronUp, ChevronDown, MoreHorizontal, Download, Upload,
-  Filter, X, ArrowUpDown,
+  Filter, X, ArrowUpDown, Sparkles, Loader2, CheckCircle2, AlertCircle, Circle,
   Building2, Users, UserPlus, Target, Ticket, Package, Factory,
   DollarSign, Map, Globe, Megaphone, Award, ShoppingCart, FileText,
   Briefcase, Truck, Tag, Calendar, Mail, Phone, Box, Boxes, Wrench,
@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import type { EntityDefinition } from '../../types/entity';
 import { fetchEntities, dropEntity } from '../../services/entityService';
+import { applyAiTable, type AiTableSpec, type ApplyStep } from '../../services/aiTableService';
+import { parseTablePrompt, isTableParseError } from './aiTableParser';
 import ConfirmDialog from '../components/ConfirmDialog';
 import AnchoredPopover from '../../app/components/overlay/AnchoredPopover';
 
@@ -80,6 +82,7 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
   const [deleteTarget, setDeleteTarget] = useState<EntityDefinition | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ entity: EntityDefinition; anchor: HTMLElement } | null>(null);
+  const [showAi, setShowAi] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -157,6 +160,7 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
       {/* Command Bar */}
       <div className="bg-white border-b border-slate-200 px-5 py-2 flex items-center gap-1.5 shrink-0">
         <CmdButton primary onClick={onNew} icon={<Plus size={13} />}>New table</CmdButton>
+        <CmdButton onClick={() => setShowAi(true)} icon={<Sparkles size={13} className="text-violet-500" />}>Create with AI</CmdButton>
         <CmdSep />
         <CmdButton onClick={load} icon={<RefreshCw size={12} className={loading ? 'animate-spin' : ''} />}>Refresh</CmdButton>
         <CmdButton icon={<Download size={12} />}>Export</CmdButton>
@@ -369,6 +373,14 @@ export default function EntityListPage({ onNew, onEdit }: EntityListPageProps) {
         )}
       </AnchoredPopover>
 
+      {showAi && (
+        <AiTableModal
+          existingNames={entities.map((e) => e.logical_name)}
+          onClose={() => setShowAi(false)}
+          onCreated={(entity) => { setShowAi(false); load(); onEdit(entity); }}
+        />
+      )}
+
       {deleteTarget && (
         <ConfirmDialog
           title="Permanently Delete Custom Table"
@@ -439,5 +451,227 @@ function CtxItem({ children, onClick, danger }: { children: React.ReactNode; onC
     >
       {children}
     </button>
+  );
+}
+
+// ── AI table builder ───────────────────────────────────────────────────────────
+// Describe a table in plain language; AI drafts its columns; we preview then
+// provision the entity + columns + default form in one go.
+
+const TYPE_LABEL: Record<string, string> = {
+  text: 'Text', long_text: 'Multi-line', whole_number: 'Whole number',
+  decimal: 'Decimal', currency: 'Currency', date: 'Date', datetime: 'Date & time',
+  boolean: 'Yes / No', email: 'Email', phone: 'Phone', url: 'URL', choice: 'Choice',
+};
+
+const APPLY_STEP_LABEL: Record<ApplyStep, string> = {
+  entity: 'Creating table',
+  bootstrap: 'Provisioning system fields, views & forms',
+  fields: 'Creating columns',
+  form: 'Adding columns to the default form',
+};
+const APPLY_ORDER: ApplyStep[] = ['entity', 'bootstrap', 'fields', 'form'];
+
+const AI_EXAMPLES = [
+  'A loan application table with applicant name, amount, interest rate, term in months, application date, and a status choice (Draft, Submitted, Approved, Rejected).',
+  'A property listing table: address, city, price, bedrooms, bathrooms, square footage, listing type (Sale, Rent), and available-from date.',
+  'A vendor contract table with contract number, vendor name, start date, end date, annual value, and auto-renew yes/no.',
+];
+
+function AiTableModal({
+  existingNames, onClose, onCreated,
+}: { existingNames: string[]; onClose: () => void; onCreated: (entity: EntityDefinition) => void }) {
+  const [prompt, setPrompt] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [spec, setSpec] = useState<AiTableSpec | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [progress, setProgress] = useState<Record<ApplyStep, 'idle' | 'running' | 'done'>>({
+    entity: 'idle', bootstrap: 'idle', fields: 'idle', form: 'idle',
+  });
+  const [progressDetail, setProgressDetail] = useState<string>('');
+
+  // Parse locally — no external service, so run it inside a tiny timeout purely so
+  // the spinner is visible for very short prompts (mirrors the rule creator).
+  const generate = () => {
+    if (!prompt.trim()) return;
+    setLoading(true); setError(null); setSuggestions([]); setSpec(null); setWarnings([]);
+    setTimeout(() => {
+      const result = parseTablePrompt(prompt.trim(), existingNames);
+      setLoading(false);
+      if (isTableParseError(result)) {
+        setError(result.message);
+        setSuggestions(result.suggestions);
+        return;
+      }
+      setSpec(result.spec);
+      setWarnings(result.warnings ?? []);
+    }, 300);
+  };
+
+  const apply = async () => {
+    if (!spec) return;
+    setApplying(true); setError(null);
+    setProgress({ entity: 'idle', bootstrap: 'idle', fields: 'idle', form: 'idle' });
+    try {
+      const { entity, fieldErrors } = await applyAiTable(spec, (p) => {
+        setProgress((prev) => ({ ...prev, [p.step]: p.status }));
+        if (p.detail) setProgressDetail(p.detail);
+      });
+      if (fieldErrors.length > 0) {
+        // Table + form were still created — surface partial-column failures but proceed.
+        console.warn('[AI table] some columns failed:', fieldErrors);
+      }
+      onCreated(entity);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create table');
+      setApplying(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={applying ? undefined : onClose} />
+      <div className="relative flex max-h-[86vh] w-[580px] flex-col rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center gap-2 border-b border-slate-200 px-5 py-3.5">
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-violet-100 text-violet-600"><Sparkles size={16} /></span>
+          <div>
+            <h3 className="text-[15px] font-semibold text-slate-800">Create a table with AI</h3>
+            <p className="text-[11.5px] text-slate-400">Describe the table and its columns — it drafts the columns and builds the default form. Runs entirely in-system.</p>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          <label className="block text-[12px] font-medium text-slate-600 mb-1">Describe the table</label>
+          <textarea
+            rows={4} value={prompt} onChange={(e) => setPrompt(e.target.value)} disabled={applying}
+            className="w-full px-2.5 py-2 text-[12px] border border-slate-300 rounded focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 resize-none disabled:opacity-60"
+            placeholder="e.g. A loan application table with applicant name, amount, status (Draft, Submitted, Approved), and application date…"
+          />
+          {!spec && !applying && (
+            <div className="mt-2 space-y-1">
+              <p className="text-[11px] font-medium text-slate-400">Try:</p>
+              {AI_EXAMPLES.map((ex) => (
+                <button key={ex} onClick={() => setPrompt(ex)} className="block w-full rounded border border-slate-200 bg-slate-50/60 px-2 py-1 text-left text-[11.5px] text-slate-500 hover:border-slate-300">{ex}</button>
+              ))}
+            </div>
+          )}
+
+          {error && (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-600">
+              <p className="flex items-start gap-1.5"><AlertCircle size={13} className="shrink-0 mt-0.5" />{error}</p>
+              {suggestions.length > 0 && (
+                <ul className="mt-1.5 space-y-1 pl-5 text-[11px] text-red-500/80">
+                  {suggestions.map((s) => <li key={s} className="list-disc">{s}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {spec && !applying && (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+              <div className="flex items-center gap-2">
+                <Database size={15} className="text-slate-500" />
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-slate-800 truncate">{spec.display_name}</p>
+                  <code className="text-[10.5px] text-slate-400">{spec.logical_name}</code>
+                </div>
+                <span className="ml-auto text-[10px] text-slate-400 capitalize">{spec.ownership_type}-owned</span>
+              </div>
+              {spec.description && <p className="mt-1.5 text-[11.5px] text-slate-500">{spec.description}</p>}
+
+              <div className="mt-3 rounded-lg border border-slate-200 bg-white overflow-hidden">
+                <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-50 border-b border-slate-100 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span>Columns ({spec.fields.length + 1})</span>
+                </div>
+                <ColumnRow name={spec.primary_field_label} logical="name" type="Primary" required system />
+                {spec.fields.map((f) => (
+                  <ColumnRow
+                    key={f.logical_name}
+                    name={f.display_name}
+                    logical={f.logical_name}
+                    type={TYPE_LABEL[f.type] ?? f.type}
+                    required={f.required}
+                    choices={f.choices}
+                  />
+                ))}
+              </div>
+
+              {warnings.length > 0 && (
+                <ul className="mt-2 list-inside list-disc text-[11px] text-amber-600">{warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+              )}
+              <p className="mt-2 text-[11px] text-slate-400">Creates the table, its columns, default views, and a main form with these columns. Standard columns (Owner, Status, audit) are added automatically.</p>
+            </div>
+          )}
+
+          {applying && (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3.5">
+              <p className="text-[12px] font-medium text-slate-700 mb-2.5">Creating “{spec?.display_name}”…</p>
+              <ul className="space-y-2">
+                {APPLY_ORDER.map((step) => {
+                  const st = progress[step];
+                  return (
+                    <li key={step} className="flex items-center gap-2.5 text-[12px]">
+                      {st === 'idle' && <Circle size={14} className="text-slate-300 shrink-0" />}
+                      {st === 'running' && <Loader2 size={14} className="text-blue-500 animate-spin shrink-0" />}
+                      {st === 'done' && <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />}
+                      <span className={st === 'done' ? 'text-emerald-700' : st === 'running' ? 'text-blue-700 font-medium' : 'text-slate-400'}>
+                        {APPLY_STEP_LABEL[step]}
+                        {step === 'fields' && progressDetail && st !== 'idle' ? ` (${progressDetail})` : ''}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
+          <button onClick={onClose} disabled={applying} className="rounded px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-100 disabled:opacity-50">Cancel</button>
+          {!spec ? (
+            <button onClick={generate} disabled={loading || !prompt.trim()} className="inline-flex items-center gap-1.5 rounded bg-violet-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-violet-700 disabled:opacity-50">
+              {loading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} Generate
+            </button>
+          ) : !applying ? (
+            <>
+              <button onClick={generate} disabled={loading} className="inline-flex items-center gap-1.5 rounded border border-slate-300 px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                {loading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Regenerate
+              </button>
+              <button onClick={apply} className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-blue-700">
+                <CheckCircle2 size={15} /> Create table
+              </button>
+            </>
+          ) : (
+            <button disabled className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1.5 text-[13px] font-medium text-white opacity-60">
+              <Loader2 size={15} className="animate-spin" /> Creating…
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ColumnRow({
+  name, logical, type, required, choices, system,
+}: { name: string; logical: string; type: string; required?: boolean; choices?: string[]; system?: boolean }) {
+  return (
+    <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-slate-50 last:border-b-0">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[12px] font-medium text-slate-700 truncate">{name}</span>
+          {required && <span className="text-[9px] font-semibold text-red-500 uppercase">Req</span>}
+          {system && <span className="text-[9px] font-semibold text-slate-400 uppercase">Auto</span>}
+        </div>
+        <code className="text-[10px] text-slate-400">{logical}</code>
+        {choices && choices.length > 0 && (
+          <p className="text-[10px] text-slate-400 truncate">{choices.join(' · ')}</p>
+        )}
+      </div>
+      <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">{type}</span>
+    </div>
   );
 }
