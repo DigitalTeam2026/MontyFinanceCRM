@@ -10,7 +10,14 @@ export default function PowerAutomationPage() {
   const [open, setOpen] = useState<{ id: string; tab: EditorTab } | null>(null);
 
   if (open) {
-    return <RuleEditorPage ruleId={open.id} initialTab={open.tab} onBack={() => setOpen(null)} />;
+    return (
+      <RuleEditorPage
+        ruleId={open.id}
+        initialTab={open.tab}
+        onBack={() => setOpen(null)}
+        onOpenRule={(id: string, tab: EditorTab = 'actions') => setOpen({ id, tab })}
+      />
+    );
   }
   return (
     <RuleListPage

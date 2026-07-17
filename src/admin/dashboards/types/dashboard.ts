@@ -146,8 +146,16 @@ export interface VisualFilter {
  * metadata, so RLS on each joined table still governs visibility.
  */
 export interface RelatedFilter {
-  /** Foreign-key columns to traverse, base-entity first (e.g. ['lead_id','account_id']). */
-  path: { fk: string; entity: string }[];
+  /**
+   * Relationship hops to traverse, base-entity first. Each hop names the target
+   * `entity` and the `fk` column joining it. `direction` (default 'forward')
+   * follows the FK on the PREVIOUS table down to the hop's primary key
+   * (child → parent); 'reverse' matches rows of the hop entity whose `fk` points
+   * BACK at the previous table's primary key (parent → child), e.g. base
+   * `account` + `{ entity:'lead', fk:'account_id', direction:'reverse' }` keeps
+   * only accounts that a lead references.
+   */
+  path: { fk: string; entity: string; direction?: 'forward' | 'reverse' }[];
   /** Physical column on the terminal entity to compare. */
   field: string;
   op: FilterOp;
@@ -381,7 +389,7 @@ export type SlicerDateRange =
   | 'last_7_days' | 'last_30_days' | 'this_month' | 'last_month'
   | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year' | 'custom';
 
-export type SlicerStyle = 'date_inputs' | 'range_slider' | 'timeline' | 'dropdown_preset' | 'button_presets' | 'timeline_card';
+export type SlicerStyle = 'date_inputs' | 'range_slider' | 'timeline' | 'dropdown_preset' | 'button_presets' | 'timeline_card' | 'granular';
 export type ApplyFilterTo = 'dashboard' | 'page' | 'selected';
 export type SlicerOrientation = 'horizontal' | 'vertical';
 export type SlicerHandleStyle = 'circle' | 'square' | 'bar';
@@ -1035,6 +1043,7 @@ export const SLICER_STYLES: { value: SlicerStyle; label: string }[] = [
   { value: 'dropdown_preset', label: 'Dropdown preset' },
   { value: 'button_presets', label: 'Button presets' },
   { value: 'timeline_card', label: 'Timeline / Date card' },
+  { value: 'granular', label: 'Day / Week / Month / Year picker' },
 ];
 
 // ── Layout / alignment option lists (used by the properties panel) ────────────

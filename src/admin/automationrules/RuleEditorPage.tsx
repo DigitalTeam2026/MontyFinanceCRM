@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from 'react';
-import { ArrowLeft, Save, Plus, Trash2, Mail, PencilLine, FileSpreadsheet, ListChecks, KeyRound, Braces, ToggleLeft, ToggleRight, CheckCircle2, XCircle, MinusCircle, Zap, ChevronDown, Loader2, ArrowDown, Clock, CalendarClock, RotateCw, Eye, X, Filter, Check, GitBranch, GripVertical } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, useCallback, createContext, useContext, type ReactNode } from 'react';
+import { ArrowLeft, Save, Plus, Trash2, Mail, PencilLine, FileSpreadsheet, ListChecks, KeyRound, Braces, ToggleLeft, ToggleRight, CheckCircle2, XCircle, MinusCircle, Zap, ChevronDown, Loader2, ArrowDown, Clock, CalendarClock, RotateCw, Eye, X, Filter, Check, GitBranch, GripVertical, Copy, Split, Maximize2, ChevronUp } from 'lucide-react';
 import type {
   AutomationRule, AutomationRuleAction, AutomationOperator, AutomationTriggerEvent,
   AutomationActionType, AutomationBranch, AutomationCondition, SendEmailConfig, UpdateFieldConfig,
   GenerateDocumentConfig, ListRowsConfig, ListRowsFilter, ListRowsOperator, GetRowConfig, AutomationRunHistoryRow,
-  AutomationRunAfter, AutomationActionRunCondition, ConditionConfig, AutomationJobActionLog, ScheduleConfig, ScheduleFrequency, ExportViewEmailConfig,
+  AutomationRunAfter, AutomationActionRunCondition, ConditionConfig, SwitchConfig, SwitchCase, AutomationJobActionLog, ScheduleConfig, ScheduleFrequency, ExportViewEmailConfig,
   RelatedExportEmailConfig, RelatedExportSource, RelatedExportColumn,
   FieldMapping, CreateRelatedRecordConfig, UpdateRelatedRecordConfig, RelatedMatchMode,
 } from '../../types/automationRule';
@@ -15,7 +15,7 @@ import { fetchFieldsForEntity } from '../../services/fieldService';
 import { fetchEntities } from '../../services/entityService';
 import {
   fetchRuleById, updateRule, setRuleEnabled, fetchActions, createAction, updateAction, moveAction,
-  deleteAction, fetchRunHistory, fetchFieldChoices, computeNextRunAt, fetchRelatedSourceOptions, rerunRun,
+  duplicateAction, deleteAction, cloneRule, getCurrentUserId, fetchRunHistory, fetchFieldChoices, computeNextRunAt, fetchRelatedSourceOptions, rerunRun,
   type ChoiceOption, type RelatedSourceOptions,
 } from '../../services/automationRuleService';
 import { fetchViewsForEntityLogical } from '../../services/viewService';
@@ -49,6 +49,12 @@ const RAW_TOKEN_TYPES = new Set(['lookup', 'owner', 'customer', 'choice', 'multi
 interface TokenItem { label: string; value: string; hint?: string }
 interface TokenGroup { title: string; items: TokenItem[] }
 
+// Parent ("regarding") record fields available to token pickers, when the trigger
+// pins the polymorphic parent (e.g. Note · Regarding = Opportunity). Supplied once
+// by ActionsTab so every TokenMenu can offer {{record.regarding.<field>}} without
+// the author having to add a Get row step. Null when the trigger has no parent.
+const RegardingContext = createContext<{ label: string; fields: FieldDefinition[] } | null>(null);
+
 // "Dynamic content" picker (Power-Automate style): pick a value from the trigger
 // record or from any earlier step (get_row / list_rows) in this same flow. Lookup
 // fields also expose a "· id" token — the raw id used to match/look up.
@@ -62,6 +68,7 @@ function TokenMenu({ recordFields, steps, onPick, open: openProp, onOpenChange }
     if (onOpenChange) onOpenChange(next); else setOpenInternal(next);
   };
   const [q, setQ] = useState('');
+  const regarding = useContext(RegardingContext);
 
   const groups: TokenGroup[] = [];
 
@@ -74,6 +81,20 @@ function TokenMenu({ recordFields, steps, onPick, open: openProp, onOpenChange }
     }
   }
   groups.push({ title: 'Trigger record', items: recItems });
+
+  // Parent (regarding) record — the note/email's parent row (e.g. the Opportunity).
+  // Resolved at runtime by following regarding_entity_name + regarding_record_id.
+  if (regarding && regarding.fields.length) {
+    const parentItems: TokenItem[] = [{ label: 'Record link', value: '{{record.regarding.url}}', hint: 'regarding.url' }];
+    for (const f of [...regarding.fields].sort((a, b) => a.display_name.localeCompare(b.display_name))) {
+      parentItems.push({ label: f.display_name, value: `{{record.regarding.${f.logical_name}}}`, hint: `regarding.${f.logical_name}` });
+      const t = (f.field_type?.name ?? '').toLowerCase();
+      if (RAW_TOKEN_TYPES.has(t)) {
+        parentItems.push({ label: `${f.display_name} · id`, value: `{{record.regarding.raw.${f.logical_name}}}`, hint: `${f.logical_name} · raw id` });
+      }
+    }
+    groups.push({ title: `Parent record · ${regarding.label}`, items: parentItems });
+  }
 
   // One group per earlier step = one fetched entity's columns.
   for (const s of steps) {
@@ -174,10 +195,58 @@ function HtmlPreviewButton({ html }: { html: string }) {
   );
 }
 
+// Opens the email body in a large, centered modal so authors can comfortably read
+// or edit long HTML — the inline textarea is intentionally small. Edits are held in
+// a draft and only committed to the flow when OK is pressed (Cancel/backdrop discards).
+function ExpandBodyButton({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => { setDraft(value); setOpen(true); }}
+        className="inline-flex items-center gap-1 px-2 py-1 text-[12px] font-medium text-slate-600 border border-slate-200 rounded hover:bg-slate-50"
+        title="Open the body in a large editor"
+      >
+        <Maximize2 size={13} /> Expand
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setOpen(false)}>
+          <div className="flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-2.5">
+              <Maximize2 size={15} className="text-blue-600" />
+              <span className="text-[13px] font-semibold text-slate-700">Edit email body (HTML)</span>
+              <span className="text-[11px] text-slate-400">Tokens like {'{{record.*}}'} are kept as-is</span>
+              <div className="flex-1" />
+              <button type="button" onClick={() => setOpen(false)} className="p-1 text-slate-400 hover:text-slate-700"><X size={16} /></button>
+            </div>
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              spellCheck={false}
+              className="flex-1 w-full resize-none p-4 font-mono text-[13px] leading-relaxed text-slate-800 outline-none"
+              placeholder="<p>…{{record.url}}…</p>"
+            />
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-2.5">
+              <button type="button" onClick={() => setOpen(false)} className="rounded border border-slate-300 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:border-slate-400">Cancel</button>
+              <button type="button" onClick={() => { onChange(draft); setOpen(false); }} className={btnPrimary}>OK</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 interface Props {
   ruleId: string;
   onBack: () => void;
   initialTab?: EditorTab;
+  // Open another rule in this same editor (used by "Duplicate flow" to jump to the
+  // freshly-cloned copy). Falls back to onBack when not supplied.
+  onOpenRule?: (ruleId: string, tab?: EditorTab) => void;
 }
 
 const input = 'w-full px-2.5 py-1.5 text-[13px] border border-slate-300 rounded outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500';
@@ -294,7 +363,7 @@ function fieldKind(f: FieldDefinition | undefined): 'boolean' | 'choice' | 'look
   return 'text';
 }
 
-export default function RuleEditorPage({ ruleId, onBack, initialTab = 'trigger' }: Props) {
+export default function RuleEditorPage({ ruleId, onBack, initialTab = 'trigger', onOpenRule }: Props) {
   const [rule, setRule] = useState<AutomationRule | null>(null);
   const [fields, setFields] = useState<FieldDefinition[]>([]);
   const [choices, setChoices] = useState<ChoiceOption[]>([]);
@@ -390,6 +459,26 @@ export default function RuleEditorPage({ ruleId, onBack, initialTab = 'trigger' 
     setRule({ ...rule, enabled: !rule.enabled });
   };
 
+  // Duplicate the whole flow (trigger + every step incl. condition branches). The
+  // copy is created disabled/unpublished as "<name> (copy)"; jump straight into it.
+  const [cloning, setCloning] = useState(false);
+  const duplicateFlow = async () => {
+    if (!rule || cloning) return;
+    setCloning(true);
+    try {
+      const uid = await getCurrentUserId().catch(() => null);
+      const clone = await cloneRule(rule.automation_rule_id, uid);
+      flash('Flow duplicated');
+      if (onOpenRule) onOpenRule(clone.automation_rule_id, 'actions');
+      else onBack();
+    } catch (e) {
+      console.error('cloneRule failed:', e);
+      flash('Could not duplicate the flow');
+    } finally {
+      setCloning(false);
+    }
+  };
+
   const refreshActions = async () => setActions(await fetchActions(ruleId));
 
   if (!rule) return <div className="p-6 text-[13px] text-slate-500">Loading…</div>;
@@ -402,13 +491,22 @@ export default function RuleEditorPage({ ruleId, onBack, initialTab = 'trigger' 
         <input
           value={rule.name}
           onChange={(e) => patch({ name: e.target.value })}
-          className="text-[15px] font-semibold text-slate-800 outline-none border-b border-transparent hover:border-slate-200 focus:border-blue-500 min-w-[240px]"
+          size={Math.max(20, (rule.name?.length ?? 0) + 1)}
+          className="text-[15px] font-semibold text-slate-800 outline-none border-b border-transparent hover:border-slate-200 focus:border-blue-500 min-w-[240px] max-w-full"
         />
         <button onClick={toggleEnabled} title={rule.enabled ? 'Enabled' : 'Disabled'} className={`ml-2 ${rule.enabled ? 'text-emerald-600' : 'text-slate-400'}`}>
           {rule.enabled ? <ToggleRight size={26} /> : <ToggleLeft size={26} />}
         </button>
         <div className="flex-1" />
         {dirty && <span className="text-[12px] text-amber-600">Unsaved changes</span>}
+        <button
+          onClick={duplicateFlow}
+          disabled={cloning}
+          title="Duplicate this entire flow (trigger + all steps)"
+          className="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-white px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:border-slate-400 disabled:opacity-50"
+        >
+          {cloning ? <Loader2 size={15} className="animate-spin" /> : <Copy size={15} />} Duplicate
+        </button>
         <button className={btnPrimary} onClick={save} disabled={saving || !dirty}><Save size={15} /> Save</button>
       </div>
 
@@ -844,7 +942,25 @@ const DEFAULT_CONFIG: Record<AutomationActionType, Record<string, unknown>> = {
   create_related_record: { target_entity: '', match_field: '', match_mode: 'record_id', dedupe: true, dedupe_match: [], mappings: [] },
   update_related_record: { target_entity: '', match_field: '', match_mode: 'record_id', match_first: false, mappings: [] },
   condition: { left: '', operator: 'equals', right: '' },
+  switch: { on: '', cases: [{ key: 'case_1', value: '' }] },
 };
+
+// A fresh, unique case key within one Switch (branch keys must be distinct per
+// switch — they key the child action group). Keeps existing keys stable so their
+// branch steps stay attached when other cases are added/removed.
+function nextCaseKey(cases: SwitchCase[]): string {
+  const used = new Set(cases.map((c) => c.key));
+  for (let i = 1; ; i++) {
+    const k = `case_${i}`;
+    if (!used.has(k)) return k;
+  }
+}
+
+/** The (valid) cases of a Switch action, defensively read from its config. */
+function switchCases(a: AutomationRuleAction): SwitchCase[] {
+  const cfg = a.config as unknown as SwitchConfig;
+  return Array.isArray(cfg?.cases) ? cfg.cases.filter((c) => c && c.key) : [];
+}
 
 // A vertical connector between flow nodes. Its centre optionally holds the
 // "run after" branch selector (shown for every step except the first).
@@ -902,6 +1018,36 @@ function ActionsTab({
 
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  // Parent ("regarding") entity fields — offered in token pickers when the trigger
+  // pins a polymorphic parent (e.g. Note · Regarding = Opportunity), so the author
+  // can reference the parent's fields directly without a Get row step.
+  const [regarding, setRegarding] = useState<{ label: string; fields: FieldDefinition[] } | null>(null);
+  useEffect(() => {
+    if (rule.field_logical_name !== 'regarding_entity_name') { setRegarding(null); return; }
+    const v = rule.trigger_value;
+    const logicals = rule.operator === 'is_any_of' && Array.isArray(v)
+      ? v.map(String).filter(Boolean)
+      : typeof v === 'string' && v ? [v] : [];
+    if (!logicals.length) { setRegarding(null); return; }
+    let cancelled = false;
+    void (async () => {
+      const ents = await fetchEntities().catch(() => []);
+      const byLogical = new Map<string, FieldDefinition>();
+      const labels: string[] = [];
+      for (const logical of logicals) {
+        const e = ents.find((x) => x.logical_name === logical);
+        if (!e) continue;
+        labels.push(e.display_name);
+        try {
+          const ff = await fetchFieldsForEntity(e.entity_definition_id);
+          for (const f of ff) if (!byLogical.has(f.logical_name)) byLogical.set(f.logical_name, f);
+        } catch { /* skip */ }
+      }
+      if (!cancelled) setRegarding(byLogical.size ? { label: labels.join(' / ') || 'Parent record', fields: [...byLogical.values()] } : null);
+    })();
+    return () => { cancelled = true; };
+  }, [rule.field_logical_name, rule.operator, rule.trigger_value]);
+
   // Steps the user has collapsed (by id). Collapsing a Condition also hides its
   // branches, so a large flow stays scannable.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -933,6 +1079,10 @@ function ActionsTab({
     for (const a of list) {
       flat.push(a);
       if (a.action_type === 'condition') { walkFlat(childrenOf(a.automation_rule_action_id, 'yes')); walkFlat(childrenOf(a.automation_rule_action_id, 'no')); }
+      else if (a.action_type === 'switch') {
+        for (const c of switchCases(a)) walkFlat(childrenOf(a.automation_rule_action_id, c.key));
+        walkFlat(childrenOf(a.automation_rule_action_id, 'default'));
+      }
     }
   };
   walkFlat(topLevel);
@@ -963,6 +1113,31 @@ function ActionsTab({
     finally { setBusyId(null); }
   };
 
+  // Duplicate a step (and, for a Condition, its whole branch subtree). The copy
+  // lands right after the original; drag it wherever you need afterward.
+  const duplicate = async (id: string) => {
+    setBusyId(id);
+    try { await duplicateAction(ruleId, id); onChange(); }
+    finally { setBusyId(null); }
+  };
+
+  // Nudge a step one slot up/down within its own sibling group — the easy,
+  // one-click alternative to drag-and-drop (dragging is still there for moving a
+  // step INTO a branch). Reuses moveAction with the reordered sibling id list.
+  const moveWithin = async (
+    parentId: string | null, branch: AutomationBranch | null, id: string, dir: 'up' | 'down',
+  ) => {
+    const sibs = childrenOf(parentId, branch).map((a) => a.automation_rule_action_id);
+    const idx = sibs.indexOf(id);
+    const swap = dir === 'up' ? idx - 1 : idx + 1;
+    if (idx < 0 || swap < 0 || swap >= sibs.length) return;
+    const next = [...sibs];
+    [next[idx], next[swap]] = [next[swap], next[idx]];
+    setBusyId(id);
+    try { await moveAction(id, { parent_action_id: parentId, branch }, next); onChange(); }
+    finally { setBusyId(null); }
+  };
+
   // Drop `dragId` into a group, positioned before `beforeId` (or appended if null).
   const drop = async (destParent: string | null, destBranch: AutomationBranch | null, beforeId: string | null) => {
     const id = dragId;
@@ -989,6 +1164,14 @@ function ActionsTab({
         />
       );
     }
+    if (a.action_type === 'switch') {
+      return (
+        <SwitchActionCard
+          action={a} fields={fields} steps={steps} onChange={onChange}
+          renderBranch={(branchKey) => renderList(a.automation_rule_action_id, branchKey)}
+        />
+      );
+    }
     if (a.action_type === 'export_view_email') return <ExportViewEmailActionCard action={a} tableLogicalName={rule.table_logical_name} onChange={onChange} />;
     if (a.action_type === 'related_export_email') return <RelatedExportEmailActionCard action={a} tableLogicalName={rule.table_logical_name} onChange={onChange} />;
     if (a.action_type === 'create_related_record' || a.action_type === 'update_related_record') return <RelatedWriteActionCard action={a} triggerFields={fields} tableLogicalName={rule.table_logical_name} onChange={onChange} />;
@@ -1007,6 +1190,7 @@ function ActionsTab({
       <div>
         {list.map((a, i) => {
           const isCond = a.action_type === 'condition';
+          const isControl = isCond || a.action_type === 'switch';
           const targetKey = a.automation_rule_action_id;
           const isCollapsed = collapsed.has(a.automation_rule_action_id);
           return (
@@ -1022,8 +1206,18 @@ function ActionsTab({
                   </div>
                 ) : undefined}
               </FlowConnector>
-              {/* drop-before target */}
+              {/* The whole card is a drop-before target AND a drag source — grab it
+                  anywhere to reorder. Dragging is suppressed when it starts on a form
+                  control so you can still click, type, and select text in the step. */}
               <div
+                draggable
+                onDragStart={(e) => {
+                  const el = e.target as HTMLElement;
+                  if (el.closest('input, textarea, select, [contenteditable="true"]')) { e.preventDefault(); return; }
+                  e.stopPropagation();
+                  setDragId(a.automation_rule_action_id);
+                }}
+                onDragEnd={() => { setDragId(null); setDropTarget(null); }}
                 onDragOver={(e) => { if (dragId) { e.preventDefault(); e.stopPropagation(); setDropTarget(targetKey); } }}
                 onDrop={(e) => { e.preventDefault(); e.stopPropagation(); void drop(parentId, branch, a.automation_rule_action_id); }}
                 className={`relative rounded-xl transition-shadow ${dropTarget === targetKey && dragId ? 'ring-2 ring-blue-400' : ''} ${dragId === a.automation_rule_action_id ? 'opacity-40' : ''}`}
@@ -1031,16 +1225,38 @@ function ActionsTab({
                 <span className="absolute -left-2.5 -top-2.5 z-10 grid h-6 w-6 place-items-center rounded-full bg-slate-700 text-[11px] font-bold text-white shadow ring-2 ring-white">
                   {numberOf.get(a.automation_rule_action_id)}
                 </span>
-                <button
-                  type="button"
-                  draggable
-                  onDragStart={(e) => { e.stopPropagation(); setDragId(a.automation_rule_action_id); }}
-                  onDragEnd={() => { setDragId(null); setDropTarget(null); }}
-                  title="Drag to reorder / move into a branch"
-                  className="absolute -left-2.5 top-5 z-10 cursor-grab rounded bg-white p-0.5 text-slate-300 shadow-sm ring-1 ring-slate-200 hover:text-slate-500 active:cursor-grabbing"
-                >
-                  <GripVertical size={13} />
-                </button>
+                {/* Reorder controls: one-click up/down within the group, plus a drag
+                    handle for moving the step into a branch. */}
+                <div className="absolute -left-3 top-5 z-10 flex flex-col items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => void moveWithin(parentId, branch, a.automation_rule_action_id, 'up')}
+                    disabled={i === 0 || busyId === a.automation_rule_action_id}
+                    title="Move step up"
+                    className="grid h-5 w-5 place-items-center rounded bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-slate-400"
+                  >
+                    <ChevronUp size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    draggable
+                    onDragStart={(e) => { e.stopPropagation(); setDragId(a.automation_rule_action_id); }}
+                    onDragEnd={() => { setDragId(null); setDropTarget(null); }}
+                    title="Drag to reorder or move into a branch (you can also drag the card itself)"
+                    className="grid h-5 w-5 cursor-grab place-items-center rounded bg-white text-slate-300 shadow-sm ring-1 ring-slate-200 hover:text-slate-500 active:cursor-grabbing"
+                  >
+                    <GripVertical size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void moveWithin(parentId, branch, a.automation_rule_action_id, 'down')}
+                    disabled={i === list.length - 1 || busyId === a.automation_rule_action_id}
+                    title="Move step down"
+                    className="grid h-5 w-5 place-items-center rounded bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-slate-400"
+                  >
+                    <ChevronDown size={13} />
+                  </button>
+                </div>
                 {/* collapse / expand toggle */}
                 <button
                   type="button"
@@ -1050,16 +1266,27 @@ function ActionsTab({
                 >
                   <ChevronDown size={14} className={`transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
                 </button>
+                {/* duplicate step (copy → pasted right after; drag to reposition) */}
+                <button
+                  type="button"
+                  onClick={() => void duplicate(a.automation_rule_action_id)}
+                  disabled={busyId === a.automation_rule_action_id}
+                  title="Duplicate this step"
+                  className="absolute -right-2.5 top-5 z-20 grid h-6 w-6 place-items-center rounded-full bg-white text-slate-400 shadow ring-1 ring-slate-200 hover:text-blue-600 disabled:opacity-50"
+                >
+                  {busyId === a.automation_rule_action_id ? <Loader2 size={12} className="animate-spin" /> : <Copy size={12} />}
+                </button>
                 {isCollapsed ? (
                   <CollapsedActionBar
                     action={a}
                     yesCount={isCond ? childrenOf(a.automation_rule_action_id, 'yes').length : undefined}
                     noCount={isCond ? childrenOf(a.automation_rule_action_id, 'no').length : undefined}
+                    caseCount={a.action_type === 'switch' ? switchCases(a).length : undefined}
                     onExpand={() => toggleCollapse(a.automation_rule_action_id)}
                   />
                 ) : (
                   <>
-                    {!isCond && (
+                    {!isControl && (
                       <div className="px-4 pt-2"><ActionLabelInput action={a} onChange={onChange} /></div>
                     )}
                     {renderCard(a)}
@@ -1097,7 +1324,8 @@ function ActionsTab({
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <RegardingContext.Provider value={regarding}>
+    <div className="mx-auto w-full max-w-7xl">
       {tokenProblems.length > 0 && (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
           <p className="mb-1 text-[12px] font-medium text-amber-800">Token / step reference issues:</p>
@@ -1133,18 +1361,20 @@ function ActionsTab({
         </p>
       )}
     </div>
+    </RegardingContext.Provider>
   );
 }
 
 // Small type icon for a step, reused by the collapsed summary bar.
 function actionTypeIcon(t: AutomationActionType) {
-  const cls = t === 'condition' ? 'text-violet-600' : 'text-blue-600';
+  const cls = (t === 'condition' || t === 'switch') ? 'text-violet-600' : 'text-blue-600';
   const Icon =
     t === 'send_email' ? Mail
     : t === 'update_field' ? PencilLine
     : t === 'get_row' ? KeyRound
     : t === 'list_rows' ? ListChecks
     : t === 'condition' ? GitBranch
+    : t === 'switch' ? Split
     : (t === 'generate_document' || t === 'export_view_email' || t === 'related_export_email') ? FileSpreadsheet
     : (t === 'create_related_record' || t === 'update_related_record') ? PencilLine
     : Zap;
@@ -1152,11 +1382,12 @@ function actionTypeIcon(t: AutomationActionType) {
 }
 
 // Compact one-line stand-in shown when a step is collapsed — click to expand.
-// For a Condition it also shows how many steps sit in each branch.
+// For a Condition/Switch it also shows how many branches/cases it holds.
 function CollapsedActionBar({
-  action, yesCount, noCount, onExpand,
-}: { action: AutomationRuleAction; yesCount?: number; noCount?: number; onExpand: () => void }) {
+  action, yesCount, noCount, caseCount, onExpand,
+}: { action: AutomationRuleAction; yesCount?: number; noCount?: number; caseCount?: number; onExpand: () => void }) {
   const isCond = action.action_type === 'condition';
+  const isSwitch = action.action_type === 'switch';
   const title = action.label?.trim() || actionLabel(action.action_type);
   return (
     <button
@@ -1164,13 +1395,14 @@ function CollapsedActionBar({
       onClick={onExpand}
       title="Expand step"
       className={`flex w-full items-center gap-2 rounded-xl border px-4 py-2.5 text-left transition-colors ${
-        isCond ? 'border-violet-200 bg-violet-50/40 hover:border-violet-300' : 'border-slate-200 bg-white hover:border-slate-300'
+        (isCond || isSwitch) ? 'border-violet-200 bg-violet-50/40 hover:border-violet-300' : 'border-slate-200 bg-white hover:border-slate-300'
       }`}
     >
       {actionTypeIcon(action.action_type)}
       <span className="truncate text-[13px] font-medium text-slate-700">{title}</span>
       {action.label?.trim() && <span className="shrink-0 text-[11px] text-slate-400">{actionLabel(action.action_type)}</span>}
       {isCond && <span className="shrink-0 text-[11px] text-slate-400">· {yesCount ?? 0} yes / {noCount ?? 0} no</span>}
+      {isSwitch && <span className="shrink-0 text-[11px] text-slate-400">· {caseCount ?? 0} case{(caseCount ?? 0) === 1 ? '' : 's'} + default</span>}
       <span className="ml-auto shrink-0 text-[11px] text-slate-400">Expand</span>
     </button>
   );
@@ -1197,8 +1429,8 @@ function AddStepButton({
   }, [open]);
 
   const addableTypes: AutomationActionType[] = isSchedule
-    ? ['export_view_email', 'send_email', 'list_rows', 'get_row', 'condition']
-    : ['get_row', 'list_rows', 'send_email', 'update_field', 'create_related_record', 'update_related_record', 'related_export_email', 'generate_document', 'export_view_email', 'condition'];
+    ? ['export_view_email', 'send_email', 'list_rows', 'get_row', 'condition', 'switch']
+    : ['get_row', 'list_rows', 'send_email', 'update_field', 'create_related_record', 'update_related_record', 'related_export_email', 'generate_document', 'export_view_email', 'condition', 'switch'];
 
   return (
     <div className="relative inline-flex" ref={ref}>
@@ -1217,7 +1449,7 @@ function AddStepButton({
               onClick={() => { onAdd(t); setOpen(false); }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-slate-700 hover:bg-slate-50"
             >
-              {t === 'condition' ? <GitBranch size={13} className="text-violet-500" /> : <span className="w-[13px]" />}
+              {t === 'condition' ? <GitBranch size={13} className="text-violet-500" /> : t === 'switch' ? <Split size={13} className="text-violet-500" /> : <span className="w-[13px]" />}
               {actionLabel(t)}
             </button>
           ))}
@@ -1308,6 +1540,139 @@ function ConditionActionCard({
   );
 }
 
+// A Switch step: pick a value to switch On (a field/token), then add N Cases.
+// Each case's value input is TYPE-AWARE off the On field (choice → label dropdown,
+// lookup → record picker, boolean → Yes/No, else text) via ConditionValueInput in
+// `emit="label"` mode — because the worker matches a case against the resolved
+// DISPLAY value of On. The FIRST matching case's branch runs; if none match, the
+// Default branch runs. Each case holds its own nested steps (branch = case.key).
+function SwitchActionCard({
+  action, fields, steps, onChange, renderBranch,
+}: {
+  action: AutomationRuleAction; fields: FieldDefinition[]; steps: EarlierStep[];
+  onChange: () => void; renderBranch: (branchKey: string) => ReactNode;
+}) {
+  const cfg = action.config as unknown as SwitchConfig;
+  const [on, setOn] = useState(cfg.on ?? '');
+  const [cases, setCases] = useState<SwitchCase[]>(Array.isArray(cfg.cases) ? cfg.cases : []);
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [tokenOpen, setTokenOpen] = useState(false);
+
+  // Resolve the On field's type when it's a plain trigger-record column token
+  // ({{record.<logical>}}). Only then can the case inputs be type-aware; anything
+  // else (raw-id token, earlier-step token, free text) falls back to a text box.
+  const onField = useMemo(() => {
+    const m = /^\s*\{\{\s*record\.([a-zA-Z0-9_]+)\s*\}\}\s*$/.exec(on || '');
+    if (!m) return null;
+    return fields.find((f) => f.logical_name === m[1]) ?? null;
+  }, [on, fields]);
+
+  // Persist the whole config in one write (so a structural change never clobbers a
+  // pending On/value edit — every save flushes the current local state).
+  const persist = async (nextOn: string, nextCases: SwitchCase[]) => {
+    setBusy(true);
+    try {
+      await updateAction(action.automation_rule_action_id, { config: { on: nextOn.trim(), cases: nextCases } });
+      setDirty(false); onChange();
+    } finally { setBusy(false); }
+  };
+
+  const setCaseValue = (key: string, v: string) => {
+    setCases((cs) => cs.map((c) => (c.key === key ? { ...c, value: v } : c)));
+    setDirty(true);
+  };
+  const addCase = () => {
+    const next = [...cases, { key: nextCaseKey(cases), value: '' }];
+    setCases(next);
+    void persist(on, next);
+  };
+  const removeCase = async (key: string) => {
+    const branchActions = (await fetchActions(action.rule_id)).filter(
+      (a) => (a.parent_action_id ?? null) === action.automation_rule_action_id && a.branch === key,
+    );
+    if (branchActions.length && !window.confirm(`Delete this case and its ${branchActions.length} step${branchActions.length === 1 ? '' : 's'}?`)) return;
+    for (const a of branchActions) await deleteAction(a.automation_rule_action_id);
+    const next = cases.filter((c) => c.key !== key);
+    setCases(next);
+    await persist(on, next);
+  };
+  const remove = async () => { await deleteAction(action.automation_rule_action_id); onChange(); };
+
+  return (
+    <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Split size={15} className="text-violet-600" />
+        <span className="text-[13px] font-semibold text-slate-700">{action.label?.trim() || 'Switch'}</span>
+        <div className="flex-1" />
+        {dirty && <button onClick={() => void persist(on, cases)} disabled={busy} className={btnPrimary}><Save size={14} /> Save</button>}
+        <button onClick={() => void remove()} className="p-1 text-slate-400 hover:text-red-600"><Trash2 size={15} /></button>
+      </div>
+
+      <ActionLabelInput action={action} onChange={onChange} />
+
+      {/* On — the value to switch on (a field or token) */}
+      <div className="mt-2">
+        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">On</label>
+        <div className="flex items-center gap-1">
+          <input
+            value={on}
+            onChange={(e) => { setOn(e.target.value); setDirty(true); }}
+            placeholder="{{record.compliance_status}}"
+            className="w-full rounded-md border border-slate-300 px-2 py-1 font-mono text-[11.5px] outline-none focus:border-violet-400"
+          />
+          <TokenMenu recordFields={fields} steps={steps} onPick={(t) => { setOn((v) => `${v}${t}`); setDirty(true); }} open={tokenOpen} onOpenChange={setTokenOpen} />
+        </div>
+        <p className="mt-1 text-[10.5px] text-slate-400">
+          {onField
+            ? `Cases pick from “${onField.display_name}” values (matched on the label).`
+            : 'Cases are matched against the resolved text value.'}
+        </p>
+      </div>
+
+      {/* Cases + Default */}
+      <div className="mt-3 space-y-3">
+        {cases.map((c) => (
+          <div key={c.key} className="rounded-lg border border-violet-200 bg-white p-2.5">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-violet-700">Case · Equals</span>
+              <div className="w-56">
+                <ConditionValueInput
+                  field={onField}
+                  value={c.value}
+                  onChange={(v) => setCaseValue(c.key, v)}
+                  emit="label"
+                  variant="boxed"
+                  placeholder="Value to match…"
+                />
+              </div>
+              <div className="flex-1" />
+              <button onClick={() => void removeCase(c.key)} title="Remove case" className="p-1 text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
+            </div>
+            {renderBranch(c.key)}
+          </div>
+        ))}
+
+        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
+          <p className="mb-1 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-slate-500"><MinusCircle size={13} /> Default · when no case matches</p>
+          {renderBranch('default')}
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={addCase}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-violet-300 bg-white px-3 py-1 text-[12px] text-violet-600 hover:border-violet-400 disabled:opacity-50"
+        >
+          <Plus size={14} /> Add case
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Compact editable per-action label — a human title so big flows stay readable
 // (e.g. "Get Opportunity User"). Distinct from a step's {{steps.<name>}} ref.
 function ActionLabelInput({ action, onChange }: { action: AutomationRuleAction; onChange: () => void }) {
@@ -1341,6 +1706,36 @@ function ActionLabelInput({ action, onChange }: { action: AutomationRuleAction; 
       placeholder="e.g. Get Opportunity User"
       className="w-full max-w-[280px] rounded-md border border-slate-300 px-2 py-1 text-[12px] outline-none focus:border-blue-400"
     />
+  );
+}
+
+// "Select all" / "Clear" for a column multi-select (get_row / list_rows). Selecting
+// all columns is the easy way to make every field available in the {} token picker
+// (e.g. {{steps.Owner.first(name)}}), instead of Ctrl-clicking each one.
+function ColumnSelectTools({
+  allColumns, selectedCount, onSet,
+}: { allColumns: string[]; selectedCount: number; onSet: (cols: string[]) => void }) {
+  const allSelected = allColumns.length > 0 && selectedCount === allColumns.length;
+  return (
+    <div className="flex items-center gap-1.5 text-[11px]">
+      <button
+        type="button"
+        onClick={() => onSet(allColumns)}
+        disabled={!allColumns.length || allSelected}
+        className="font-medium text-blue-600 hover:underline disabled:text-slate-300 disabled:no-underline"
+      >
+        Select all
+      </button>
+      <span className="text-slate-300">·</span>
+      <button
+        type="button"
+        onClick={() => onSet([])}
+        disabled={!selectedCount}
+        className="text-slate-500 hover:underline disabled:text-slate-300 disabled:no-underline"
+      >
+        Clear
+      </button>
+    </div>
   );
 }
 
@@ -1424,12 +1819,19 @@ function GetRowActionCard({
         </div>
       </div>
 
-      <label className={`${lbl} mt-3`}>Columns to expose (none = all)</label>
+      <div className="mt-3 flex items-center justify-between">
+        <label className={lbl}>Columns to expose (none = all)</label>
+        <ColumnSelectTools
+          allColumns={sortedSrc.map((f) => f.logical_name)}
+          selectedCount={local.columns.length}
+          onSet={(cols) => set({ columns: cols })}
+        />
+      </div>
       <select multiple className={`${input} h-24`} value={local.columns} onWheel={chainWheel} onChange={(e) => set({ columns: Array.from(e.target.selectedOptions).map((o) => o.value) })}>
         {sortedSrc.map((f) => <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>)}
       </select>
       <p className="mt-1 text-[11px] text-slate-400">
-        Use later as <code className="text-slate-500">{`{{steps.${stepRef}.first(email)}}`}</code> (single value) or <code className="text-slate-500">{`{{steps.${stepRef}.rows}}`}</code> (table).
+        Pick columns to reference them in tokens (e.g. <code className="text-slate-500">{`{{steps.${stepRef}.first(email)}}`}</code>). Use <b>Select all</b> so every field shows in the {'{}'} picker, or leave empty to expose <code className="text-slate-500">{`{{steps.${stepRef}.rows}}`}</code> (whole row).
       </p>
 
       {errs.length > 0 && <ul className="mt-2 text-[12px] text-red-600 list-disc list-inside">{errs.map((e) => <li key={e}>{e}</li>)}</ul>}
@@ -1513,7 +1915,14 @@ function ListRowsActionCard({
 
       <div className="grid grid-cols-2 gap-3 mt-3">
         <div>
-          <label className={lbl}>Columns to return (none = all)</label>
+          <div className="flex items-center justify-between">
+            <label className={lbl}>Columns to return (none = all)</label>
+            <ColumnSelectTools
+              allColumns={sortedSrc.map((f) => f.logical_name)}
+              selectedCount={local.columns.length}
+              onSet={(cols) => set({ columns: cols })}
+            />
+          </div>
           <select multiple className={`${input} h-24`} value={local.columns} onWheel={chainWheel} onChange={(e) => set({ columns: Array.from(e.target.selectedOptions).map((o) => o.value) })}>
             {sortedSrc.map((f) => <option key={f.field_definition_id} value={f.logical_name}>{f.display_name}</option>)}
           </select>
@@ -1554,6 +1963,9 @@ function ListRowsFilterRow({
   }, [kind, selected]);
   const needsValue = filter.operator !== 'is_empty' && filter.operator !== 'is_not_empty';
   const isTokenVal = typeof filter.value === 'string' && filter.value.includes('{{');
+  // "is any of" stores an ARRAY of option codes (matches Legal OR Compliance OR …).
+  // The worker accepts either an array or a ;/,-split string, so an array is safe.
+  const anyOfArr = Array.isArray(filter.value) ? filter.value.map(String) : [];
 
   return (
     <div className="grid grid-cols-[1.2fr_1fr_1.2fr_auto] items-center gap-2">
@@ -1564,7 +1976,14 @@ function ListRowsFilterRow({
         placeholder="Field…"
         searchPlaceholder="Search fields…"
       />
-      <select className={ctrl} value={filter.operator} onChange={(e) => onChange({ operator: e.target.value as ListRowsOperator })}>
+      <select className={ctrl} value={filter.operator} onChange={(e) => {
+        const op = e.target.value as ListRowsOperator;
+        // Reset the value only when crossing the scalar↔array boundary, so switching
+        // e.g. equals→not_equals keeps the typed value but equals→is any of clears it.
+        const wasArray = filter.operator === 'is_any_of';
+        const nowArray = op === 'is_any_of';
+        onChange(wasArray !== nowArray ? { operator: op, value: nowArray ? [] : '' } : { operator: op });
+      }}>
         <option value="equals">equals</option>
         <option value="not_equals">not equals</option>
         <option value="contains">contains</option>
@@ -1574,7 +1993,30 @@ function ListRowsFilterRow({
       </select>
       {needsValue ? (
         /* Typed input by field kind, unless a token is being used. */
-        !isTokenVal && kind === 'boolean' ? (
+        filter.operator === 'is_any_of' && !isTokenVal ? (
+          kind === 'choice' && choices.length ? (
+            /* Friendly multi-select of option labels → Legal OR Compliance OR … */
+            <div className="flex flex-wrap gap-1.5 rounded-md border border-slate-200 bg-white p-2">
+              {choices.map((c) => {
+                const on = anyOfArr.includes(String(c.value));
+                return (
+                  <button
+                    type="button"
+                    key={c.value}
+                    onClick={() => onChange({ value: on ? anyOfArr.filter((x) => x !== String(c.value)) : [...anyOfArr, String(c.value)] })}
+                    className={`rounded-full border px-2.5 py-1 text-[12px] transition ${on ? 'border-blue-500 bg-blue-50 font-medium text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  >
+                    {on ? '✓ ' : ''}{c.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            /* Non-choice field → comma-separated values, stored as an array. */
+            <input className={`${ctrl} w-full`} placeholder="value1, value2, …" value={anyOfArr.join(', ')}
+              onChange={(e) => onChange({ value: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
+          )
+        ) : !isTokenVal && kind === 'boolean' ? (
           <select className={`${ctrl} w-full`} value={filter.value === true ? 'true' : filter.value === false ? 'false' : ''} onChange={(e) => onChange({ value: e.target.value === 'true' })}>
             <option value="">Select…</option><option value="true">Yes</option><option value="false">No</option>
           </select>
@@ -1590,11 +2032,30 @@ function ListRowsFilterRow({
         <span />
       )}
       <div className="flex items-center justify-end gap-0.5">
-        {needsValue && <TokenMenu recordFields={recordFields} steps={steps} onPick={(t) => onChange({ value: `${filter.value ?? ''}${t}` })} />}
+        {needsValue && <TokenMenu recordFields={recordFields} steps={steps} onPick={(t) => onChange({ value: `${typeof filter.value === 'string' ? filter.value : ''}${t}` })} />}
         <button onClick={onRemove} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={15} /></button>
       </div>
     </div>
   );
+}
+
+// Insert `token` at the caret of an input/textarea (falling back to append when the
+// element or its selection isn't available). Returns the new string + the caret
+// position after the token so the caller can restore the cursor post-render. Fixes
+// tokens always landing at the END instead of where the cursor is.
+function spliceAtCursor(
+  el: HTMLInputElement | HTMLTextAreaElement | null,
+  current: string,
+  token: string,
+): { value: string; caret: number } {
+  if (!el || el.selectionStart == null) {
+    const value = `${current}${token}`;
+    return { value, caret: value.length };
+  }
+  const start = el.selectionStart;
+  const end = el.selectionEnd ?? start;
+  const value = current.slice(0, start) + token + current.slice(end);
+  return { value, caret: start + token.length };
 }
 
 function SendEmailActionCard({
@@ -1613,6 +2074,23 @@ function SendEmailActionCard({
   useEffect(() => { void fetchEmailAccountOptions().then((a) => setAccounts(a.filter((x) => x.enabled))).catch(() => {}); }, []);
 
   const set = (p: Partial<SendEmailConfig>) => { setLocal((l) => ({ ...l, ...p })); setDirty(true); };
+
+  // Refs so a picked token lands at the caret (not appended at the end).
+  const toRef = useRef<HTMLInputElement>(null);
+  const ccRef = useRef<HTMLInputElement>(null);
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const insertToken = (
+    ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement>,
+    field: 'to' | 'cc' | 'subject' | 'body',
+    token: string,
+  ) => {
+    const { value, caret } = spliceAtCursor(ref.current, String(local[field] ?? ''), token);
+    set({ [field]: value } as Partial<SendEmailConfig>);
+    // Restore focus + caret after React re-renders the field with the new value.
+    requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(caret, caret); } });
+  };
+
   const save = async () => {
     const problems = validateActionConfig('send_email', local as unknown as Record<string, unknown>);
     setErrs(problems);
@@ -1658,14 +2136,14 @@ function SendEmailActionCard({
 
       <label className={`${lbl} mt-3`}>To — addresses and/or tokens (split on ; ,)</label>
       <div className="flex items-center gap-1">
-        <input className={input} value={local.to ?? ''} onChange={(e) => set({ to: e.target.value })} placeholder="sales@co.com; {{steps.recipients.join(email, ';')}}" />
-        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => set({ to: `${local.to ?? ''}${t}` })} />
+        <input ref={toRef} className={input} value={local.to ?? ''} onChange={(e) => set({ to: e.target.value })} placeholder="sales@co.com; {{steps.recipients.join(email, ';')}}" />
+        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => insertToken(toRef, 'to', t)} />
       </div>
 
       <label className={`${lbl} mt-3`}>Cc</label>
       <div className="flex items-center gap-1">
-        <input className={input} value={local.cc ?? ''} onChange={(e) => set({ cc: e.target.value })} placeholder="manager@co.com" />
-        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => set({ cc: `${local.cc ?? ''}${t}` })} />
+        <input ref={ccRef} className={input} value={local.cc ?? ''} onChange={(e) => set({ cc: e.target.value })} placeholder="manager@co.com" />
+        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => insertToken(ccRef, 'cc', t)} />
       </div>
 
       <label className="flex items-center gap-2 mt-3 text-[12px] text-slate-600">
@@ -1681,17 +2159,20 @@ function SendEmailActionCard({
 
       <label className={`${lbl} mt-3`}>Subject</label>
       <div className="flex items-center gap-1">
-        <input className={input} value={local.subject} onChange={(e) => set({ subject: e.target.value })} placeholder="Approval started: {{record.topic}}" />
-        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => set({ subject: `${local.subject}${t}` })} />
+        <input ref={subjectRef} className={input} value={local.subject} onChange={(e) => set({ subject: e.target.value })} placeholder="Approval started: {{record.topic}}" />
+        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => insertToken(subjectRef, 'subject', t)} />
       </div>
 
       <div className="flex items-center justify-between">
         <label className={`${lbl} mt-3`}>Body (HTML; values are escaped)</label>
-        <HtmlPreviewButton html={local.body} />
+        <div className="flex items-center gap-1.5">
+          <ExpandBodyButton value={local.body} onChange={(v) => set({ body: v })} />
+          <HtmlPreviewButton html={local.body} />
+        </div>
       </div>
       <div className="flex items-start gap-1">
-        <textarea className={`${input} font-mono`} rows={5} value={local.body} onChange={(e) => set({ body: e.target.value })} placeholder="<p>…{{record.url}}…</p>  {{steps.recipients.rows}}" />
-        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => set({ body: `${local.body}${t}` })} />
+        <textarea ref={bodyRef} className={`${input} font-mono`} rows={5} value={local.body} onChange={(e) => set({ body: e.target.value })} placeholder="<p>…{{record.url}}…</p>  {{steps.recipients.rows}}" />
+        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => insertToken(bodyRef, 'body', t)} />
       </div>
 
       <label className="flex items-center gap-2 mt-3 text-[12px] text-slate-600">
@@ -1836,7 +2317,10 @@ function ExportViewEmailActionCard({
 
       <div className="flex items-center justify-between">
         <label className={`${lbl} mt-3`}>Body (HTML)</label>
-        <HtmlPreviewButton html={local.body ?? ''} />
+        <div className="flex items-center gap-1.5">
+          <ExpandBodyButton value={local.body ?? ''} onChange={(v) => set({ body: v })} />
+          <HtmlPreviewButton html={local.body ?? ''} />
+        </div>
       </div>
       <div className="flex items-start gap-1">
         <textarea className={`${input} font-mono`} rows={4} value={local.body ?? ''} onChange={(e) => set({ body: e.target.value })} placeholder="<p>Attached: {{export.view}} ({{export.count}} rows).</p>" />
@@ -2066,7 +2550,10 @@ function RelatedExportEmailActionCard({
       <input className={input} value={local.subject ?? ''} onChange={(e) => set({ subject: e.target.value })} placeholder="{{record.topic}} — approval report ({{export.count}} rows)" />
       <div className="flex items-center justify-between">
         <label className={`${lbl} mt-3`}>Body (HTML)</label>
-        <HtmlPreviewButton html={local.body ?? ''} />
+        <div className="flex items-center gap-1.5">
+          <ExpandBodyButton value={local.body ?? ''} onChange={(v) => set({ body: v })} />
+          <HtmlPreviewButton html={local.body ?? ''} />
+        </div>
       </div>
       <textarea className={`${input} font-mono`} rows={4} value={local.body ?? ''} onChange={(e) => set({ body: e.target.value })} placeholder="<p>Attached: {{export.count}} rows. {{record.url}}</p>" />
 
@@ -2320,13 +2807,15 @@ function UpdateFieldActionCard({
               <option value="from">Copy from a field</option>
             </select>
             {valueMode === 'from' ? (
-              <Combobox
-                options={fieldOpts}
-                value={currentFrom}
-                onChange={(v) => set({ value: v ? `{{record.raw.${v}}}` : '' })}
-                placeholder="Field on this record…"
-                searchPlaceholder="Search fields…"
-              />
+              <div className="min-w-0 flex-1">
+                <Combobox
+                  options={fieldOpts}
+                  value={currentFrom}
+                  onChange={(v) => set({ value: v ? `{{record.raw.${v}}}` : '' })}
+                  placeholder="Field on this record…"
+                  searchPlaceholder="Search fields…"
+                />
+              </div>
             ) : (
               <div className="flex flex-1 items-center gap-1">
                 <div className="flex-1">
@@ -2469,6 +2958,11 @@ function stepOutputSummary(l: AutomationJobActionLog): string | null {
     const branch = out.branch === 'yes' ? 'If yes' : out.branch === 'no' ? 'If no' : null;
     const cond = out.condition as { summary?: string } | undefined;
     return branch ? `→ ${branch}${cond?.summary ? ` · ${cond.summary}` : ''}` : null;
+  }
+  if (l.action_type === 'switch') {
+    const sw = out.switch as { on?: string; matched?: string | null } | undefined;
+    const dest = out.branch === 'default' ? 'Default' : (sw?.matched != null ? `Case "${sw.matched}"` : 'Default');
+    return `→ ${dest}${sw?.on ? ` · On = "${sw.on}"` : ''}`;
   }
   if ((l.action_type === 'list_rows' || l.action_type === 'get_row') && out.count != null) return `${out.count} row${out.count === 1 ? '' : 's'}`;
   if (l.action_type === 'send_email') {

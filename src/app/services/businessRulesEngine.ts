@@ -208,6 +208,16 @@ function resolveNewActionValue(
     if (isLookup) return runtime?.currentUserId ?? null;
     return runtime?.currentUserName ?? runtime?.currentUserId ?? null;
   }
+  // current_datetime: stamp the field with the moment the rule runs. A `date`
+  // field gets the date only (YYYY-MM-DD); a `datetime` field gets the full ISO
+  // timestamp — the same format the datetime form input writes — so it captures
+  // the time-of-day (e.g. an "Approved On" field). Used on approval/received
+  // timestamp fields alongside a `current_user` stamp on the matching "…By" field.
+  if (action.value_type === 'current_datetime') {
+    const ft = action.target_field ? runtime?.fieldTypes?.[action.target_field] : undefined;
+    const now = new Date();
+    return ft === 'date' ? now.toISOString().split('T')[0] : now.toISOString();
+  }
   if (action.value_type === 'field') {
     // Multiple fields: concatenate using separator (default space)
     if (action.value_fields && action.value_fields.length > 0) {

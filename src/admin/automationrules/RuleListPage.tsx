@@ -10,8 +10,11 @@ import type { EditorTab } from './RuleEditorPage';
 import { fetchEntities } from '../../services/entityService';
 import {
   fetchAllRules, fetchActions, setRuleEnabled, deleteRule, cloneRule, createRule, getCurrentUserId, fetchLatestError,
-  aiBuildFlow, applyAiFlow, type AiFlowSpec,
+  applyAiFlow, type AiFlowSpec,
 } from '../../services/automationRuleService';
+import { fetchFieldsForEntity } from '../../services/fieldService';
+import type { FieldDefinition } from '../../types/field';
+import { parseFlowPrompt, isFlowParseError } from './aiFlowParser';
 import {
   fetchCategories, createCategory, updateCategory, deleteCategory, setRuleCategory,
 } from '../../services/automationCategoryService';
@@ -729,22 +732,35 @@ function AiBuildModal({
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [spec, setSpec] = useState<AiFlowSpec | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [fields, setFields] = useState<FieldDefinition[]>([]);
 
   const opts = [...entities].sort((a, b) => a.display_name.localeCompare(b.display_name));
+  const selectedEntity = entities.find((e) => e.logical_name === table);
 
-  const generate = async () => {
-    if (!prompt.trim()) return;
-    setLoading(true); setError(null); setSpec(null); setWarnings([]);
-    try {
-      // table may be empty — the AI picks one from the prompt and returns it.
-      const r = await aiBuildFlow(table, prompt.trim());
-      setSpec(r.spec); setWarnings(r.warnings ?? []);
-      if (r.table_logical_name) setTable(r.table_logical_name);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'AI build failed');
-    } finally { setLoading(false); }
+  // Load the selected table's fields so the parser can resolve field + choice names.
+  useEffect(() => {
+    if (!selectedEntity) { setFields([]); return; }
+    fetchFieldsForEntity(selectedEntity.entity_definition_id).then(setFields).catch(() => setFields([]));
+  }, [selectedEntity]);
+
+  // Parse locally — no external service. The tiny timeout just lets the spinner show.
+  const generate = () => {
+    if (!prompt.trim() || !table) return;
+    setLoading(true); setError(null); setSuggestions([]); setSpec(null); setWarnings([]);
+    setTimeout(() => {
+      const result = parseFlowPrompt(prompt.trim(), table, selectedEntity?.display_name ?? table, fields);
+      setLoading(false);
+      if (isFlowParseError(result)) {
+        setError(result.message);
+        setSuggestions(result.suggestions);
+        return;
+      }
+      setSpec(result.spec);
+      setWarnings(result.warnings ?? []);
+    }, 300);
   };
 
   const apply = async () => {
@@ -762,9 +778,9 @@ function AiBuildModal({
   };
 
   const examples = [
-    'When a note is created on this record, email the enabled recipients with the note and a link to open the record.',
-    'When status changes to Won, email sales@montyholding.com; if that fails, alert admin@montyholding.com.',
-    'When a record is created, generate an Excel export of all rows and email it to finance.',
+    'When Status changes to Won, email sales@montyholding.com; if that fails, alert admin@montyholding.com.',
+    'When a record is created, generate an Excel export and email it to the owner.',
+    'When Priority changes to High, notify the owner and set Escalated to Yes.',
   ];
 
   return (
@@ -775,17 +791,17 @@ function AiBuildModal({
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-violet-100 text-violet-600"><Sparkles size={16} /></span>
           <div>
             <h3 className="text-[15px] font-semibold text-slate-800">Build a rule with AI</h3>
-            <p className="text-[11.5px] text-slate-400">Just describe what should happen — AI drafts the trigger + steps (and picks the table if you don't).</p>
+            <p className="text-[11.5px] text-slate-400">Pick a table and describe what should happen — it drafts the trigger + steps. Runs entirely in-system.</p>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          <label className="block text-[12px] font-medium text-slate-600 mb-1">Table <span className="font-normal text-slate-400">(optional — AI picks one if left blank)</span></label>
+          <label className="block text-[12px] font-medium text-slate-600 mb-1">Table</label>
           <Combobox
             options={opts.map((e) => ({ value: e.logical_name, label: e.display_name }))}
             value={table}
             onChange={(v) => { setTable(v); setSpec(null); }}
-            placeholder="Let AI choose from my prompt…"
+            placeholder="Choose the table this flow runs on…"
             searchPlaceholder="Search tables…"
           />
 
@@ -803,7 +819,16 @@ function AiBuildModal({
             </div>
           )}
 
-          {error && <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-600">{error}</p>}
+          {error && (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-600">
+              <p>{error}</p>
+              {suggestions.length > 0 && (
+                <ul className="mt-1.5 space-y-1 pl-4 text-[11px] text-red-500/80">
+                  {suggestions.map((s) => <li key={s} className="list-disc">{s}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
 
           {spec && (
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">

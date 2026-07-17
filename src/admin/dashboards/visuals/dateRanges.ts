@@ -78,8 +78,66 @@ export function computeDateRange(preset: SlicerDateRange, now: Date = new Date()
   }
 }
 
+// ── granular pickers (a single specific day / week / month / year) ───────────
+// Each returns the inclusive [start, end] day-boundaries for the chosen unit.
+export function dayRange(d: Date): DateBounds {
+  return { start: startOfDay(d), end: endOfDay(d) };
+}
+export function weekRange(d: Date): DateBounds {
+  const s = startOfWeek(d);
+  return { start: s, end: endOfDay(addDays(s, 6)) };
+}
+export function monthRange(year: number, month0: number): DateBounds {
+  return { start: startOfDay(new Date(year, month0, 1)), end: endOfDay(new Date(year, month0 + 1, 0)) };
+}
+export function yearRange(year: number): DateBounds {
+  return { start: startOfDay(new Date(year, 0, 1)), end: endOfDay(new Date(year, 11, 31)) };
+}
+
 // ── formatting ───────────────────────────────────────────────────────────────
 const pad = (n: number) => String(n).padStart(2, '0');
+
+/** `YYYY-MM` for <input type="month">. */
+export function toMonthInput(d: Date | null): string {
+  return d ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}` : '';
+}
+/** Parse `YYYY-MM` → { year, month0 } (month is 0-based). */
+export function fromMonthInput(s: string): { year: number; month0: number } | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  return { year: Number(m[1]), month0: Number(m[2]) - 1 };
+}
+
+// ── ISO week helpers for <input type="week"> (`YYYY-Www`, Monday-based) ────────
+/** Monday (local) of the given ISO week-year / week number. */
+export function isoWeekToMonday(year: number, week: number): Date {
+  const jan4 = new Date(year, 0, 4);            // ISO week 1 always contains Jan 4th
+  const jan4Dow = (jan4.getDay() + 6) % 7;      // 0 = Monday
+  const week1Monday = addDays(jan4, -jan4Dow);
+  return addDays(week1Monday, (week - 1) * 7);
+}
+/** ISO week-year + week number for a date (Monday-based, week 1 holds Jan 4th). */
+export function isoWeekOf(d: Date): { year: number; week: number } {
+  const date = startOfDay(d);
+  const dow = (date.getDay() + 6) % 7;          // 0 = Monday
+  const thursday = addDays(date, 3 - dow);       // the Thursday anchors the ISO year
+  const year = thursday.getFullYear();
+  const jan4 = new Date(year, 0, 4);
+  const jan4Dow = (jan4.getDay() + 6) % 7;
+  const week1Monday = addDays(jan4, -jan4Dow);
+  const week = Math.floor((thursday.getTime() - week1Monday.getTime()) / (7 * 86_400_000)) + 1;
+  return { year, week };
+}
+export function toWeekInput(d: Date | null): string {
+  if (!d) return '';
+  const { year, week } = isoWeekOf(d);
+  return `${year}-W${pad(week)}`;
+}
+export function fromWeekInput(s: string): Date | null {
+  const m = /^(\d{4})-W(\d{2})$/.exec(s);
+  if (!m) return null;
+  return isoWeekToMonday(Number(m[1]), Number(m[2]));
+}
 
 /** `YYYY-MM-DD` (local). */
 export function toDateInput(d: Date | null): string {

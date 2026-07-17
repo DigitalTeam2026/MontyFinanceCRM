@@ -151,15 +151,19 @@ function buildPhysicalRecord(
   leadValues: RecordData,
   logicalToPhysical: Record<string, string>
 ): RecordData {
-  const knownPhysical = new Set(Object.values(logicalToPhysical));
   const result: RecordData = {};
   const entityMappings = mappings.filter((m) => m.target_entity === targetEntity);
   for (const m of entityMappings) {
     const val = getLeadPhysical(leadValues, m.lead_field);
     if (val === null || val === undefined) continue;
-    const physCol = logicalToPhysical[m.target_field];
-    if (!physCol && !knownPhysical.has(m.target_field)) continue;
-    result[physCol ?? m.target_field] = val;
+    // The mapping's target_field is a field_definition.logical_name, which for this
+    // CRM IS the physical column name. The logicalToPhysical map only remaps the few
+    // standard CRM fields whose picker name differs (e.g. `name`→`topic`); every other
+    // (incl. custom) field falls through using its logical_name verbatim. Do NOT drop
+    // unmapped fields — the picker only ever offers real columns, so dropping them
+    // silently loses custom mappings from both the preview and the created record.
+    const physCol = logicalToPhysical[m.target_field] ?? m.target_field;
+    result[physCol] = val;
   }
   return result;
 }

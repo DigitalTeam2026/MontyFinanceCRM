@@ -267,7 +267,7 @@ export default function TransformRecordModal({
                       ) : (
                         <div
                           className="w-4 h-4 rounded flex items-center justify-center"
-                          style={{ background: isNever ? '#e5e7eb' : modeMeta.bg }}
+                          style={{ background: isNever ? 'var(--border)' : modeMeta.bg }}
                         >
                           {isAlways && <CheckCircle2 size={10} style={{ color: modeMeta.color }} />}
                         </div>

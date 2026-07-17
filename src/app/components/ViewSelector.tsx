@@ -12,6 +12,7 @@ import {
   renameView,
 } from '../../services/viewService';
 import { useToast, toFriendlyError } from '../context/ToastContext';
+import { usePermissions } from '../context/PermissionContext';
 import AnchoredPopover from './overlay/AnchoredPopover';
 
 interface ViewSelectorProps {
@@ -39,6 +40,8 @@ export default function ViewSelector({
   onShareView,
 }: ViewSelectorProps) {
   const { showError, showSuccess } = useToast();
+  const { permissions } = usePermissions();
+  const isSystemAdmin = permissions.isSystemAdmin;
   const [open, setOpen] = useState(false);
   const [views, setViews] = useState<ViewDefinition[]>([]);
   const [loading, setLoading] = useState(false);
@@ -165,7 +168,10 @@ export default function ViewSelector({
 
   const renderRow = (view: ViewDefinition, showStar: boolean) => {
     const isActive  = view.view_id === activeViewId;
-    const canManage = view.created_by === currentUserId && !view.is_system;
+    // Owners manage their own views; system admins can manage any non-system
+    // view too (covers seeded views with a NULL created_by and views made by
+    // other users). System views stay read-only here — they're publish-gated.
+    const canManage = !view.is_system && (view.created_by === currentUserId || isSystemAdmin);
     const isOwner   = view.created_by === currentUserId || view.view_type === 'system';
 
     return (

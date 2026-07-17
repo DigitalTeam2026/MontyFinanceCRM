@@ -278,7 +278,7 @@ export default function SubgridQuickCreatePanel({
       <div
         ref={panelRef}
         className="fixed top-0 right-0 bottom-0 z-50 w-[400px] max-w-full bg-white shadow-2xl flex flex-col"
-        style={{ borderLeft: '1px solid #e2e8f0' }}
+        style={{ borderLeft: '1px solid var(--border)' }}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-white shrink-0">

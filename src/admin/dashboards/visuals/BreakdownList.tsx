@@ -12,11 +12,15 @@ import type { SelectionEmit, RawValue } from './useCrossFilter';
 import type { BreakdownItem } from './breakdownQuery';
 
 export interface BreakdownColors {
-  accent: string;                       // bar/dot fallback colour
+  accent: string;                       // bar/dot fallback colour (single-hue lists)
   labelColor: string;
   valueColor: string;
   trackColor: string;
   colorByValue?: Record<string, string>;
+  /** Distinct per-row hues (theme chart palette) for multi-category lists. When
+   *  set, a row with no explicit colorByValue picks palette[index] instead of the
+   *  single `accent`, so the list recolours with the theme yet stays legible. */
+  palette?: string[];
 }
 
 interface Props {
@@ -54,8 +58,10 @@ export default function BreakdownList({
     <div className={`${detailed ? 'space-y-1.5' : 'space-y-0.5'} ${className ?? ''}`}>
       {items.map((b, i) => {
         const pct = total > 0 ? (b.value / total) * 100 : 0;
-        // Per-value colour: explicit colorByValue[id] → accent fallback.
-        const barColor = pick(colors.colorByValue?.[b.id], colors.accent);
+        // Per-value colour: explicit colorByValue[id] → theme palette (distinct
+        // per row, when supplied) → single accent fallback.
+        const paletteColor = colors.palette?.length ? colors.palette[i % colors.palette.length] : undefined;
+        const barColor = pick(colors.colorByValue?.[b.id], paletteColor ?? colors.accent);
         const clickable = !!onSelect && !!fieldId && b.selectable;
         const selected = !!highlight && b.raw != null && highlight.has(String(b.raw));
         const fire = (e: React.MouseEvent) => {

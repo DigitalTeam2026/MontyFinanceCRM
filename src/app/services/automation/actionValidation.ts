@@ -4,7 +4,7 @@
 
 import type {
   AutomationActionType, AutomationRuleAction, SendEmailConfig, UpdateFieldConfig, ListRowsConfig, GetRowConfig,
-  ExportViewEmailConfig, RelatedExportEmailConfig, CreateRelatedRecordConfig, UpdateRelatedRecordConfig,
+  ExportViewEmailConfig, RelatedExportEmailConfig, CreateRelatedRecordConfig, UpdateRelatedRecordConfig, SwitchConfig,
 } from '../../../types/automationRule';
 
 export function validateActionConfig(
@@ -32,6 +32,8 @@ export function validateActionConfig(
       return validateUpdateRelated(config as unknown as UpdateRelatedRecordConfig);
     case 'condition':
       return validateCondition(config as unknown as { left?: string; operator?: string });
+    case 'switch':
+      return validateSwitch(config as unknown as SwitchConfig);
     default:
       return [`Unknown action type: ${type}`];
   }
@@ -41,6 +43,15 @@ function validateCondition(c: { left?: string; operator?: string }): string[] {
   const errs: string[] = [];
   if (!c.left || !String(c.left).trim()) errs.push('The condition needs a left-hand value (a field or token to compare).');
   if (!c.operator) errs.push('Pick a comparison operator.');
+  return errs;
+}
+
+function validateSwitch(c: SwitchConfig): string[] {
+  const errs: string[] = [];
+  if (!c.on || !String(c.on).trim()) errs.push('The switch needs a value to switch On (a field or token).');
+  const cases = Array.isArray(c.cases) ? c.cases : [];
+  if (cases.length === 0) errs.push('Add at least one case.');
+  if (cases.some((cs) => !cs || String(cs.value ?? '').trim() === '')) errs.push('Every case needs a value to match.');
   return errs;
 }
 

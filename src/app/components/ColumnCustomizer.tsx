@@ -337,7 +337,7 @@ export default function ColumnCustomizer({
     <div
       ref={panelRef}
       className="absolute top-full left-0 mt-1 z-50 bg-white shadow-2xl overflow-hidden flex flex-col"
-      style={{ width: 380, border: `1px solid ${isRedesign ? '#e7eaf1' : 'rgb(226,232,240)'}`, borderRadius: isRedesign ? 16 : 12 }}
+      style={{ width: 380, border: '1px solid var(--border)', borderRadius: isRedesign ? 16 : 12 }}
     >
       {/* Header */}
       <div className={`flex items-center justify-between px-4 py-3 border-b shrink-0 ${isRedesign ? 'bg-[#f7f9fc] border-[#e7eaf1]' : 'bg-slate-50 border-slate-100'}`}>

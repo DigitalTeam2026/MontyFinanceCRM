@@ -47,8 +47,8 @@
       "query_config": { "entity": "lead" },
       "data_config": { "dateSlicer": {
         "dateField": "created_at", "filterMode": "between", "defaultRange": "this_year",
-        "granularity": "week", "applyTo": "dashboard", "filterScope": "dashboard",
-        "style": "button_presets", "orientation": "horizontal",
+        "granularity": "year", "applyTo": "dashboard", "filterScope": "dashboard",
+        "style": "granular", "orientation": "horizontal",
         "showClearButton": true, "showTodayButton": true, "showPresetRanges": true, "autoApply": true,
         "activePresetColor": "#eef1fe", "activePresetTextColor": "#4f6df5", "selectedRangeColor": "#4f6df5"
       } },
@@ -121,7 +121,7 @@
       "visual_type": "kpi", "title": "Accounts",
       "x": 5, "y": 13, "width": 5, "height": 5, "min_width": 3, "min_height": 4, "z_index": 0,
       "is_visible": true, "is_locked": false,
-      "query_config": { "entity": "account" },
+      "query_config": { "entity": "account", "relatedFilters": [{ "path": [{ "entity": "lead", "fk": "account_id", "direction": "reverse" }], "field": "account_id", "op": "is_not_empty" }] },
       "data_config": { "kpiMode": "simple", "mainAgg": "count", "kpiLayout": "compact" },
       "format_config": { "showHeader": true, "numberFormat": "number", "accentColor": "#8b5cf6", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 14, "titleColor": "#8a8fa3", "valueColor": "#171a29", "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif" },
       "interaction_config": {}, "filter_config": {}
@@ -134,7 +134,7 @@
       "x": 10, "y": 13, "width": 5, "height": 5, "min_width": 3, "min_height": 4, "z_index": 0,
       "is_visible": true, "is_locked": false,
       "query_config": { "entity": "lead" },
-      "data_config": { "kpiMode": "simple", "mainAgg": "count_distinct", "mainField": "lead_source", "kpiLayout": "compact" },
+      "data_config": { "kpiMode": "simple", "mainAgg": "count_distinct", "mainField": "leadsource", "kpiLayout": "compact" },
       "format_config": { "showHeader": true, "numberFormat": "number", "accentColor": "#12b3a6", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 14, "titleColor": "#8a8fa3", "valueColor": "#171a29", "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif" },
       "interaction_config": {}, "filter_config": {}
     },
@@ -145,8 +145,8 @@
       "visual_type": "kpi", "title": "Industries",
       "x": 15, "y": 13, "width": 5, "height": 5, "min_width": 3, "min_height": 4, "z_index": 0,
       "is_visible": true, "is_locked": false,
-      "query_config": { "entity": "account" },
-      "data_config": { "kpiMode": "simple", "mainAgg": "count_distinct", "mainField": "industry", "kpiLayout": "compact" },
+      "query_config": { "entity": "account", "relatedFilters": [{ "path": [{ "entity": "lead", "fk": "account_id", "direction": "reverse" }], "field": "account_id", "op": "is_not_empty" }] },
+      "data_config": { "kpiMode": "simple", "mainAgg": "count_distinct", "mainField": "industry_id", "kpiLayout": "compact" },
       "format_config": { "showHeader": true, "numberFormat": "number", "accentColor": "#e08a2b", "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 14, "titleColor": "#8a8fa3", "valueColor": "#171a29", "fontFamily": "'Space Grotesk', 'IBM Plex Sans', sans-serif" },
       "interaction_config": {}, "filter_config": {}
     },
@@ -207,8 +207,8 @@
       "visual_type": "donut", "title": "Industries",
       "x": 0, "y": 25, "width": 8, "height": 9, "min_width": 4, "min_height": 5, "z_index": 0,
       "is_visible": true, "is_locked": false,
-      "query_config": { "entity": "account" },
-      "data_config": { "category": "industry", "values": [{ "field": "*", "fn": "count", "alias": "count" }] },
+      "query_config": { "entity": "account", "relatedFilters": [{ "path": [{ "entity": "lead", "fk": "account_id", "direction": "reverse" }], "field": "account_id", "op": "is_not_empty" }] },
+      "data_config": { "category": "industry_id", "values": [{ "field": "*", "fn": "count", "alias": "count" }] },
       "format_config": { "showHeader": true, "legendPosition": "right", "seriesColors": ["#4f6df5", "#8b5cf6", "#12b3a6", "#e08a2b", "#17a673", "#e35d5d", "#9aa0b4"], "background": "#ffffff", "borderColor": "#e9eaf0", "borderRadius": 16, "titleColor": "#171a29", "fontFamily": "'IBM Plex Sans', sans-serif" },
       "interaction_config": {}, "filter_config": {}
     },

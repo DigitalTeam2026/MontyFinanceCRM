@@ -39,6 +39,7 @@ export default function ImportFromExcelModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewPage, setPreviewPage] = useState(0);
+  const [importProgress, setImportProgress] = useState({ processed: 0, total: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
   const refDataRef = useRef<any>(null);
 
@@ -106,8 +107,12 @@ export default function ImportFromExcelModal({
     setStep('importing');
     setLoading(true);
     setError(null);
+    setImportProgress({ processed: 0, total: validCount });
     try {
-      const res = await executeImport(entity, preview, columns, mode, matchColumn, userId);
+      const res = await executeImport(
+        entity, preview, columns, mode, matchColumn, userId,
+        (processed, total) => setImportProgress({ processed, total }),
+      );
       setResult(res);
       setStep('result');
       if (res.created > 0 || res.updated > 0) onImportComplete();
@@ -117,7 +122,7 @@ export default function ImportFromExcelModal({
     } finally {
       setLoading(false);
     }
-  }, [entity, preview, columns, mode, matchColumn, userId, onImportComplete]);
+  }, [entity, preview, columns, mode, matchColumn, userId, onImportComplete, validCount]);
 
   const importableColumns = columns.filter((c) => !c.isReadonly);
   const matchableCols = importableColumns.filter((c) =>
@@ -445,7 +450,19 @@ export default function ImportFromExcelModal({
             <div className="flex flex-col items-center justify-center py-12">
               <Loader2 size={32} className="animate-spin text-[var(--navy-accent)] mb-3" />
               <p className="text-[13px] text-[var(--ink-600)]">Importing records...</p>
-              <p className="text-[11px] text-[var(--ink-400)] mt-1">{validCount} record{validCount !== 1 ? 's' : ''} to process</p>
+              <p className="text-[15px] font-semibold text-[var(--ink-800)] mt-1 tabular-nums">
+                {importProgress.processed}/{importProgress.total}
+              </p>
+              <div className="w-56 h-1.5 mt-3 rounded-full bg-[var(--ink-100)] overflow-hidden">
+                <div
+                  className="h-full bg-emerald-600 transition-all duration-150"
+                  style={{
+                    width: `${importProgress.total > 0
+                      ? Math.round((importProgress.processed / importProgress.total) * 100)
+                      : 0}%`,
+                  }}
+                />
+              </div>
             </div>
           )}
 

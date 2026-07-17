@@ -252,7 +252,12 @@ export default function FunnelStageVisual({ visual, theme, runtimeFilters, runti
     >
       {stages.map((s, i) => {
         const r = results[i];
-        const accent = pick(s.color ?? fmt.accentColor, theme.primaryAccent);
+        // No explicit stage colour → distinct theme-palette hue per stage (recolours
+        // with the theme, keeps the stages visually separable) rather than one accent.
+        const paletteAccent = theme.chartPalette.length
+          ? theme.chartPalette[i % theme.chartPalette.length]
+          : theme.primaryAccent;
+        const accent = pick(s.color ?? fmt.accentColor, paletteAccent);
         const isSel = selected.has(s.id);
         const conv = stageConversion(i);
         const breakdown = r?.breakdown ?? [];
@@ -318,7 +323,7 @@ export default function FunnelStageVisual({ visual, theme, runtimeFilters, runti
                   <BreakdownList
                     items={breakdown} total={r?.total ?? 0} detailed={detailed && s.showProgressBars !== false}
                     showPercentages={s.showPercentages}
-                    colors={{ accent, labelColor: bdLabelColor, valueColor: bdValueColor, trackColor: pick(fmt.breakdownTrackColor, theme.gridLineColor), colorByValue: s.colorByValue }}
+                    colors={{ accent, labelColor: bdLabelColor, valueColor: bdValueColor, trackColor: pick(fmt.breakdownTrackColor, theme.gridLineColor), colorByValue: s.colorByValue, palette: theme.chartPalette }}
                     numberFormat={stageFmt.numberFormat} decimals={fmt.decimals}
                     sourceVisualId={visual.dashboard_visual_id} entity={s.entity ?? ''}
                     fieldId={enableClick ? s.breakdownField : undefined}

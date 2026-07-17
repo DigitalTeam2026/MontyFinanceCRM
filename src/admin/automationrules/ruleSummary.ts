@@ -47,6 +47,7 @@ const ACTION_LABEL: Record<AutomationActionType, string> = {
   create_related_record: 'Create related record',
   update_related_record: 'Update related record',
   condition: 'Condition',
+  switch: 'Switch',
 };
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

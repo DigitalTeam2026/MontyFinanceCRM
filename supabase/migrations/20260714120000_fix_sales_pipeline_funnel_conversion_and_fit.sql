@@ -52,4 +52,34 @@ BEGIN
      WHERE dashboard_visual_id = v_visual;
     RAISE NOTICE 'Sales Pipeline funnel edited by user: applied fitStages only.';
   END IF;
+
+  -- ── KPI count-distinct cards pointed at dead/orphan columns ─────────────────
+  -- dashboard_aggregate counts the field as a LITERAL physical column, so these
+  -- counted empty leftover columns. Repoint at the columns that hold the data:
+  --   Sources    : lead_source (empty) → leadsource (active lookup, 7 distinct)
+  --   Industries : industry    (empty) → industry_id (active lookup, 9 distinct)
+  -- Guarded on the current (wrong) value so a user re-point is never clobbered.
+  UPDATE public.dashboard_visual
+     SET data_config = jsonb_set(data_config, '{mainField}', '"leadsource"'::jsonb, true),
+         modified_at = now()
+   WHERE dashboard_visual_id = '5a1e0000-0000-4000-a000-000000000012'
+     AND data_config->>'mainField' = 'lead_source';
+
+  UPDATE public.dashboard_visual
+     SET data_config = jsonb_set(data_config, '{mainField}', '"industry_id"'::jsonb, true),
+         modified_at = now()
+   WHERE dashboard_visual_id = '5a1e0000-0000-4000-a000-000000000013'
+     AND data_config->>'mainField' = 'industry';
+
+  -- ── Date slicer → granular Day/Week/Month/Year picker ───────────────────────
+  -- Swap the whole-dashboard slicer from preset buttons to the new granular style
+  -- (tabs + a specific day/week/month/year picker). Guarded on the old style so a
+  -- user who already re-styled the slicer is not overridden.
+  UPDATE public.dashboard_visual
+     SET data_config = jsonb_set(
+           jsonb_set(data_config, '{dateSlicer,style}', '"granular"'::jsonb, true),
+           '{dateSlicer,granularity}', '"year"'::jsonb, true),
+         modified_at = now()
+   WHERE dashboard_visual_id = '5a1e0000-0000-4000-a000-000000000001'
+     AND data_config #>> '{dateSlicer,style}' = 'button_presets';
 END $FIX$;

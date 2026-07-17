@@ -29,7 +29,6 @@ const { hashPassword, verifyPassword, signToken, verifyToken, TOKEN_TTL_MS } = r
 const totp = require("./totp");
 const { startAutomationWorker } = require("./automationWorker");
 const { executeDeleteRules } = require("./deleteRules");
-const { buildFlowFromPrompt } = require("./aiFlowBuilder");
 
 const app = express();
 
@@ -1066,19 +1065,6 @@ app.post("/api/delete-rules", async (req, res) => {
     res.status(status).json(body);
   } catch (error) {
     sendError(res, error);
-  }
-});
-
-// Power Automation — AI flow builder. Turns a plain-language prompt into a flow
-// spec (trigger + actions) via Claude; the browser previews + applies it.
-app.post("/api/automation/ai-build", async (req, res) => {
-  try {
-    const result = await buildFlowFromPrompt(pool, req.body || {});
-    res.json(result);
-  } catch (error) {
-    const status = error.statusCode || 500;
-    if (status >= 500) console.error("[automation.ai-build]", error.message);
-    res.status(status).json({ error: { message: error.message, status } });
   }
 });
 

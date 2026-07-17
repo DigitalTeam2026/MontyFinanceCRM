@@ -120,20 +120,34 @@ export interface ViewColumnInput {
 
 export async function fetchViewsForEntity(entityId: string): Promise<ViewDefinition[]> {
   const snap = getTable<ViewDefinition & { deleted_at: string | null }>('view_definition');
-  if (snap !== null) {
-    return snap
-      .filter((v) => v.entity_definition_id === entityId && v.deleted_at == null)
-      .sort((a, b) => a.view_type.localeCompare(b.view_type) || a.name.localeCompare(b.name));
+  if (snap === null) {
+    const { data, error } = await supabase
+      .from('view_definition')
+      .select('*')
+      .eq('entity_definition_id', entityId)
+      .is('deleted_at', null)
+      .order('view_type')
+      .order('name');
+    if (error) throw error;
+    return data as ViewDefinition[];
   }
-  const { data, error } = await supabase
+
+  // Merge published snapshot with live user-created views not yet in it — see
+  // fetchAccessibleViews for the full rationale (a freshly saved view lives
+  // only in the live table until the next Publish).
+  const snapshotViews = snap.filter((v) => v.entity_definition_id === entityId && v.deleted_at == null);
+  const snapshotIds = new Set(snapshotViews.map((v) => v.view_id));
+
+  const { data: liveData } = await supabase
     .from('view_definition')
     .select('*')
     .eq('entity_definition_id', entityId)
-    .is('deleted_at', null)
-    .order('view_type')
-    .order('name');
-  if (error) throw error;
-  return data as ViewDefinition[];
+    .is('deleted_at', null);
+  const extraLive = ((liveData ?? []) as ViewDefinition[]).filter((v) => !snapshotIds.has(v.view_id));
+
+  return [...snapshotViews, ...extraLive].sort(
+    (a, b) => a.view_type.localeCompare(b.view_type) || a.name.localeCompare(b.name)
+  );
 }
 
 export async function fetchViewById(viewId: string): Promise<ViewDefinition> {
@@ -158,13 +172,16 @@ export async function fetchViewById(viewId: string): Promise<ViewDefinition> {
 export async function fetchViewColumns(viewId: string): Promise<ViewColumn[]> {
   const snapCols = getTable<Record<string, unknown>>('view_column');
   if (snapCols !== null) {
-    // Only trust the snapshot when this view is actually published. A view
-    // created/edited since the last Publish has no snapshot columns yet, and an
-    // empty result there would look identical to a real zero-column view — so
-    // fall back to the live query in that case instead.
+    // System views are publish-gated: render their columns from the published
+    // snapshot so unpublished Admin Studio edits stay hidden. Personal/public
+    // (user) views are live runtime data — adding/removing/reordering their
+    // columns must take effect immediately, so fall through to the live query
+    // for those. Also fall through for a view absent from the snapshot (created
+    // since the last Publish): an empty snapshot result would look identical to
+    // a real zero-column view.
     const viewSnap = getTable<ViewDefinition>('view_definition');
-    const isPublished = viewSnap === null || viewSnap.some((v) => v.view_id === viewId);
-    if (isPublished) {
+    const snapView = viewSnap?.find((v) => v.view_id === viewId);
+    if (snapView && snapView.view_type === 'system') {
       return fetchViewColumnsFromSnapshot(viewId, snapCols);
     }
   }
@@ -345,21 +362,53 @@ export async function fetchViewsForEntityLogical(entityLogicalName: string): Pro
 /** Fetch views accessible to the current user including shared ones */
 export async function fetchAccessibleViews(entityDefinitionId: string): Promise<ViewDefinition[]> {
   const snap = getTable<ViewDefinition & { deleted_at: string | null }>('view_definition');
-  if (snap !== null) {
-    return snap
-      .filter((v) => v.entity_definition_id === entityDefinitionId && v.deleted_at == null && v.is_active === true)
-      .sort((a, b) => a.view_type.localeCompare(b.view_type) || a.name.localeCompare(b.name));
+  if (snap === null) {
+    // Admin Studio / no snapshot: the live table is the source of truth.
+    const { data, error } = await supabase
+      .from('view_definition')
+      .select('*')
+      .eq('entity_definition_id', entityDefinitionId)
+      .is('deleted_at', null)
+      .eq('is_active', true)
+      .order('view_type')
+      .order('name');
+    if (error) return [];
+    return (data ?? []) as ViewDefinition[];
   }
-  const { data, error } = await supabase
+
+  // Sales app: system views are publish-gated — they render at their published
+  // (snapshot) state so unpublished Admin Studio edits stay hidden. But
+  // personal/public views are user-owned runtime data: rename, delete, and
+  // set-default happen in the live table and must take effect immediately,
+  // without waiting for a Publish. If we render those from the snapshot too, a
+  // stale copy overrides the live edit — the change reports success yet the old
+  // name/row comes back on reload.
+  //
+  // So: system views come from the snapshot; personal/public views come
+  // straight from the live table (its rows are a superset — every snapshot user
+  // view has a live row, since deletes are soft). This also drops any user view
+  // whose live row is now deleted/inactive, and picks up newly-created ones.
+  const systemViews = snap.filter(
+    (v) =>
+      v.entity_definition_id === entityDefinitionId &&
+      v.view_type === 'system' &&
+      v.deleted_at == null &&
+      v.is_active === true
+  );
+
+  const { data: liveData } = await supabase
     .from('view_definition')
     .select('*')
     .eq('entity_definition_id', entityDefinitionId)
     .is('deleted_at', null)
-    .eq('is_active', true)
-    .order('view_type')
-    .order('name');
-  if (error) return [];
-  return (data ?? []) as ViewDefinition[];
+    .eq('is_active', true);
+  const userViews = ((liveData ?? []) as (ViewDefinition & { view_type: string })[]).filter(
+    (v) => v.view_type !== 'system'
+  );
+
+  return [...systemViews, ...userViews].sort(
+    (a, b) => a.view_type.localeCompare(b.view_type) || a.name.localeCompare(b.name)
+  );
 }
 
 /** Save a new personal view for the current user with given column states */
@@ -403,7 +452,8 @@ export async function savePersonalView(payload: {
       relationship_definition_id: c.relationship_definition_id ?? null,
       lookup_label_field_override: c.lookup_label_field_override ?? null,
     }));
-    await supabase.from('view_column').insert(rows);
+    const { error: colError } = await supabase.from('view_column').insert(rows);
+    if (colError) throw colError;
   }
 
   if (payload.isDefault) {

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useToast } from '../../app/context/ToastContext';
 import {
   ArrowLeft, Save, RefreshCw, Zap, Settings, Activity, CheckCircle2, Globe, FileText, FlaskConical, Database, GitBranch, Milestone, LayoutGrid } from 'lucide-react';
-import type { BusinessRule, RuleTrigger, RuleActionSet, RuleScope, RuleConditionGroup, RuleCondition, RuleConditionBlock, RuleAction } from '../../types/businessRule';
+import type { BusinessRule, RuleTrigger, RuleActionSet, RuleScope, RuleConditionGroup, RuleCondition, RuleConditionBlock, RuleAction, BusinessRuleCategory } from '../../types/businessRule';
 import { validateProcessFlowCondition, getRuleConditionBlocks } from '../../types/businessRule';
 import type { FieldDefinition } from '../../types/field';
 import type { FormDefinition } from '../../types/form';
@@ -11,6 +11,8 @@ import type { ProcessFlow, ProcessStage } from '../../types/processFlow';
 import { fetchFieldsForEntity } from '../../services/fieldService';
 import { fetchFormsForEntity } from '../../services/formService';
 import { saveRule, createRule } from '../../services/businessRuleService';
+import { fetchRuleCategories, createRuleCategory, RULE_CATEGORY_COLORS } from '../../services/businessRuleCategoryService';
+import { getCurrentUserId } from '../../services/automationRuleService';
 import { fetchProcessFlowsForEntity, fetchProcessFlowWithDetails } from '../../services/processFlowService';
 import RulePreviewPanel from './RulePreviewPanel';
 import RuleCanvas from './RuleCanvas';
@@ -108,6 +110,7 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
   const { showSuccess, showError } = useToast();
   const [rule, setRule] = useState<BusinessRule>(() => normalizeRule(initRule));
   const [fields, setFields] = useState<FieldDefinition[]>([]);
+  const [categories, setCategories] = useState<BusinessRuleCategory[]>([]);
   const [processFlows, setProcessFlows] = useState<ProcessFlow[]>([]);
   const [stageCache, setStageCache] = useState<Record<string, ProcessStage[]>>({});
   const [loading, setLoading] = useState(true);
@@ -134,11 +137,32 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
     Promise.all([
       fetchFieldsForEntity(entityId),
       fetchProcessFlowsForEntity(entityId).catch(() => [] as ProcessFlow[]),
-    ]).then(([f, pf]) => {
+      fetchRuleCategories().catch(() => [] as BusinessRuleCategory[]),
+    ]).then(([f, pf, cats]) => {
       setFields(f);
       setProcessFlows(pf);
+      setCategories(cats);
     }).finally(() => setLoading(false));
   }, [entityId]);
+
+  const handleCreateCategory = async (name: string): Promise<BusinessRuleCategory | null> => {
+    const nm = name.trim();
+    if (!nm) return null;
+    try {
+      const created_by = await getCurrentUserId().catch(() => null);
+      const cat = await createRuleCategory({
+        name: nm,
+        color: RULE_CATEGORY_COLORS[categories.length % RULE_CATEGORY_COLORS.length],
+        sort_order: categories.length,
+        created_by,
+      });
+      setCategories((prev) => [...prev, cat]);
+      return cat;
+    } catch (e) {
+      showError(e instanceof Error ? e.message : 'Failed to create category');
+      return null;
+    }
+  };
 
   const loadFlowStages = async (flowId: string): Promise<ProcessStage[]> => {
     if (stageCache[flowId]) return stageCache[flowId];

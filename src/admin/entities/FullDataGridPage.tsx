@@ -220,8 +220,9 @@ export default function FullDataGridPage({ entity, onBack }: FullDataGridPagePro
           const ent = entMap.get(f.lookup_entity_id!);
           if (!ent) continue;
           const tbl = ent.physical_table_name;
-          // Custom entities key on `<logical_name>_id` (not `<table>_id`); mirror guessPK.
-          const pkName = PK_OVERRIDES[tbl] ?? (ent.is_custom ? `${ent.logical_name}_id` : `${tbl}_id`);
+          // PK is `<logical_name>_id` for every entity except the PK_OVERRIDES tables;
+          // don't gate on the unreliable is_custom flag (mirror guessPK).
+          const pkName = PK_OVERRIDES[tbl] ?? `${ent.logical_name}_id`;
           const labelField = tbl === 'crm_user' ? 'email' : (ent.primary_field_name ?? 'name');
           meta.set(f.field_definition_id, { table: tbl, pk: pkName, labelField, entityName: ent.display_name });
         }
@@ -1515,20 +1516,19 @@ const PK_OVERRIDES: Record<string, string> = {
 };
 
 function guessPK(entity: EntityDefinition): string {
-  const t = entity.physical_table_name;
-  if (PK_OVERRIDES[t]) return PK_OVERRIDES[t];
-  // Custom entities are created with a PK column of `<logical_name>_id` (see the
-  // create_crm_entity RPC), which differs from the physical table name — e.g. table
-  // `crm_continent` has PK `continent_id`, not `crm_continent_id`. Deriving the PK
-  // from the table name there yields a missing column, collapsing every row's _pk to
-  // '' and making row selection select all rows at once.
-  if (entity.is_custom) return `${entity.logical_name}_id`;
-  if (t === 'account') return 'account_id';
-  if (t === 'contact') return 'contact_id';
-  if (t === 'lead') return 'lead_id';
-  if (t === 'opportunity') return 'opportunity_id';
-  if (t === 'ticket') return 'ticket_id';
-  return `${t}_id`;
+  if (PK_OVERRIDES[entity.physical_table_name]) return PK_OVERRIDES[entity.physical_table_name];
+  // The PK column is `<logical_name>_id`. This is authoritative for every entity:
+  //   - Core tables (account, contact, lead, opportunity, ticket, …) have
+  //     logical_name === physical_table_name, so this equals `<table>_id`.
+  //   - Entities whose physical table is prefixed (e.g. `crm_prospect` with logical
+  //     `prospect` → PK `prospect_id`, `crm_continent` → `continent_id`) key off the
+  //     logical name; deriving from the table name yields a missing column
+  //     (`crm_prospect_id`), which collapses every row's _pk to '' — breaking row
+  //     selection (selects all at once) and delete/save (`column ... does not exist`).
+  // We key off logical_name, NOT the `is_custom` flag: that flag is unreliable (e.g.
+  // `crm_prospect` is stored with is_custom=false despite being a prefixed custom table).
+  // The only exceptions are the four legacy tables in PK_OVERRIDES above.
+  return `${entity.logical_name}_id`;
 }
 
 function defaultVisibleFields(fields: FieldDefinition[]): string[] {

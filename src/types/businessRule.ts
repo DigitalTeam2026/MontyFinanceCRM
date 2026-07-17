@@ -73,7 +73,7 @@ export interface RuleAction {
   // generic value (boolean, string, etc. depending on action_type)
   value?: string | boolean;
   // set_field_value / set_default_value
-  value_type?: 'static' | 'field' | 'current_user';
+  value_type?: 'static' | 'field' | 'current_user' | 'current_datetime';
   value_field?: string;       // legacy single field (kept for backwards compat)
   value_fields?: string[];    // ordered list of fields to concatenate
   value_fields_separator?: string; // separator between fields, default ' '
@@ -103,11 +103,23 @@ export interface RuleTrigger {
   condition_group: RuleConditionGroup | null;
 }
 
+/** A named, color-coded folder that groups business rules on the rules list. */
+export interface BusinessRuleCategory {
+  business_rule_category_id: string;
+  name: string;
+  color: string;          // hex accent, e.g. '#2563eb'
+  sort_order: number;
+  created_by: string | null;
+  created_at: string;
+  modified_at: string;
+}
+
 export interface BusinessRule {
   business_rule_id: string;
   entity_definition_id: string;
   name: string;
   description: string | null;
+  category_id: string | null;    // optional grouping — null = Uncategorized
   trigger_json: RuleTrigger;
   action_json: RuleActionSet;
   scope: RuleScope;

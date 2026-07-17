@@ -253,6 +253,39 @@ html.dark .border-\[\#e7eaf1\], html.dark .border-\[\#e5e7eb\], html.dark .borde
 html.dark .hover\:bg-\[\#f3f4f6\]:hover, html.dark .hover\:bg-\[\#eceef1\]:hover, html.dark .hover\:bg-\[\#f4f6fb\]:hover { background-color: var(--row-hover); }
 html.dark .focus\:bg-white:focus { background-color: var(--surface); }
 
+/* Additional neutral arbitrary-hex utilities found across forms, grids, the calc
+   builder, process-stage bar and system pages — remap so they track the active
+   dark theme instead of staying as fixed light patches / near-black text.
+   (Colored -[#3b6fff]/#2563eb brand accents and deliberately-dark surfaces such
+   as the login/code-editor panels are intentionally left untouched.) */
+/* Light surfaces → surface-2 */
+html.dark .bg-\[\#f7f9fc\], html.dark .hover\:bg-\[\#f7f9fc\]:hover,
+html.dark .bg-\[\#f9fafc\], html.dark .hover\:bg-\[\#f9fafc\]:hover,
+html.dark .bg-\[\#fafbfd\],
+html.dark .bg-\[\#f6f8fb\], html.dark .hover\:bg-\[\#f6f8fb\]:hover,
+html.dark .bg-\[\#f3f5f8\], html.dark .bg-\[\#eef1f6\],
+html.dark .bg-\[\#f0f2f6\], html.dark .bg-\[\#e5e9f0\] { background-color: var(--surface-2); }
+/* Neutral borders → border */
+html.dark .border-\[\#eef1f6\], html.dark .border-\[\#dde4f0\], html.dark .border-\[\#e2e5ea\], html.dark .border-\[\#d0d5de\], html.dark .border-\[\#f0f2f6\], html.dark .border-\[\#f1f5f9\] { border-color: var(--border); }
+/* Light-blue tint surfaces (selected / active bands) → link tint */
+html.dark .bg-\[\#f0f4ff\], html.dark .hover\:bg-\[\#f0f4ff\]:hover,
+html.dark .bg-\[\#eff6ff\], html.dark .hover\:bg-\[\#eff6ff\]:hover,
+html.dark .bg-\[\#e5efff\], html.dark .bg-\[\#f0f6ff\], html.dark .bg-\[\#eaf2fd\],
+html.dark .bg-\[\#ebf1fa\], html.dark .hover\:bg-\[\#ebf1fa\]:hover,
+html.dark .bg-\[\#ddeeff\] { background-color: color-mix(in srgb, var(--link) 13%, transparent); }
+html.dark .border-\[\#c7d9ff\], html.dark .border-\[\#d0e0f5\], html.dark .border-\[\#c5d8ee\] { border-color: color-mix(in srgb, var(--link) 40%, transparent); }
+/* Neutral text → muted / strong / mid */
+html.dark .text-\[\#64748b\], html.dark .text-\[\#94a3b8\], html.dark .text-\[\#cbd2dc\], html.dark .text-\[\#7a8ca8\] { color: var(--muted); }
+html.dark .text-\[\#111827\], html.dark .text-\[\#1e293b\] { color: var(--text); }
+html.dark .text-\[\#475569\] { color: color-mix(in srgb, var(--text) 70%, var(--muted)); }
+/* Semantic light chips (bulk actions bar) → token-tinted */
+html.dark .bg-\[\#e7f8ef\], html.dark .hover\:bg-\[\#e7f8ef\]:hover { background-color: color-mix(in srgb, var(--success) 15%, transparent); }
+html.dark .text-\[\#0f9d63\], html.dark .hover\:text-\[\#0f9d63\]:hover { color: var(--success); }
+html.dark .bg-\[\#fdf4e3\], html.dark .hover\:bg-\[\#fdf4e3\]:hover { background-color: var(--warn-bg); }
+html.dark .text-\[\#c2820a\], html.dark .hover\:text-\[\#c2820a\]:hover { color: var(--warn-text); }
+html.dark .bg-\[\#fdecef\], html.dark .hover\:bg-\[\#fdecef\]:hover { background-color: color-mix(in srgb, var(--danger) 15%, transparent); }
+html.dark .text-\[\#dc2b46\], html.dark .hover\:text-\[\#dc2b46\]:hover { color: var(--danger); }
+
 /* ────────────────────────────────────────────────────────────────────────────
    COLORED SEMANTIC UTILITIES → THEME TOKENS  (dark themes only)
    There is no shared Chip/Tile/Badge primitive in this app — status pills,

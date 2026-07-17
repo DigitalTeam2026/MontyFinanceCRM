@@ -42,6 +42,7 @@ export function buildDraftRule(entityId: string, name: string): BusinessRule {
     entity_definition_id: entityId,
     name,
     description: null,
+    category_id: null,
     trigger_json: DEFAULT_TRIGGER,
     action_json: DEFAULT_ACTIONS,
     scope: 'all_forms',
@@ -63,6 +64,7 @@ export async function createRule(payload: {
   entity_definition_id: string;
   name: string;
   description?: string | null;
+  category_id?: string | null;
   scope?: RuleScope;
   run_order?: number;
   is_active?: boolean;
@@ -78,6 +80,7 @@ export async function createRule(payload: {
       entity_definition_id: payload.entity_definition_id,
       name: payload.name,
       description: payload.description ?? null,
+      category_id: payload.category_id ?? null,
       trigger_json: payload.trigger_json ?? DEFAULT_TRIGGER,
       action_json: payload.action_json ?? DEFAULT_ACTIONS,
       is_active: payload.is_active ?? true,
@@ -98,6 +101,7 @@ export async function saveRule(
   updates: {
     name?: string;
     description?: string | null;
+    category_id?: string | null;
     scope?: RuleScope;
     target_form_id?: string | null;
     target_process_flow_id?: string | null;

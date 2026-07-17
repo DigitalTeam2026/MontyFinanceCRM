@@ -104,6 +104,10 @@ export interface GraphEdge {
   direction: 'forward' | 'reverse';
   toEntityId: string;        // entity reached by taking this edge
   isRequired: boolean;       // the underlying lookup field is required
+  /** The lookup column is the target's PRIMARY FK (matches `<target>_id`) rather
+   *  than a secondary lookup (e.g. account_id, not qualified_account_id). Path
+   *  discovery prefers canonical edges so cross-filtering follows the main link. */
+  canonical: boolean;
 }
 
 let graphP: Promise<Map<string, GraphEdge[]>> | null = null;
@@ -114,9 +118,20 @@ async function relationshipGraph(): Promise<Map<string, GraphEdge[]>> {
   if (graphP) return graphP;
   graphP = (async () => {
     const ents = await fetchEntitiesCached();
+    const entById = new Map(ents.map((e) => [e.entity_definition_id, e]));
     const adj = new Map<string, GraphEdge[]>();
     const push = (from: string, e: GraphEdge) => {
       const list = adj.get(from); if (list) list.push(e); else adj.set(from, [e]);
+    };
+    // The lookup column is the target's primary FK when it matches the target's
+    // `<name>_id` convention (account_id → account), not a secondary lookup
+    // (qualified_account_id, parent_account, …). Used to prefer the main link.
+    const isCanonicalFk = (col: string | undefined, targetId: string): boolean => {
+      const te = entById.get(targetId);
+      if (!te || !col) return false;
+      const c = col.toLowerCase();
+      return c === `${(te.physical_table_name ?? '').toLowerCase()}_id`
+          || c === `${(te.logical_name ?? '').toLowerCase()}_id`;
     };
     for (const ent of ents) {
       let lookups: FieldDefinition[];
@@ -126,13 +141,14 @@ async function relationshipGraph(): Promise<Map<string, GraphEdge[]>> {
         const target = lf.lookup_entity_id;
         if (!target) continue;
         const required = !!lf.is_required;
+        const canonical = isCanonicalFk(lf.physical_column_name, target);
         // forward: owner → target
         push(ent.entity_definition_id, {
-          lookupFieldId: lf.field_definition_id, direction: 'forward', toEntityId: target, isRequired: required,
+          lookupFieldId: lf.field_definition_id, direction: 'forward', toEntityId: target, isRequired: required, canonical,
         });
         // reverse: target → owner (walk the same lookup backwards)
         push(target, {
-          lookupFieldId: lf.field_definition_id, direction: 'reverse', toEntityId: ent.entity_definition_id, isRequired: required,
+          lookupFieldId: lf.field_definition_id, direction: 'reverse', toEntityId: ent.entity_definition_id, isRequired: required, canonical,
         });
       }
     }
@@ -321,11 +337,18 @@ export async function findEntityPath(
   const graph = await relationshipGraph();
 
   const sig = (steps: RelationshipStep[]) => steps.map((s) => `${s.lookupFieldId}:${s.direction}`).join('>');
+  // Which lookup fields are the PRIMARY FK to their target — used to prefer the
+  // main link (account_id) over secondary ones (qualified_account_id, …) when two
+  // entities are joined by several lookups. Without this the tie-break falls to the
+  // field UUID and can traverse a mostly-empty column, silently returning 0 rows.
+  const canonMap = new Map<string, boolean>();
+  for (const edges of graph.values()) for (const e of edges) if (e.canonical) canonMap.set(e.lookupFieldId, true);
   let best: { steps: RelationshipStep[]; score: number; sig: string } | null = null;
   let visits = 0;
 
   const consider = (steps: RelationshipStep[], leafRequired: boolean) => {
-    const score = scorePath(steps, leafRequired, false);
+    const canonBonus = steps.reduce((b, st) => b + (canonMap.get(st.lookupFieldId) ? 60 : 0), 0);
+    const score = scorePath(steps, leafRequired, false) + canonBonus;
     const s = sig(steps);
     if (!best || score > best.score || (score === best.score && s < best.sig)) best = { steps, score, sig: s };
   };

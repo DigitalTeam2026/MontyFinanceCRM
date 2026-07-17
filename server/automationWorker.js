@@ -1240,12 +1240,14 @@ async function processJob(pool, job, opts = {}) {
     )
   ).rows;
   const done = new Set(doneRows.map((r) => r.action_id));
-  // For a Condition that already ran on a prior attempt, remember which branch it
-  // took so a retry recurses into the SAME branch (rather than re-evaluating with a
-  // possibly-different ctx) to finish any not-yet-done child steps.
+  // For a Condition/Switch that already ran on a prior attempt, remember which
+  // branch it took so a retry recurses into the SAME branch (rather than
+  // re-evaluating with a possibly-different ctx) to finish not-yet-done children.
   const condBranch = new Map();
   for (const d of doneRows) {
-    if (d.action_type === "condition" && d.output && d.output.branch) condBranch.set(d.action_id, d.output.branch);
+    if ((d.action_type === "condition" || d.action_type === "switch") && d.output && d.output.branch) {
+      condBranch.set(d.action_id, d.output.branch);
+    }
   }
 
   const after = job.change_snapshot?.after || {};
@@ -1289,6 +1291,25 @@ async function processJob(pool, job, opts = {}) {
       ctx.afterDisplay = await resolveLogicalRecordDisplay(pool, recEntity.entity_definition_id, recFields, after);
     }
   } catch { /* fall back to raw values in tokenResolver */ }
+
+  // Parent ("regarding") record — follow the note/email's regarding_entity_name +
+  // regarding_record_id to its parent row so {{record.regarding.<field>}} tokens
+  // (and conditions comparing against them) resolve to the parent's data. Non-fatal.
+  try {
+    if (after.regarding_entity_name && after.regarding_record_id) {
+      const pEntity = await getEntity(pool, after.regarding_entity_name);
+      if (pEntity) {
+        const pFields = await getFields(pool, pEntity.entity_definition_id);
+        const pRaw = await readRecordLogical(pool, pEntity, after.regarding_record_id);
+        if (pRaw) {
+          ctx.regarding = {
+            raw: pRaw,
+            display: await resolveLogicalRecordDisplay(pool, pEntity.entity_definition_id, pFields, pRaw),
+          };
+        }
+      }
+    }
+  } catch { /* regarding tokens resolve empty on any miss */ }
 
   // AND-condition gate (authoritative — includes related-record conditions the
   // client deferred). Record the evaluation as a synthetic "Conditions" step so the
@@ -1378,9 +1399,9 @@ async function processJob(pool, job, opts = {}) {
     for (const action of list) {
       const isDone = done.has(action.automation_rule_action_id);
 
-      // A Condition that already completed on a prior attempt: don't re-run it,
-      // but DO recurse into the branch it took so not-yet-done children finish.
-      if (action.action_type === "condition" && isDone) {
+      // A Condition/Switch that already completed on a prior attempt: don't re-run
+      // it, but DO recurse into the branch it took so not-yet-done children finish.
+      if ((action.action_type === "condition" || action.action_type === "switch") && isDone) {
         const branch = condBranch.get(action.automation_rule_action_id);
         if (branch) await runList(childrenOf(action.automation_rule_action_id, branch));
         continue;
@@ -1423,6 +1444,30 @@ async function processJob(pool, job, opts = {}) {
         const gate = evalRunCondition(action.config, ctx);
         const branch = gate.pass ? "yes" : "no";
         await logAction(action, "succeeded", { output: { condition: gate, branch }, started });
+        await runList(childrenOf(action.automation_rule_action_id, branch));
+        continue;
+      }
+
+      // Switch step: resolve `on` to its display value, then run the FIRST case
+      // whose value matches (equals, trimmed/case-insensitive — reusing the same
+      // comparison as Condition), else the 'default' branch. Like Condition, the
+      // switch itself never "fails"; an empty/unmatched branch is a no-op.
+      if (action.action_type === "switch") {
+        const started = new Date();
+        const cfg = action.config || {};
+        const cases = Array.isArray(cfg.cases) ? cfg.cases : [];
+        let branch = "default";
+        let matched = null;
+        for (const c of cases) {
+          if (!c || !c.key) continue;
+          const gate = evalRunCondition({ left: cfg.on, operator: "equals", right: c.value }, ctx);
+          if (gate.pass) { branch = c.key; matched = c; break; }
+        }
+        const onValue = String(resolveValue(cfg.on, ctx) ?? "").trim();
+        await logAction(action, "succeeded", {
+          output: { switch: { on: onValue, matched: matched ? matched.value : null }, branch },
+          started,
+        });
         await runList(childrenOf(action.automation_rule_action_id, branch));
         continue;
       }

@@ -116,7 +116,7 @@ export default function RecentPinsPanel({ userId, onNavigate, refreshKey }: Rece
   if (recent.length === 0 && pinned.length === 0) return null;
 
   return (
-    <div className="pt-1 space-y-0.5" style={{ borderTop: '1px solid #e5e7eb' }}>
+    <div className="pt-1 space-y-0.5" style={{ borderTop: '1px solid var(--border)' }}>
       <Section
         label="Pinned"
         icon={<Star size={10} />}

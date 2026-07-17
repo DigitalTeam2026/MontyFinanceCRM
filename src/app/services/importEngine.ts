@@ -613,6 +613,41 @@ export async function parseExcelFile(file: File): Promise<Record<string, unknown
 }
 
 // ---------------------------------------------------------------------------
+// Unique-constraint introspection (for pre-import duplicate detection)
+// ---------------------------------------------------------------------------
+
+// Returns the column-name sets of each non-primary, non-partial UNIQUE
+// constraint on the table. Degrades to [] if the RPC isn't deployed yet, so
+// imports still work (just without the pre-flight duplicate check).
+export async function getUniqueConstraintColumns(table: string): Promise<string[][]> {
+  try {
+    const { data, error } = await supabase.rpc('get_table_unique_columns', { p_table: table });
+    if (error) return [];
+    const arr = (data as { constraints?: unknown })?.constraints;
+    if (Array.isArray(arr)) {
+      return arr.filter((c): c is string[] => Array.isArray(c) && c.length > 0);
+    }
+  } catch {
+    // RPC missing / not yet applied — skip the pre-check rather than block import.
+  }
+  return [];
+}
+
+// Composite key for a unique constraint's columns. Null if any column is
+// empty (SQL treats NULLs as distinct, so those rows can't collide).
+function uniqueKeyFor(cols: string[], get: (col: string) => unknown): string | null {
+  const parts: string[] = [];
+  for (const c of cols) {
+    const v = get(c);
+    if (v == null || String(v).trim() === '') return null;
+    // Case-sensitive: mirror the DB's text UNIQUE so we don't false-positive
+    // on values the database would actually accept (e.g. "US" vs "us").
+    parts.push(String(v).trim());
+  }
+  return JSON.stringify(parts);
+}
+
+// ---------------------------------------------------------------------------
 // Validation & resolution
 // ---------------------------------------------------------------------------
 
@@ -674,6 +709,42 @@ export async function validateAndResolve(
     const matchCol = importable.find((c) => c.key === matchColumn || c.label === matchColumn);
     if (matchCol) {
       existingRecordMap = await buildExistingRecordMap(entity, matchCol.physicalColumn);
+    }
+  }
+
+  // --- Pre-flight duplicate detection (create mode) ---------------------------
+  // Flag rows in the preview that would hit a UNIQUE constraint — against rows
+  // already in the DB, and against earlier rows in the same file — so the user
+  // sees them before importing instead of as per-row failures afterwards.
+  interface DupCheck { cols: string[]; label: string; existing: Set<string>; seen: Set<string>; }
+  const dupChecks: DupCheck[] = [];
+  if (mode === 'create') {
+    const table = await getEntityTable(entity);
+    const uniqueSets = await getUniqueConstraintColumns(table);
+    // Physical column -> display label, for readable error messages.
+    const physToLabel = new Map<string, string>();
+    for (const c of importable) physToLabel.set(c.physicalColumn, c.label);
+    const importablePhys = new Set(importable.map((c) => c.physicalColumn));
+
+    for (const cols of uniqueSets) {
+      // Only check constraints whose every column is present in the file, so we
+      // actually have a value to compare for each.
+      if (!cols.every((c) => importablePhys.has(c))) continue;
+      const existing = new Set<string>();
+      const { data: existingRows } = await supabase
+        .from(table)
+        .select(cols.join(', '))
+        .limit(100000);
+      for (const r of (existingRows ?? []) as unknown as Record<string, unknown>[]) {
+        const key = uniqueKeyFor(cols, (c) => r[c]);
+        if (key != null) existing.add(key);
+      }
+      dupChecks.push({
+        cols,
+        label: cols.map((c) => physToLabel.get(c) ?? c).join(' + '),
+        existing,
+        seen: new Set<string>(),
+      });
     }
   }
 
@@ -831,6 +902,19 @@ export async function validateAndResolve(
       }
     }
 
+    // Unique-constraint duplicate check (create mode)
+    for (const dc of dupChecks) {
+      const key = uniqueKeyFor(dc.cols, (c) => resolved[c]);
+      if (key == null) continue;
+      if (dc.existing.has(key)) {
+        errors.push({ row: i + 1, column: dc.label, message: `A record with this ${dc.label} already exists` });
+      } else if (dc.seen.has(key)) {
+        errors.push({ row: i + 1, column: dc.label, message: `Duplicate ${dc.label} — this value appears more than once in the file` });
+      } else {
+        dc.seen.add(key);
+      }
+    }
+
     preview.push({
       rowIndex: i + 1,
       data,
@@ -876,6 +960,8 @@ export async function executeImport(
   mode: ImportMode,
   matchColumn: string | null,
   userId: string,
+  // Called after each row is processed so the UI can show "N/total" progress.
+  onProgress?: (processed: number, total: number) => void,
 ): Promise<ImportResult> {
   const validRows = previewRows.filter((r) => r.isValid);
   const result: ImportResult = { created: 0, updated: 0, skipped: 0, failed: 0, errors: [] };
@@ -883,6 +969,32 @@ export async function executeImport(
   if (validRows.length === 0) return result;
 
   const isPkMatch = mode === 'update' && matchColumn === '__pk__';
+
+  // On create, empty ownership columns default to the importing user (and that
+  // user's business unit). Column names are matched physically because these
+  // system/ownership fields are typed as plain lookups, not the "owner" type.
+  const USER_OWNER_COLS = ['owner', 'owner_id', 'ownerid', 'owning_user', 'owninguser'];
+  const BU_LOOKUP_COLS = ['owning_business_unit', 'owningbusinessunit', 'business_unit_id', 'businessunitid'];
+  const BU_TEXT_COLS = ['business_unit', 'businessunit'];
+
+  let userBusinessUnitId: string | null = null;
+  let userBusinessUnitName: string | null = null;
+  if (mode === 'create') {
+    const { data: u } = await supabase
+      .from('crm_user')
+      .select('business_unit_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    userBusinessUnitId = ((u as any)?.business_unit_id as string) ?? null;
+    if (userBusinessUnitId) {
+      const { data: bu } = await supabase
+        .from('business_unit')
+        .select('name')
+        .eq('business_unit_id', userBusinessUnitId)
+        .maybeSingle();
+      userBusinessUnitName = ((bu as any)?.name as string) ?? null;
+    }
+  }
 
   let existingMap: Map<string, string> | null = null;
   if (mode === 'update' && matchColumn && !isPkMatch) {
@@ -894,12 +1006,33 @@ export async function executeImport(
 
   const tableCols = await getTableColumns(await getEntityTable(entity));
 
+  let processed = 0;
   for (const row of validRows) {
     try {
       const payload: Record<string, unknown> = {};
       for (const [physCol, val] of Object.entries(row.resolved)) {
         if (physCol === '__record_id__') continue; // internal sentinel — not a DB column
         payload[physCol] = val;
+      }
+
+      // On create, default any empty ownership column to the importing user
+      // (owner / owning user) or that user's business unit.
+      if (mode === 'create') {
+        const isEmpty = (v: unknown) => v == null || String(v).trim() === '';
+        for (const col of USER_OWNER_COLS) {
+          if (tableCols.has(col) && isEmpty(payload[col])) payload[col] = userId;
+        }
+        if (userBusinessUnitId) {
+          for (const col of BU_LOOKUP_COLS) {
+            if (tableCols.has(col) && isEmpty(payload[col])) payload[col] = userBusinessUnitId;
+          }
+        }
+        const buText = userBusinessUnitName ?? userBusinessUnitId;
+        if (buText) {
+          for (const col of BU_TEXT_COLS) {
+            if (tableCols.has(col) && isEmpty(payload[col])) payload[col] = buText;
+          }
+        }
       }
 
       const filtered = filterToExistingColumns(payload, tableCols);
@@ -936,6 +1069,8 @@ export async function executeImport(
         column: '',
         message: err.message ?? 'Unknown error',
       });
+    } finally {
+      onProgress?.(++processed, validRows.length);
     }
   }
 

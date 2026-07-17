@@ -6,7 +6,11 @@ import type {
 } from '../types/dashboard';
 import { SLICER_DATE_RANGES } from '../types/dashboard';
 import { runAggregate } from '../services/queryEngine';
-import { computeDateRange, buildDateFilters, toDateInput, fromDateInput, type DateBounds } from './dateRanges';
+import {
+  computeDateRange, buildDateFilters, toDateInput, fromDateInput,
+  dayRange, weekRange, monthRange, yearRange,
+  toMonthInput, fromMonthInput, toWeekInput, fromWeekInput, type DateBounds,
+} from './dateRanges';
 import { resolveDateBoundsSource, activeMappingsFor } from './semanticRuntime';
 import { fetchEntitiesCached, fetchFieldsCached } from '../services/relationshipService';
 import { isAuthError } from '../../../lib/supabase';
@@ -78,6 +82,10 @@ export default function DateSlicerVisual({ visual, theme, live = true, definitio
   // timeline_card: the currently selected preset (for pill highlight + active chip
   // label) and the runtime entity narrowing (null = all mapped entities).
   const [activePreset, setActivePreset] = useState<SlicerDateRange | null>(null);
+  // 'granular' style: which unit the specific-date picker resolves (Day/Week/Month/Year).
+  const [gran, setGran] = useState<'day' | 'week' | 'month' | 'year'>(
+    (['day', 'week', 'month', 'year'] as const).includes(ds.granularity as 'day') ? (ds.granularity as 'day') : 'month',
+  );
   const [selectedEntityIds, setSelectedEntityIds] = useState<string[] | null>(null);
   const [mappingInfo, setMappingInfo] = useState<MappingInfo[]>([]);
   const reqId = useRef(0);
@@ -397,6 +405,89 @@ export default function DateSlicerVisual({ visual, theme, live = true, definitio
               return <Chip key={id} label={`${m.entityName}.${m.fieldLabel}`} onClear={() => removeEntity(id)} accent={accent} theme={theme} icon={renderNavIcon(m.icon, 11)} />;
             })}
           </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── granular: Day / Week / Month / Year tabs + a picker for the specific unit ──
+  if (style === 'granular') {
+    const setRange = (b: DateBounds) => { touched.current = true; setActivePreset(null); setStart(b.start); setEnd(b.end); };
+    // Switching unit snaps the range to that unit around the current selection.
+    const pickGran = (g: 'day' | 'week' | 'month' | 'year') => {
+      setGran(g);
+      const d = start ?? new Date();
+      setRange(
+        g === 'day' ? dayRange(d)
+          : g === 'week' ? weekRange(d)
+            : g === 'month' ? monthRange(d.getFullYear(), d.getMonth())
+              : yearRange(d.getFullYear()),
+      );
+    };
+    const cy = new Date().getFullYear();
+    const loY = bounds.min ? bounds.min.getFullYear() : cy - 5;
+    const hiY = Math.max(bounds.max ? bounds.max.getFullYear() : cy, cy);
+    const years: number[] = [];
+    for (let y = hiY; y >= loY; y--) years.push(y);
+    const inputStyle = { borderColor: theme.borderColor, color: theme.primaryText, background: theme.surfaceBackground };
+    const GRANS = [
+      { k: 'day', label: 'Day' }, { k: 'week', label: 'Week' },
+      { k: 'month', label: 'Month' }, { k: 'year', label: 'Year' },
+    ] as const;
+
+    return (
+      <div className={`h-full w-full overflow-auto ${compact ? 'p-1.5' : 'p-2.5'} flex flex-wrap items-center gap-2`}
+        style={{ color: theme.primaryText }}>
+        <div className="inline-flex rounded-lg border overflow-hidden" style={{ borderColor: theme.borderColor }}>
+          {GRANS.map((g, i) => {
+            const on = g.k === gran;
+            return (
+              <button key={g.k} onClick={() => pickGran(g.k)}
+                className="px-3 py-1.5 text-[12px] font-medium transition-colors"
+                style={{ background: on ? activeBg : 'transparent', color: on ? activeText : presetText, borderLeft: i ? `1px solid ${theme.borderColor}` : undefined }}>
+                {g.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {gran === 'day' && (
+          <input type="date" value={toDateInput(start)}
+            onChange={(e) => { const d = fromDateInput(e.target.value); if (d) setRange(dayRange(d)); }}
+            className="px-2.5 py-1.5 text-[12px] rounded-lg border" style={inputStyle} />
+        )}
+        {gran === 'week' && (
+          <input type="week" value={toWeekInput(start)}
+            onChange={(e) => { const d = fromWeekInput(e.target.value); if (d) setRange(weekRange(d)); }}
+            className="px-2.5 py-1.5 text-[12px] rounded-lg border" style={inputStyle} />
+        )}
+        {gran === 'month' && (
+          <input type="month" value={toMonthInput(start)}
+            onChange={(e) => { const p = fromMonthInput(e.target.value); if (p) setRange(monthRange(p.year, p.month0)); }}
+            className="px-2.5 py-1.5 text-[12px] rounded-lg border" style={inputStyle} />
+        )}
+        {gran === 'year' && (
+          <FilterSelect value={String((start ?? new Date()).getFullYear())}
+            onChange={(e) => setRange(yearRange(Number(e.target.value)))}
+            className="px-2.5 py-1.5 text-[12px] rounded-lg border" style={inputStyle}>
+            {years.map((y) => <option key={y} value={y}>{y}</option>)}
+          </FilterSelect>
+        )}
+
+        {(start || end) && (
+          <span className="text-[11px]" style={{ color: theme.secondaryText }}>
+            {toDateInput(start) || '…'} – {toDateInput(end) || '…'}
+          </span>
+        )}
+        {!autoApply && pending && (
+          <button onClick={applyPending} className="px-3 py-1.5 rounded-lg text-[11px] font-semibold"
+            style={{ background: activeBg, color: activeText }}>Apply</button>
+        )}
+        {ds.showClearButton !== false && (
+          <button onClick={clear} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] border"
+            style={{ borderColor: theme.borderColor, color: theme.secondaryText }}>
+            <X size={12} /> Clear
+          </button>
         )}
       </div>
     );

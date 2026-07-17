@@ -1,5 +1,4 @@
 import { supabase } from '../lib/supabase';
-import { sendRaw } from '../lib/api';
 import type {
   AutomationRule,
   AutomationRuleAction,
@@ -274,6 +273,69 @@ export async function moveAction(
   );
 }
 
+/**
+ * Duplicate one action in place — the copy lands immediately AFTER the original in
+ * the same group (top level or a Condition branch). For a Condition, its entire
+ * branch subtree is deep-copied too (fresh ids, parent links remapped, like
+ * `cloneRule`). Preserves config, label (root gets " (copy)"), run_after and
+ * run_condition. Returns the new root action's id.
+ */
+export async function duplicateAction(ruleId: string, actionId: string): Promise<string | null> {
+  const actions = await fetchActions(ruleId);
+  const byId = new Map(actions.map((a) => [a.automation_rule_action_id, a]));
+  const src = byId.get(actionId);
+  if (!src) return null;
+
+  // Collect the source + all descendants (pre-order) so parent links can be remapped.
+  const subtree: AutomationRuleAction[] = [];
+  const collect = (id: string) => {
+    const node = byId.get(id);
+    if (!node) return;
+    subtree.push(node);
+    for (const a of actions) if ((a.parent_action_id ?? null) === id) collect(a.automation_rule_action_id);
+  };
+  collect(actionId);
+
+  // Pass 1: create every clone (flat) and map old id -> new id.
+  const idMap = new Map<string, string>();
+  for (const a of subtree) {
+    const created = await createAction(ruleId, a.action_type, a.config, a.sort_order);
+    idMap.set(a.automation_rule_action_id, created.automation_rule_action_id);
+  }
+  // Pass 2: restore metadata and re-link parents to the CLONE's ids. The root clone
+  // is placed into the source's own group/branch; descendants under their new parent.
+  for (const a of subtree) {
+    const newId = idMap.get(a.automation_rule_action_id);
+    if (!newId) continue;
+    const updates: Parameters<typeof updateAction>[1] = {};
+    if (a.run_after && a.run_after !== 'success') updates.run_after = a.run_after;
+    if (a.run_condition) updates.run_condition = a.run_condition;
+    if (a.automation_rule_action_id === actionId) {
+      updates.label = src.label ? `${src.label} (copy)` : null;
+      updates.parent_action_id = src.parent_action_id ?? null;
+      updates.branch = src.branch ?? null;
+    } else {
+      if (a.label) updates.label = a.label;
+      if (a.parent_action_id) {
+        updates.parent_action_id = idMap.get(a.parent_action_id) ?? null;
+        updates.branch = a.branch ?? null;
+      }
+    }
+    if (Object.keys(updates).length) await updateAction(newId, updates);
+  }
+
+  // Slot the root clone right after the source in its group, then renumber.
+  const rootCloneId = idMap.get(actionId)!;
+  const group = actions
+    .filter((a) => (a.parent_action_id ?? null) === (src.parent_action_id ?? null) && (a.branch ?? null) === (src.branch ?? null))
+    .sort((x, y) => x.sort_order - y.sort_order)
+    .map((a) => a.automation_rule_action_id);
+  const at = group.indexOf(actionId);
+  const finalOrder = [...group.slice(0, at + 1), rootCloneId, ...group.slice(at + 1)];
+  await moveAction(rootCloneId, { parent_action_id: src.parent_action_id ?? null, branch: src.branch ?? null }, finalOrder);
+  return rootCloneId;
+}
+
 export async function deleteAction(actionId: string): Promise<void> {
   const { error } = await supabase
     .from('automation_rule_action')
@@ -346,25 +408,6 @@ export interface AiFlowSpec {
     run_after: AutomationRunAfter;
     config: AutomationActionConfig;
   }>;
-}
-
-export interface AiFlowResult { spec: AiFlowSpec; warnings: string[]; table_logical_name: string }
-
-/**
- * Ask the server's AI builder to draft a flow from a plain-language prompt.
- * Pass an empty tableLogicalName to let the AI infer the table from the prompt;
- * the picked table comes back on `result.table_logical_name`.
- */
-export async function aiBuildFlow(tableLogicalName: string, prompt: string): Promise<AiFlowResult> {
-  const { ok, status, body } = await sendRaw<AiFlowResult>('/api/automation/ai-build', {
-    method: 'POST',
-    body: JSON.stringify({ table_logical_name: tableLogicalName || null, prompt }),
-  });
-  if (!ok) {
-    const msg = (body as { error?: { message?: string } })?.error?.message ?? `AI build failed (${status})`;
-    throw new Error(msg);
-  }
-  return body as AiFlowResult;
 }
 
 /**

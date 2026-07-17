@@ -272,6 +272,7 @@ export default function PropertiesPanel({ visual, entities, theme, siblings, def
             )}
 
             <FilterEditor visual={visual} fields={fields} onChange={setQuery} ops={OPS} entityName={q.entity} />
+            <RelationshipFilterEditor visual={visual} baseFields={fields} entities={entities} onChange={setQuery} />
           </>
         )}
 
@@ -413,6 +414,126 @@ function FilterEditor({ visual, fields, onChange, ops, entityName }: {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── Relationship filters (query_config.relatedFilters) ───────────────────────
+// Surfaces the reverse/forward relationship scoping that the plain "Filters"
+// section can't express — e.g. "keep only Accounts a Lead references". Each row
+// is one relatedFilter: a single hop (direction + related entity + link column)
+// plus a condition on the related entity (defaults to "has any", i.e. the link
+// column is not empty). Edits round-trip through query_config so nothing is lost.
+function RelationshipFilterEditor({ visual, baseFields, entities, onChange }: {
+  visual: DashboardVisual; baseFields: FieldDefinition[]; entities: EntityDefinition[];
+  onChange: (patch: Partial<DashboardVisual['query_config']>) => void;
+}) {
+  const rels = visual.query_config.relatedFilters ?? [];
+  const baseEntity = entities.find((e) => e.logical_name === visual.query_config.entity || e.physical_table_name === visual.query_config.entity);
+  const baseLabel = baseEntity?.display_name ?? visual.query_config.entity ?? 'records';
+
+  const replace = (i: number, rf: (typeof rels)[number]) => {
+    const n = [...rels]; n[i] = rf; onChange({ relatedFilters: n });
+  };
+  const add = () => {
+    const other = entities.find((e) => e.logical_name !== visual.query_config.entity);
+    onChange({ relatedFilters: [...rels, { path: [{ entity: other?.logical_name ?? '', fk: '', direction: 'reverse' }], field: '', op: 'is_not_empty' }] });
+  };
+  const remove = (i: number) => onChange({ relatedFilters: rels.filter((_, j) => j !== i) });
+
+  return (
+    <div className="border-t border-slate-700/60 pt-2">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-slate-400 text-[11px] font-medium" title="Keep only records that relate to another entity (e.g. only Accounts a Lead references).">
+          Relationship filters
+        </span>
+        <button onClick={add} className="text-blue-400 hover:text-blue-300"><Plus size={13} /></button>
+      </div>
+      {!rels.length && (
+        <p className="text-[10px] text-slate-500 leading-snug">
+          None. Add one to keep only {baseLabel} that relate to another entity — e.g. only {baseLabel} a Lead references.
+        </p>
+      )}
+      <div className="space-y-2">
+        {rels.map((rf, i) => (
+          <RelationshipFilterRow key={i} rf={rf} baseLabel={baseLabel} baseFields={baseFields} entities={entities}
+            onReplace={(next) => replace(i, next)} onRemove={() => remove(i)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RelationshipFilterRow({ rf, baseLabel, baseFields, entities, onReplace, onRemove }: {
+  rf: NonNullable<DashboardVisual['query_config']['relatedFilters']>[number];
+  baseLabel: string; baseFields: FieldDefinition[]; entities: EntityDefinition[];
+  onReplace: (rf: NonNullable<DashboardVisual['query_config']['relatedFilters']>[number]) => void;
+  onRemove: () => void;
+}) {
+  const hop = rf.path?.[0] ?? { entity: '', fk: '', direction: 'forward' as const };
+  const dir = hop.direction ?? 'forward';
+  const target = entities.find((e) => e.logical_name === hop.entity || e.physical_table_name === hop.entity);
+  const [tFields, setTFields] = useState<FieldDefinition[]>([]);
+
+  useEffect(() => {
+    if (!target) { setTFields([]); return; }
+    let cancelled = false;
+    loadEntityColumns(target.entity_definition_id)
+      .then((r) => { if (!cancelled) setTFields(r.fields); })
+      .catch(() => { if (!cancelled) setTFields([]); });
+    return () => { cancelled = true; };
+  }, [target?.entity_definition_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The link (FK) column lives on the CHILD for reverse, on the BASE for forward.
+  const fkFields = dir === 'reverse' ? tFields : baseFields;
+  const targetLabel = target?.display_name ?? hop.entity ?? '—';
+  const setHop = (patch: Partial<typeof hop>) => onReplace({ ...rf, path: [{ ...hop, ...patch }] });
+  // Choosing the link column also seeds the condition to "has any" (link not empty)
+  // whenever the condition was still tracking the old link column.
+  const setFk = (v: string) => onReplace({
+    ...rf, path: [{ ...hop, fk: v }],
+    field: (!rf.field || rf.field === hop.fk) ? v : rf.field,
+  });
+  const smallCls = 'px-1 py-1 text-[11px] rounded border border-slate-700 bg-slate-900 text-slate-200';
+  const needsValue = !['is_empty', 'is_not_empty'].includes(rf.op);
+
+  return (
+    <div className="rounded border border-slate-700 p-1.5 space-y-1 bg-slate-900/40">
+      <div className="flex items-center gap-1">
+        <FilterSelect value={dir} onChange={(e) => setHop({ direction: e.target.value as 'forward' | 'reverse' })} className={`w-24 ${smallCls}`}>
+          <option value="reverse">Has related</option>
+          <option value="forward">Belongs to</option>
+        </FilterSelect>
+        <FilterSelect value={hop.entity} onChange={(e) => onReplace({ ...rf, path: [{ ...hop, entity: e.target.value, fk: '' }], field: '' })} className={inputCls}>
+          <option value="">entity…</option>
+          {entities.map((en) => <option key={en.entity_definition_id} value={en.logical_name}>{en.display_name}</option>)}
+        </FilterSelect>
+        <button onClick={onRemove} className="text-slate-500 hover:text-red-400"><Trash2 size={12} /></button>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] text-slate-500 w-8 shrink-0">via</span>
+        <FilterSelect value={hop.fk} onChange={(e) => setFk(e.target.value)} className={inputCls}>
+          <option value="">link field…</option>
+          {fkFields.map((fd) => <option key={fd.field_definition_id} value={fd.physical_column_name}>{fd.display_name}</option>)}
+        </FilterSelect>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] text-slate-500 w-8 shrink-0">where</span>
+        <FilterSelect value={rf.field} onChange={(e) => onReplace({ ...rf, field: e.target.value })} className={inputCls}>
+          <option value="">field…</option>
+          {tFields.map((fd) => <option key={fd.field_definition_id} value={fd.physical_column_name}>{fd.display_name}</option>)}
+        </FilterSelect>
+        <FilterSelect value={rf.op} onChange={(e) => onReplace({ ...rf, op: e.target.value as FilterOp })} className={`w-20 ${smallCls}`}>
+          {OPS.map((op) => <option key={op} value={op}>{op}</option>)}
+        </FilterSelect>
+        {needsValue && (
+          <input value={String(rf.value ?? '')} onChange={(e) => onReplace({ ...rf, value: e.target.value })} className={`w-20 ${smallCls}`} />
+        )}
+      </div>
+      <p className="text-[10px] text-slate-500 leading-snug">
+        Keep only {baseLabel} that {dir === 'reverse' ? 'have a related' : 'belong to a'} {targetLabel}
+        {hop.fk ? ` (via ${hop.fk})` : ''}.
+      </p>
     </div>
   );
 }

@@ -555,17 +555,20 @@ function PropertiesPanel({
           <PropRow label="Value Type">
             <ToggleButtons
               options={[
-                { value: 'static',       label: 'Static Value' },
-                { value: 'field',        label: 'Field(s)' },
-                { value: 'current_user', label: 'Current User' },
+                { value: 'static',           label: 'Static Value' },
+                { value: 'field',            label: 'Field(s)' },
+                { value: 'current_user',     label: 'Current User' },
+                { value: 'current_datetime', label: 'Now (Date/Time)' },
               ]}
               value={action.value_type ?? 'static'}
-              onChange={(v) => onChange({ ...action, value_type: v as 'static' | 'field' | 'current_user', value: '', value_field: undefined, value_fields: [] })}
+              onChange={(v) => onChange({ ...action, value_type: v as 'static' | 'field' | 'current_user' | 'current_datetime', value: '', value_field: undefined, value_fields: [] })}
               activeClass="bg-blue-600 text-white"
             />
           </PropRow>
           {action.value_type === 'current_user' ? (
             <CurrentUserHint />
+          ) : action.value_type === 'current_datetime' ? (
+            <CurrentDateTimeHint />
           ) : action.value_type !== 'field' ? (
             <PropRow label="Value">
               <FieldValueInput
@@ -593,17 +596,20 @@ function PropertiesPanel({
           <PropRow label="Value Type">
             <ToggleButtons
               options={[
-                { value: 'static',       label: 'Static Value' },
-                { value: 'field',        label: 'Field(s)' },
-                { value: 'current_user', label: 'Current User' },
+                { value: 'static',           label: 'Static Value' },
+                { value: 'field',            label: 'Field(s)' },
+                { value: 'current_user',     label: 'Current User' },
+                { value: 'current_datetime', label: 'Now (Date/Time)' },
               ]}
               value={action.value_type ?? 'static'}
-              onChange={(v) => onChange({ ...action, value_type: v as 'static' | 'field' | 'current_user', value: '', value_field: undefined, value_fields: [] })}
+              onChange={(v) => onChange({ ...action, value_type: v as 'static' | 'field' | 'current_user' | 'current_datetime', value: '', value_field: undefined, value_fields: [] })}
               activeClass="bg-blue-600 text-white"
             />
           </PropRow>
           {action.value_type === 'current_user' ? (
             <CurrentUserHint />
+          ) : action.value_type === 'current_datetime' ? (
+            <CurrentDateTimeHint />
           ) : action.value_type !== 'field' ? (
             <PropRow label="Value">
               <FieldValueInput
@@ -1227,6 +1233,22 @@ function CurrentUserHint() {
         The field will be set to the <span className="font-semibold">logged-in user</span> when this
         action runs — their name for a text field, or their record for a User lookup field. Use it on an
         “Approved By” field to capture who made the change.
+      </p>
+    </div>
+  );
+}
+
+// Shown when an action's value is "Now (Date/Time)": no value to configure — the
+// engine stamps the field with the current moment at runtime. A Date field gets
+// the date only; a Date/Time field gets the full timestamp (date + time-of-day).
+function CurrentDateTimeHint() {
+  return (
+    <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2.5">
+      <p className="text-[11px] text-blue-700">
+        The field will be set to the <span className="font-semibold">current date &amp; time</span> when
+        this action runs. A <span className="font-semibold">Date/Time</span> field captures the full
+        timestamp; a plain <span className="font-semibold">Date</span> field captures today’s date only.
+        Use it on an “Approved On” field to record when the change happened.
       </p>
     </div>
   );

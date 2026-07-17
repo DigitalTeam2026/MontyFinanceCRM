@@ -49,6 +49,15 @@ interface ConditionValueInputProps {
   placeholder?: string;
   /** `inline` = borderless (rule builder rows); `boxed` = bordered (panels). */
   variant?: ConditionValueVariant;
+  /**
+   * What the dropdowns store on change:
+   *  - 'value' (default): the stored code / id (choice value, lookup id, true/false).
+   *  - 'label': the human display text (choice/lookup label, "Yes"/"No"). Used by
+   *    the Switch step, which matches cases against the resolved DISPLAY value.
+   * Only affects option-backed editors; plain text/number/date always emit the
+   * literal value. Default keeps every existing caller unchanged.
+   */
+  emit?: 'value' | 'label';
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -82,6 +91,7 @@ export default function ConditionValueInput({
   disabled,
   placeholder = 'Value…',
   variant = 'inline',
+  emit = 'value',
 }: ConditionValueInputProps) {
   const typeName = fieldTypeName ?? field?.field_type?.name ?? 'text';
   const cfg = field?.config_json as Record<string, unknown> | null;
@@ -90,6 +100,9 @@ export default function ConditionValueInput({
   const isChoice = typeName === 'choice' || typeName === 'multi_choice' || typeName === 'optionset';
   const isLookup = typeName === 'lookup';
   const isBool = typeName === 'boolean';
+  // In 'label' mode the option-backed editors store the display text, not the code.
+  const boolTrue = emit === 'label' ? 'Yes' : 'true';
+  const boolFalse = emit === 'label' ? 'No' : 'false';
 
   const inlineChoices: Option[] = Array.isArray(cfg?.choices) ? (cfg!.choices as Option[]) : [];
   const optionSetName = (cfg?.option_set_name as string | undefined) ?? undefined;
@@ -99,8 +112,8 @@ export default function ConditionValueInput({
   // condition left untouched was saved with value = null while visibly reading
   // "Yes". Commit the displayed default to state so what's shown is what's saved.
   useEffect(() => {
-    if (isBool && value !== 'true' && value !== 'false') onChange('true');
-  }, [isBool, value]);
+    if (isBool && value !== boolTrue && value !== boolFalse) onChange(boolTrue);
+  }, [isBool, value, boolTrue, boolFalse]);
 
   const [statecodeOptions, setStatecodeOptions] = useState<Option[]>([]);
   const [statusreasonOptions, setStatusreasonOptions] = useState<Option[]>([]);
@@ -226,9 +239,9 @@ export default function ConditionValueInput({
   if (isBool) {
     return (
       <div className={wrap}>
-        <FilterSelect value={value || 'true'} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={selectCls}>
-          <option value="true">Yes</option>
-          <option value="false">No</option>
+        <FilterSelect value={value || boolTrue} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={selectCls}>
+          <option value={boolTrue}>Yes</option>
+          <option value={boolFalse}>No</option>
         </FilterSelect>
       </div>
     );
@@ -236,19 +249,19 @@ export default function ConditionValueInput({
 
   if (isStatecodeField && statecodeOptions.length > 0) {
     return (
-      <SelectFromOptions wrap={wrap} cls={selectCls} value={value} onChange={onChange} disabled={disabled} options={statecodeOptions} />
+      <SelectFromOptions wrap={wrap} cls={selectCls} value={value} onChange={onChange} disabled={disabled} options={statecodeOptions} emit={emit} />
     );
   }
 
   if (isStatusreasonField && statusreasonOptions.length > 0) {
     return (
-      <SelectFromOptions wrap={wrap} cls={selectCls} value={value} onChange={onChange} disabled={disabled} options={statusreasonOptions} />
+      <SelectFromOptions wrap={wrap} cls={selectCls} value={value} onChange={onChange} disabled={disabled} options={statusreasonOptions} emit={emit} />
     );
   }
 
   if (isChoice && choices.length > 0) {
     return (
-      <SelectFromOptions wrap={wrap} cls={selectCls} value={value} onChange={onChange} disabled={disabled} options={choices} />
+      <SelectFromOptions wrap={wrap} cls={selectCls} value={value} onChange={onChange} disabled={disabled} options={choices} emit={emit} />
     );
   }
 
@@ -262,7 +275,7 @@ export default function ConditionValueInput({
     }
     if (lookupOptions.length > 0) {
       return (
-        <SelectFromOptions wrap={wrap} cls={selectCls} value={value} onChange={onChange} disabled={disabled} options={lookupOptions} />
+        <SelectFromOptions wrap={wrap} cls={selectCls} value={value} onChange={onChange} disabled={disabled} options={lookupOptions} emit={emit} />
       );
     }
     // No options loaded — preserve any existing UUID value so saved rules don't lose it.
@@ -302,6 +315,7 @@ function SelectFromOptions({
   onChange,
   disabled,
   options,
+  emit = 'value',
 }: {
   wrap: string;
   cls: string;
@@ -309,13 +323,16 @@ function SelectFromOptions({
   onChange: (v: string) => void;
   disabled?: boolean;
   options: Option[];
+  emit?: 'value' | 'label';
 }) {
+  // In 'label' mode the <option>'s value IS the label, so the stored string is the
+  // display text (what the Switch step compares its `on` value against).
   return (
     <div className={wrap}>
       <FilterSelect value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className={cls}>
         <option value="">— Select —</option>
         {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
+          <option key={o.value} value={emit === 'label' ? o.label : o.value}>{o.label}</option>
         ))}
       </FilterSelect>
     </div>

@@ -26,10 +26,14 @@ export type AutomationOperator =
 export type AutomationActionType =
   | 'send_email' | 'update_field' | 'generate_document' | 'list_rows' | 'get_row'
   | 'export_view_email' | 'related_export_email'
-  | 'create_related_record' | 'update_related_record' | 'condition';
+  | 'create_related_record' | 'update_related_record' | 'condition' | 'switch';
 
-/** Which branch of a Condition step an action lives in (null = top level). */
-export type AutomationBranch = 'yes' | 'no';
+/**
+ * Which branch of a control-flow step an action lives in (null = top level).
+ * A Condition uses 'yes'/'no'; a Switch uses one of its case keys or 'default'.
+ * Any non-empty string is valid — the union members are just the well-known ones.
+ */
+export type AutomationBranch = 'yes' | 'no' | 'default' | (string & {});
 
 /** Extra AND-group filter evaluated against the post-save record. */
 export interface AutomationCondition {
@@ -251,6 +255,7 @@ export type AutomationActionConfig =
   | CreateRelatedRecordConfig
   | UpdateRelatedRecordConfig
   | ConditionConfig
+  | SwitchConfig
   | Record<string, unknown>;
 
 /** When an action runs relative to the actions before it ("Configure run after"). */
@@ -275,6 +280,26 @@ export interface AutomationActionRunCondition {
  * runs the child actions in its 'yes' branch (comparison passed) or 'no' branch.
  */
 export type ConditionConfig = AutomationActionRunCondition;
+
+/** One case of a Switch step. `key` is the stable branch id its child steps hang
+ *  off (parent branch); `value` is the text compared (equals) against the resolved
+ *  `on` value. Matching is on the DISPLAY value (label), so `value` holds the label
+ *  a user picks (e.g. "Approve"), not the stored code. */
+export interface SwitchCase {
+  key: string;
+  value: string;
+}
+
+/**
+ * Config for a `switch` step. The worker resolves `on` (a token template) to its
+ * display value and runs the first case whose `value` equals it (trimmed,
+ * case-insensitive); if none match, the 'default' branch runs. Child steps live in
+ * branch = <case.key> or 'default'.
+ */
+export interface SwitchConfig {
+  on: string;
+  cases: SwitchCase[];
+}
 
 export interface AutomationRuleAction {
   automation_rule_action_id: string;

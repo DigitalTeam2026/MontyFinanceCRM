@@ -397,7 +397,7 @@ export default function BusinessUnitHierarchyModal({ onClose }: Props) {
 
             {panelMode === 'detail' && !selected && (
               <div className="flex flex-col items-center justify-center h-full text-center gap-2">
-                <Building2 size={36} className="text-slate-150" strokeWidth={1} style={{ color: '#e2e8f0' }} />
+                <Building2 size={36} className="text-slate-150" strokeWidth={1} style={{ color: 'var(--border)' }} />
                 <p className="text-xs text-slate-400">Select a business unit to view details</p>
                 <p className="text-[10px] text-slate-300">or click "New Business Unit" to add one</p>
               </div>

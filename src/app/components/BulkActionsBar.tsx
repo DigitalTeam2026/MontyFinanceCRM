@@ -1198,7 +1198,7 @@ export default function BulkActionsBar({
         )}
 
         {/* Divider G1 → G2 */}
-        {hasGroup1 && hasGroup2 && <div className="w-px h-[16px] mx-1.5 shrink-0" style={{ background: '#d9e4ff' }} />}
+        {hasGroup1 && hasGroup2 && <div className="w-px h-[16px] mx-1.5 shrink-0" style={{ background: 'var(--border)' }} />}
 
         {/* Group 2: Assign / Edit / Export / Share */}
         {canWrite && canAssign && (
@@ -1243,7 +1243,7 @@ export default function BulkActionsBar({
         )}
 
         {/* Divider G2 → G3 */}
-        {(hasGroup1 || hasGroup2) && hasGroup3 && <div className="w-px h-[16px] mx-1.5 shrink-0" style={{ background: '#d9e4ff' }} />}
+        {(hasGroup1 || hasGroup2) && hasGroup3 && <div className="w-px h-[16px] mx-1.5 shrink-0" style={{ background: 'var(--border)' }} />}
 
         {/* Group 3: Delete */}
         {canDelete && (

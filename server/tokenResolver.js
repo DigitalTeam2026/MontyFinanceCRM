@@ -68,6 +68,24 @@ function resolveExpr(expr, ctx, html) {
   if (expr === "record.regarding.url") return esc(ctx.regardingUrl);
   if (expr === "count") return esc(ctx.count);
 
+  // Parent ("regarding") record fields for polymorphic timeline rows (note/email):
+  //   {{record.regarding.<field>}}      -> label-resolved value of the parent's field
+  //   {{record.regarding.raw.<field>}}  -> stored id/code (for matching/lookups)
+  // Backed by ctx.regarding = { raw, display } which the worker pre-fetches by
+  // following regarding_entity_name + regarding_record_id. (`.url` handled above.)
+  if (expr.startsWith("record.regarding.")) {
+    const rest = expr.slice("record.regarding.".length);
+    const reg = ctx.regarding || {};
+    if (rest.startsWith("raw.")) {
+      const f = rest.slice(4);
+      return esc(reg.raw ? reg.raw[f] : undefined);
+    }
+    const display = reg.display && Object.prototype.hasOwnProperty.call(reg.display, rest)
+      ? reg.display[rest]
+      : (reg.raw ? reg.raw[rest] : undefined);
+    return esc(display);
+  }
+
   // Scheduled view export ({{export.count}} rows, {{export.view}} name).
   if (expr === "export.count") return esc(ctx.export ? ctx.export.count : "");
   if (expr === "export.view") return esc(ctx.export ? ctx.export.view : "");

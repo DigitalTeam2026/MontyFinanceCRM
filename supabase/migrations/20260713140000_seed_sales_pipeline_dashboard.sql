@@ -76,7 +76,7 @@ BEGIN
   ('5a1e0000-0000-4000-a000-000000000001', v_page, v_dash, 'timeline', 'Date range',
    0, 0, 24, 4, 6, 3, 0, true, false,
    $j${"entity":"lead"}$j$::jsonb,
-   $j${"dateSlicer":{"dateField":"created_at","filterMode":"between","defaultRange":"this_year","granularity":"week","applyTo":"dashboard","filterScope":"dashboard","style":"button_presets","orientation":"horizontal","showClearButton":true,"showTodayButton":true,"showPresetRanges":true,"autoApply":true,"activePresetColor":"#eef1fe","activePresetTextColor":"#4f6df5","selectedRangeColor":"#4f6df5"}}$j$::jsonb,
+   $j${"dateSlicer":{"dateField":"created_at","filterMode":"between","defaultRange":"this_year","granularity":"year","applyTo":"dashboard","filterScope":"dashboard","style":"granular","orientation":"horizontal","showClearButton":true,"showTodayButton":true,"showPresetRanges":true,"autoApply":true,"activePresetColor":"#eef1fe","activePresetTextColor":"#4f6df5","selectedRangeColor":"#4f6df5"}}$j$::jsonb,
    $j${"showHeader":false,"background":"#ffffff","borderColor":"#e9eaf0","borderRadius":16,"fontFamily":"'IBM Plex Sans', sans-serif"}$j$::jsonb,
    '{}'::jsonb, '{}'::jsonb),
 
@@ -98,7 +98,7 @@ BEGIN
 
   ('5a1e0000-0000-4000-a000-000000000011', v_page, v_dash, 'kpi', 'Accounts',
    5, 13, 5, 5, 3, 4, 0, true, false,
-   $j${"entity":"account"}$j$::jsonb,
+   $j${"entity":"account","relatedFilters":[{"path":[{"entity":"lead","fk":"account_id","direction":"reverse"}],"field":"account_id","op":"is_not_empty"}]}$j$::jsonb,
    $j${"kpiMode":"simple","mainAgg":"count","kpiLayout":"compact"}$j$::jsonb,
    $j${"showHeader":true,"numberFormat":"number","accentColor":"#8b5cf6","background":"#ffffff","borderColor":"#e9eaf0","borderRadius":14,"titleColor":"#8a8fa3","valueColor":"#171a29","fontFamily":"'Space Grotesk', 'IBM Plex Sans', sans-serif"}$j$::jsonb,
    '{}'::jsonb, '{}'::jsonb),
@@ -106,14 +106,14 @@ BEGIN
   ('5a1e0000-0000-4000-a000-000000000012', v_page, v_dash, 'kpi', 'Sources',
    10, 13, 5, 5, 3, 4, 0, true, false,
    $j${"entity":"lead"}$j$::jsonb,
-   $j${"kpiMode":"simple","mainAgg":"count_distinct","mainField":"lead_source","kpiLayout":"compact"}$j$::jsonb,
+   $j${"kpiMode":"simple","mainAgg":"count_distinct","mainField":"leadsource","kpiLayout":"compact"}$j$::jsonb,
    $j${"showHeader":true,"numberFormat":"number","accentColor":"#12b3a6","background":"#ffffff","borderColor":"#e9eaf0","borderRadius":14,"titleColor":"#8a8fa3","valueColor":"#171a29","fontFamily":"'Space Grotesk', 'IBM Plex Sans', sans-serif"}$j$::jsonb,
    '{}'::jsonb, '{}'::jsonb),
 
   ('5a1e0000-0000-4000-a000-000000000013', v_page, v_dash, 'kpi', 'Industries',
    15, 13, 5, 5, 3, 4, 0, true, false,
-   $j${"entity":"account"}$j$::jsonb,
-   $j${"kpiMode":"simple","mainAgg":"count_distinct","mainField":"industry","kpiLayout":"compact"}$j$::jsonb,
+   $j${"entity":"account","relatedFilters":[{"path":[{"entity":"lead","fk":"account_id","direction":"reverse"}],"field":"account_id","op":"is_not_empty"}]}$j$::jsonb,
+   $j${"kpiMode":"simple","mainAgg":"count_distinct","mainField":"industry_id","kpiLayout":"compact"}$j$::jsonb,
    $j${"showHeader":true,"numberFormat":"number","accentColor":"#e08a2b","background":"#ffffff","borderColor":"#e9eaf0","borderRadius":14,"titleColor":"#8a8fa3","valueColor":"#171a29","fontFamily":"'Space Grotesk', 'IBM Plex Sans', sans-serif"}$j$::jsonb,
    '{}'::jsonb, '{}'::jsonb),
 
@@ -149,8 +149,8 @@ BEGIN
   -- Industries donut + Top products / Top accounts bars
   ('5a1e0000-0000-4000-a000-000000000030', v_page, v_dash, 'donut', 'Industries',
    0, 25, 8, 9, 4, 5, 0, true, false,
-   $j${"entity":"account"}$j$::jsonb,
-   $j${"category":"industry","values":[{"field":"*","fn":"count","alias":"count"}]}$j$::jsonb,
+   $j${"entity":"account","relatedFilters":[{"path":[{"entity":"lead","fk":"account_id","direction":"reverse"}],"field":"account_id","op":"is_not_empty"}]}$j$::jsonb,
+   $j${"category":"industry_id","values":[{"field":"*","fn":"count","alias":"count"}]}$j$::jsonb,
    $j${"showHeader":true,"legendPosition":"right","seriesColors":["#4f6df5","#8b5cf6","#12b3a6","#e08a2b","#17a673","#e35d5d","#9aa0b4"],"background":"#ffffff","borderColor":"#e9eaf0","borderRadius":16,"titleColor":"#171a29","fontFamily":"'IBM Plex Sans', sans-serif"}$j$::jsonb,
    '{}'::jsonb, '{}'::jsonb),
 

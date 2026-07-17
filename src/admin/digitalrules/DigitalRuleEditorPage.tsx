@@ -225,7 +225,7 @@ export default function DigitalRuleEditorPage({ ruleId, onSaved, onCancel }: Pro
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 pb-8 space-y-4" style={{ background: '#f6f8fb' }}>
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 pb-8 space-y-4" style={{ background: 'var(--app-bg)' }}>
         {/* General settings */}
         <section className="bg-white border border-slate-200 rounded-lg shadow-sm p-5 space-y-4">
           <h3 className="text-[12px] font-semibold text-slate-700 uppercase tracking-wide">General</h3>

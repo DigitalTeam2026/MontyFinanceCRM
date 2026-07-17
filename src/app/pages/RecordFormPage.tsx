@@ -3704,7 +3704,7 @@ function RecordFormInner({
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <div
                 className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 border border-[#dde4f0]"
-                style={{ background: '#eef3fb', color: '#3f5e9e' }}
+                style={{ background: 'color-mix(in srgb, var(--link) 12%, transparent)', color: 'var(--link)' }}
               >
                 {redesignEntityIcon}
               </div>
