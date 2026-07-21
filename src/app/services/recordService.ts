@@ -6,6 +6,7 @@ import type { BusinessRule } from '../../types/businessRule';
 import { createNotification } from './notificationService';
 import { dispatchAutomationForEvent } from './automation/dispatch';
 import { provisionRecordStorage } from '../../services/documentService';
+import { logProvisionFailure } from '../../services/documentProvisionRepairService';
 import {
   hasNonNullMonetaryValue,
   hasCurrencyLock,
@@ -718,6 +719,11 @@ export async function saveRecord(
     // Eagerly provision the record's storage folder (best-effort; no-op when the
     // entity has no Document Location configured or the file server is offline).
     // Seeds document_path with the record folder when the column exists and is empty.
+    //
+    // A failure here used to be swallowed entirely, leaving the record with no
+    // folder and no trace. Now it's queued in document_provision_failure so
+    // Admin Studio → Document Location can list it and re-run it ("Repair
+    // folders"). Logging is itself best-effort — it must never break the create.
     provisionRecordStorage(entitySlug, created[pk] as string)
       .then(async (prov) => {
         if (prov?.relativePath && tableCols.has('document_path')) {
@@ -727,7 +733,14 @@ export async function saveRecord(
             .is('document_path', null);
         }
       })
-      .catch(() => {});
+      .catch((err) =>
+        logProvisionFailure(
+          entitySlug,
+          created[pk] as string,
+          err,
+          getRecordLabel(entity, created)
+        ).catch(() => {})
+      );
 
     return created;
   }

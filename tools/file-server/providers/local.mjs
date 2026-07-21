@@ -102,10 +102,17 @@ export const localProvider = {
   // same-day uploads, and seed document_path with it. Files uploaded on later
   // days land in their own day folder — document_path is a hint, not the sole
   // location (each crm_document row carries its own relative_path).
-  async ensureRecordFolder({ root, recordId }) {
+  //
+  // `on` (ISO date/timestamp) overrides the day folder. Repair runs pass the
+  // record's created_at so a folder that was never provisioned (file server
+  // down at create time) is rebuilt where it would originally have gone,
+  // instead of appearing under today's date.
+  async ensureRecordFolder({ root, recordId, on }) {
     const rid = safeSegment(recordId);
     if (!rid) throw new HttpError(400, 'Invalid record id.');
-    const segs = [...dayPrefix().split('/'), rid];
+    const day = on ? new Date(on) : new Date();
+    if (Number.isNaN(day.getTime())) throw new HttpError(400, `Invalid date: ${on}`);
+    const segs = [...dayPrefix(day).split('/'), rid];
     const rootResolved = path.resolve(root);
     const dir = path.resolve(rootResolved, ...segs);
     if (!dir.startsWith(rootResolved + path.sep)) throw new HttpError(400, 'Resolved path escapes the configured root.');

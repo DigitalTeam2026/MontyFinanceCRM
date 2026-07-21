@@ -90,6 +90,46 @@ export async function provisionRecordStorage(
   return (await res.json()) as ProvisionResult;
 }
 
+export interface BatchProvisionItem {
+  recordId: string;
+  /** ISO timestamp of the record's creation — the day folder to (re)build under. */
+  on?: string | null;
+}
+
+export interface BatchProvisionResult {
+  recordId: string;
+  ok: boolean;
+  created?: boolean;
+  relativePath?: string;
+  error?: string;
+}
+
+/** Max records per /provision/batch call — must match PROVISION_BATCH_MAX on the file server. */
+export const PROVISION_BATCH_SIZE = 200;
+
+/**
+ * Ensure folders exist for many records of one entity in a single round trip.
+ * Used by the Document Location "Repair folders" sweep. Idempotent: a record
+ * that already has a folder comes back with created:false. Per-record failures
+ * are reported in the results array rather than throwing, so one inaccessible
+ * record doesn't abort the run; only a transport/config failure throws.
+ */
+export async function provisionRecordStorageBatch(
+  entityLogicalName: string,
+  records: BatchProvisionItem[]
+): Promise<BatchProvisionResult[]> {
+  if (records.length === 0) return [];
+  const token = await authToken();
+  const res = await fetch(`${FILE_SERVER_URL}/provision/batch`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entity: entityLogicalName, records }),
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  const body = await res.json();
+  return (body?.results ?? []) as BatchProvisionResult[];
+}
+
 /** Resolve a set of user ids to display names (for "Uploaded by"). */
 export async function fetchUserDisplayMap(ids: (string | null)[]): Promise<Record<string, string>> {
   const unique = [...new Set(ids.filter(Boolean))] as string[];

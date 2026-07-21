@@ -854,7 +854,11 @@ function CollapsibleSection({
               const displayType = borrowedTypeIsLabelResolved(rawType) ? 'text' : rawType;
               const borrowedControl = { ...control, field_type_name: displayType };
               return (
-                <div key={control.id} data-field={control.field_logical_name ?? control.id}>
+                <div
+                  key={control.id}
+                  data-field={control.field_logical_name ?? control.id}
+                  className={control.column_span === 2 ? 'col-span-2' : ''}
+                >
                   <FormField
                     control={borrowedControl}
                     value={displayVal}
@@ -902,7 +906,11 @@ function CollapsibleSection({
                 ?? (physCol ? values[physCol] : undefined)
                 ?? '';
               return (
-                <div key={control.id} data-field={control.field_logical_name}>
+                <div
+                  key={control.id}
+                  data-field={control.field_logical_name}
+                  className={control.column_span === 2 ? 'col-span-2' : ''}
+                >
                   <FormField
                     control={enrichedControl}
                     value={fieldValue}

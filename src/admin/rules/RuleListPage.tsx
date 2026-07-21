@@ -1,9 +1,9 @@
 import FilterSelect from '../../app/components/FilterSelect';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Plus, RefreshCw, Zap, Pencil, Trash2, ToggleLeft, ToggleRight, AlertCircle, Filter, Play, Globe, FileText, Shield, Wrench, Copy, Lock, Search, LayoutGrid, User, X, Download, Sparkles } from 'lucide-react';
+  Plus, RefreshCw, Zap, Pencil, Trash2, ToggleLeft, ToggleRight, AlertCircle, Filter, Play, Globe, FileText, Shield, Wrench, Copy, Lock, Search, LayoutGrid, User, X, Download, Sparkles, Tag, FolderCog } from 'lucide-react';
 import type { EntityDefinition } from '../../types/entity';
-import type { BusinessRule, RuleScope } from '../../types/businessRule';
+import type { BusinessRule, RuleScope, BusinessRuleCategory } from '../../types/businessRule';
 import { fetchEntities } from '../../services/entityService';
 import {
   fetchRulesForEntity,
@@ -12,6 +12,15 @@ import {
   toggleRuleActive,
   cloneRule,
 } from '../../services/businessRuleService';
+import {
+  fetchRuleCategories,
+  createRuleCategory,
+  updateRuleCategory,
+  deleteRuleCategory,
+  setBusinessRuleCategory,
+  RULE_CATEGORY_COLORS,
+} from '../../services/businessRuleCategoryService';
+import { getCurrentUserId } from '../../services/automationRuleService';
 import ConfirmDialog from '../components/ConfirmDialog';
 import AiRuleCreatorModal from './AiRuleCreatorModal';
 
@@ -40,6 +49,9 @@ export default function RuleListPage({ onOpen, preselectedEntityId }: RuleListPa
   const [entities, setEntities] = useState<EntityDefinition[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState(preselectedEntityId ?? '');
   const [rules, setRules] = useState<BusinessRule[]>([]);
+  const [categories, setCategories] = useState<BusinessRuleCategory[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState('');   // '' = all, 'none' = uncategorized, else category id
+  const [showCatManager, setShowCatManager] = useState(false);
   const [loading, setLoading] = useState(true);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BusinessRule | null>(null);
@@ -62,6 +74,7 @@ export default function RuleListPage({ onOpen, preselectedEntityId }: RuleListPa
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+    fetchRuleCategories().then(setCategories).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -77,16 +90,26 @@ export default function RuleListPage({ onOpen, preselectedEntityId }: RuleListPa
   const systemCount = rules.filter((r) => r.is_system).length;
   const customCount = rules.filter((r) => !r.is_system).length;
 
+  // Set of live category ids — a rule whose category was deleted (or never set)
+  // is treated as Uncategorized.
+  const catById = useMemo(
+    () => new Map(categories.map((c) => [c.business_rule_category_id, c])),
+    [categories],
+  );
+  const ruleCatKey = (r: BusinessRule) =>
+    r.category_id && catById.has(r.category_id) ? r.category_id : 'none';
+
   const filtered = rules.filter((r) => {
     const matchSearch =
       !search ||
       r.name.toLowerCase().includes(search.toLowerCase()) ||
       (r.description ?? '').toLowerCase().includes(search.toLowerCase());
-    const matchCat =
+    const matchType =
       categoryTab === 'all' ||
       (categoryTab === 'system' && r.is_system) ||
       (categoryTab === 'custom' && !r.is_system);
-    return matchSearch && matchCat;
+    const matchCat = !categoryFilter || ruleCatKey(r) === categoryFilter;
+    return matchSearch && matchType && matchCat;
   });
 
   const activeFiltered = filtered.filter((r) => r.is_active);
@@ -126,6 +149,22 @@ export default function RuleListPage({ onOpen, preselectedEntityId }: RuleListPa
       ));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Toggle failed');
+    }
+  };
+
+  const handleMoveCategory = async (rule: BusinessRule, categoryId: string | null) => {
+    // Optimistic — the FK move is cheap and rarely fails.
+    setRules((prev) => prev.map((r) =>
+      r.business_rule_id === rule.business_rule_id ? { ...r, category_id: categoryId } : r
+    ));
+    try {
+      await setBusinessRuleCategory(rule.business_rule_id, categoryId);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to move rule');
+      // Roll back on failure.
+      setRules((prev) => prev.map((r) =>
+        r.business_rule_id === rule.business_rule_id ? { ...r, category_id: rule.category_id } : r
+      ));
     }
   };
 
@@ -178,6 +217,7 @@ export default function RuleListPage({ onOpen, preselectedEntityId }: RuleListPa
         <CmdBtn icon={<RefreshCw size={12} className={rulesLoading ? 'animate-spin' : ''} />} onClick={() => setSelectedEntityId(selectedEntityId)}>
           Refresh
         </CmdBtn>
+        <CmdBtn icon={<FolderCog size={12} />} onClick={() => setShowCatManager(true)}>Categories</CmdBtn>
         <CmdBtn icon={<Download size={12} />}>Export</CmdBtn>
         <div className="flex-1" />
         <span className="text-[11px] text-slate-400 mr-2">{filtered.length} rule{filtered.length !== 1 ? 's' : ''}</span>
@@ -233,6 +273,23 @@ export default function RuleListPage({ onOpen, preselectedEntityId }: RuleListPa
           ))}
         </div>
 
+        <div className="w-px h-5 bg-slate-200" />
+
+        <div className="relative flex items-center gap-1.5">
+          <Tag size={12} className="text-slate-400" />
+          <FilterSelect
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="appearance-none pl-2.5 pr-7 py-1.5 text-[12px] font-medium border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 text-slate-700"
+          >
+            <option value="">All categories</option>
+            <option value="none">Uncategorized</option>
+            {categories.map((c) => (
+              <option key={c.business_rule_category_id} value={c.business_rule_category_id}>{c.name}</option>
+            ))}
+          </FilterSelect>
+        </div>
+
         <div className="flex-1" />
 
         <div className="relative">
@@ -286,24 +343,30 @@ export default function RuleListPage({ onOpen, preselectedEntityId }: RuleListPa
               <RuleSection
                 title="Active"
                 rules={activeFiltered}
+                categories={categories}
+                catById={catById}
                 onOpen={onOpen}
                 selectedEntityId={selectedEntityId}
                 selectedEntityName={selectedEntity?.display_name ?? ''}
                 onDelete={setDeleteTarget}
                 onToggle={handleToggle}
                 onClone={openCloneModal}
+                onMoveCategory={handleMoveCategory}
               />
             )}
             {inactiveFiltered.length > 0 && (
               <RuleSection
                 title="Inactive"
                 rules={inactiveFiltered}
+                categories={categories}
+                catById={catById}
                 onOpen={onOpen}
                 selectedEntityId={selectedEntityId}
                 selectedEntityName={selectedEntity?.display_name ?? ''}
                 onDelete={setDeleteTarget}
                 onToggle={handleToggle}
                 onClone={openCloneModal}
+                onMoveCategory={handleMoveCategory}
                 muted
               />
             )}
@@ -374,6 +437,16 @@ export default function RuleListPage({ onOpen, preselectedEntityId }: RuleListPa
         />
       )}
 
+      {showCatManager && (
+        <CategoryManagerModal
+          categories={categories}
+          rules={rules}
+          catById={catById}
+          onChanged={setCategories}
+          onClose={() => setShowCatManager(false)}
+        />
+      )}
+
       {showAiModal && (
         <AiRuleCreatorModal
           entities={entities}
@@ -398,22 +471,28 @@ export default function RuleListPage({ onOpen, preselectedEntityId }: RuleListPa
 function RuleSection({
   title,
   rules,
+  categories,
+  catById,
   onOpen,
   selectedEntityId,
   selectedEntityName,
   onDelete,
   onToggle,
   onClone,
+  onMoveCategory,
   muted,
 }: {
   title: string;
   rules: BusinessRule[];
+  categories: BusinessRuleCategory[];
+  catById: Map<string, BusinessRuleCategory>;
   onOpen: (r: BusinessRule, entityId: string, entityName: string) => void;
   selectedEntityId: string;
   selectedEntityName: string;
   onDelete: (r: BusinessRule) => void;
   onToggle: (r: BusinessRule) => void;
   onClone: (r: BusinessRule) => void;
+  onMoveCategory: (r: BusinessRule, categoryId: string | null) => void;
   muted?: boolean;
 }) {
   return (
@@ -426,10 +505,13 @@ function RuleSection({
           <RuleCard
             key={rule.business_rule_id}
             rule={rule}
+            categories={categories}
+            category={rule.category_id ? catById.get(rule.category_id) : undefined}
             onOpen={() => onOpen(rule, selectedEntityId, selectedEntityName)}
             onDelete={() => onDelete(rule)}
             onToggle={() => onToggle(rule)}
             onClone={() => onClone(rule)}
+            onMoveCategory={(catId) => onMoveCategory(rule, catId)}
             muted={muted}
           />
         ))}
@@ -440,17 +522,23 @@ function RuleSection({
 
 function RuleCard({
   rule,
+  categories,
+  category,
   onOpen,
   onDelete,
   onToggle,
   onClone,
+  onMoveCategory,
   muted,
 }: {
   rule: BusinessRule;
+  categories: BusinessRuleCategory[];
+  category?: BusinessRuleCategory;
   onOpen: () => void;
   onDelete: () => void;
   onToggle: () => void;
   onClone: () => void;
+  onMoveCategory: (categoryId: string | null) => void;
   muted?: boolean;
 }) {
   const isSystem = rule.is_system;
@@ -487,6 +575,15 @@ function RuleCard({
           <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium bg-amber-50 border-amber-200 text-amber-600">
             <Wrench size={9} />
             Custom
+          </span>
+        )}
+        {category && (
+          <span
+            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border font-medium"
+            style={{ color: category.color, borderColor: `${category.color}55`, backgroundColor: `${category.color}12` }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: category.color }} />
+            {category.name}
           </span>
         )}
         <span className={`ml-auto inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium ${
@@ -545,6 +642,19 @@ function RuleCard({
               : <ToggleLeft size={15} />}
           </button>
         )}
+        <div className="relative flex items-center" title="Assign to category">
+          <Tag size={11} className="absolute left-1.5 text-slate-400 pointer-events-none" />
+          <FilterSelect
+            value={category?.business_rule_category_id ?? ''}
+            onChange={(e) => onMoveCategory(e.target.value || null)}
+            className="appearance-none pl-6 pr-2 py-1.5 text-[11px] border border-slate-200 rounded text-slate-600 bg-white focus:outline-none focus:border-blue-400 max-w-[130px]"
+          >
+            <option value="">Uncategorized</option>
+            {categories.map((c) => (
+              <option key={c.business_rule_category_id} value={c.business_rule_category_id}>{c.name}</option>
+            ))}
+          </FilterSelect>
+        </div>
         <button
           onClick={onClone}
           title="Clone this rule"
@@ -569,6 +679,144 @@ function RuleCard({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Create / rename / recolor / delete rule categories. Deleting a category never
+// deletes its rules — the FK sets their category_id null so they fall back into
+// "Uncategorized". Shows a live per-category rule count.
+function CategoryManagerModal({
+  categories,
+  rules,
+  catById,
+  onChanged,
+  onClose,
+}: {
+  categories: BusinessRuleCategory[];
+  rules: BusinessRule[];
+  catById: Map<string, BusinessRuleCategory>;
+  onChanged: (cats: BusinessRuleCategory[]) => void;
+  onClose: () => void;
+}) {
+  const [items, setItems] = useState<BusinessRuleCategory[]>(categories);
+  const [newName, setNewName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [confirmDel, setConfirmDel] = useState<BusinessRuleCategory | null>(null);
+
+  const countFor = (id: string) =>
+    rules.filter((r) => r.category_id === id && catById.has(id)).length;
+
+  const add = async () => {
+    const nm = newName.trim();
+    if (!nm || busy) return;
+    setBusy(true);
+    try {
+      const created_by = await getCurrentUserId().catch(() => null);
+      const cat = await createRuleCategory({
+        name: nm,
+        color: RULE_CATEGORY_COLORS[items.length % RULE_CATEGORY_COLORS.length],
+        sort_order: items.length,
+        created_by,
+      });
+      const next = [...items, cat];
+      setItems(next); onChanged(next); setNewName('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rename = (c: BusinessRuleCategory, name: string) => {
+    const next = items.map((x) => (x.business_rule_category_id === c.business_rule_category_id ? { ...x, name } : x));
+    setItems(next); onChanged(next);
+    void updateRuleCategory(c.business_rule_category_id, { name }).catch(() => {});
+  };
+
+  const recolor = (c: BusinessRuleCategory, color: string) => {
+    const next = items.map((x) => (x.business_rule_category_id === c.business_rule_category_id ? { ...x, color } : x));
+    setItems(next); onChanged(next);
+    void updateRuleCategory(c.business_rule_category_id, { color }).catch(() => {});
+  };
+
+  const doDelete = async (c: BusinessRuleCategory) => {
+    const next = items.filter((x) => x.business_rule_category_id !== c.business_rule_category_id);
+    setItems(next); onChanged(next); setConfirmDel(null);
+    await deleteRuleCategory(c.business_rule_category_id).catch(() => {});
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-5">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="text-[13px] font-semibold text-slate-800">Rule Categories</h3>
+            <p className="text-[11.5px] text-slate-400">Group your rules into categories. Deleting a category keeps its rules.</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
+        </div>
+
+        <div className="flex items-center gap-2 mb-4">
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void add(); } }}
+            placeholder="New category name…"
+            className="flex-1 px-3 py-2 text-[12px] border border-slate-300 rounded focus:outline-none focus:border-blue-400"
+          />
+          <button
+            onClick={() => void add()}
+            disabled={!newName.trim() || busy}
+            className="px-3 py-2 text-[12px] bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded transition-colors shrink-0"
+          >
+            Add
+          </button>
+        </div>
+
+        {items.length === 0 ? (
+          <p className="text-[12px] text-slate-400 text-center py-6">No categories yet — add one above.</p>
+        ) : (
+          <div className="space-y-2 max-h-72 overflow-auto">
+            {items.map((c) => (
+              <div key={c.business_rule_category_id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/60 p-2">
+                <div className="relative shrink-0">
+                  <input
+                    type="color"
+                    value={c.color}
+                    onChange={(e) => recolor(c, e.target.value)}
+                    title="Category color"
+                    className="w-6 h-6 rounded cursor-pointer border border-slate-200 bg-transparent p-0"
+                  />
+                </div>
+                <input
+                  type="text"
+                  value={c.name}
+                  onChange={(e) => rename(c, e.target.value)}
+                  className="flex-1 min-w-0 px-2 py-1 text-[12px] bg-transparent border border-transparent rounded focus:outline-none focus:border-slate-300 focus:bg-white"
+                />
+                <span className="shrink-0 rounded-full bg-slate-200/70 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                  {countFor(c.business_rule_category_id)} rule{countFor(c.business_rule_category_id) === 1 ? '' : 's'}
+                </span>
+                <button onClick={() => setConfirmDel(c)} title="Delete category" className="shrink-0 p-1 text-slate-400 hover:text-red-600">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {confirmDel && (
+        <ConfirmDialog
+          title="Delete category"
+          message={`Delete "${confirmDel.name}"? Its ${countFor(confirmDel.business_rule_category_id)} rule(s) won't be deleted — they'll move to Uncategorized.`}
+          confirmLabel="Delete"
+          onConfirm={() => void doDelete(confirmDel)}
+          onCancel={() => setConfirmDel(null)}
+          danger
+        />
+      )}
     </div>
   );
 }

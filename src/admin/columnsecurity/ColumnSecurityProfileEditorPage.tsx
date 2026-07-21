@@ -10,7 +10,7 @@ import {
   fetchProfileAssignments, addProfileAssignment, removeProfileAssignment,
 } from '../../services/columnSecurityService';
 import { fetchEntities } from '../../services/entityService';
-import { fetchFieldsForEntity } from '../../services/fieldService';
+import { fetchFieldsForEntity, fetchSecuredFieldCountsByEntity } from '../../services/fieldService';
 import { fetchUsers, fetchTeams } from '../../services/securityService';
 import type { EntityDefinition } from '../../types/entity';
 import type { FieldDefinition } from '../../types/field';
@@ -41,6 +41,8 @@ export default function ColumnSecurityProfileEditorPage({ profile, onBack, onSav
   const [dirty, setDirty] = useState(false);
 
   const [entities, setEntities] = useState<EntityDefinition[]>([]);
+  const [securedCounts, setSecuredCounts] = useState<Record<string, number>>({});
+  const [entitiesLoading, setEntitiesLoading] = useState(true);
   const [selectedEntityId, setSelectedEntityId] = useState<string>('');
   const [entityFields, setEntityFields] = useState<FieldDefinition[]>([]);
   const [fieldsLoading, setFieldsLoading] = useState(false);
@@ -56,10 +58,14 @@ export default function ColumnSecurityProfileEditorPage({ profile, onBack, onSav
   const [principalId, setPrincipalId] = useState('');
 
   useEffect(() => {
-    fetchEntities().then((ents) => {
-      setEntities(ents);
-      if (ents.length > 0) setSelectedEntityId(ents[0].entity_definition_id);
-    }).catch(() => {});
+    // Only entities that actually own column-secured fields are worth listing —
+    // a profile can only grant access to columns flagged is_secured.
+    Promise.all([fetchEntities(), fetchSecuredFieldCountsByEntity()]).then(([ents, counts]) => {
+      const secured = ents.filter((e) => (counts[e.entity_definition_id] ?? 0) > 0);
+      setSecuredCounts(counts);
+      setEntities(secured);
+      if (secured.length > 0) setSelectedEntityId(secured[0].entity_definition_id);
+    }).catch(() => {}).finally(() => setEntitiesLoading(false));
 
     Promise.all([fetchUsers(), fetchTeams()]).then(([u, t]) => {
       setUsers(u);
@@ -103,7 +109,13 @@ export default function ColumnSecurityProfileEditorPage({ profile, onBack, onSav
 
   const selectedEntity = entities.find((e) => e.entity_definition_id === selectedEntityId);
 
-  const filteredFields = entityFields.filter((f) =>
+  // Only secured columns are listed. A field that was un-secured after a rule was
+  // authored still shows, otherwise its stale rule would be invisible and unremovable.
+  const securableFields = entityFields.filter(
+    (f) => f.is_secured || fieldRules[`${selectedEntity?.logical_name ?? ''}::${f.logical_name}`]
+  );
+
+  const filteredFields = securableFields.filter((f) =>
     f.display_name.toLowerCase().includes(fieldSearch.toLowerCase()) ||
     f.logical_name.toLowerCase().includes(fieldSearch.toLowerCase())
   );
@@ -287,6 +299,11 @@ export default function ColumnSecurityProfileEditorPage({ profile, onBack, onSav
             <div className="w-48 border-r border-slate-200 bg-slate-50 flex flex-col shrink-0">
               <p className="px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Entities</p>
               <div className="flex-1 overflow-y-auto">
+                {!entitiesLoading && entities.length === 0 && (
+                  <p className="px-3 py-3 text-[11px] text-slate-400 leading-relaxed">
+                    No secured columns yet. Enable Column Security on a field first.
+                  </p>
+                )}
                 {entities.map((e) => {
                   const ruleCount = Object.values(fieldRules).filter((r) => r.entity_name === e.logical_name).length;
                   return (
@@ -300,9 +317,16 @@ export default function ColumnSecurityProfileEditorPage({ profile, onBack, onSav
                       }`}
                     >
                       <span className="truncate">{e.display_name}</span>
-                      {ruleCount > 0 && (
+                      {ruleCount > 0 ? (
                         <span className="text-[9px] font-semibold bg-blue-100 text-blue-700 px-1 py-0.5 rounded-full shrink-0">
                           {ruleCount}
+                        </span>
+                      ) : (
+                        <span
+                          title={`${securedCounts[e.entity_definition_id]} secured column(s)`}
+                          className="text-[9px] font-semibold text-slate-400 shrink-0"
+                        >
+                          {securedCounts[e.entity_definition_id]}
                         </span>
                       )}
                     </button>
@@ -334,7 +358,9 @@ export default function ColumnSecurityProfileEditorPage({ profile, onBack, onSav
                     <RefreshCw size={16} className="animate-spin text-slate-400" />
                   </div>
                 ) : filteredFields.length === 0 ? (
-                  <div className="flex items-center justify-center h-40 text-[12px] text-slate-400">No fields found</div>
+                  <div className="flex items-center justify-center h-40 text-[12px] text-slate-400">
+                    {fieldSearch ? 'No matching secured columns' : 'No secured columns on this entity'}
+                  </div>
                 ) : (
                   <div className="bg-white border border-slate-200 rounded overflow-hidden">
                     <table className="w-full text-[12px]">

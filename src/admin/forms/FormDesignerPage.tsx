@@ -23,6 +23,7 @@ import {
   fetchFieldsForEntity,
   fetchFieldTypes,
   createField,
+  updateField,
 } from '../../services/fieldService';
 import { fetchEntities } from '../../services/entityService';
 import { buildDraftRule } from '../../services/businessRuleService';
@@ -34,6 +35,7 @@ import FormCanvas from './FormCanvas';
 import PropertiesPanel from './PropertiesPanel';
 import FormTreeView from './FormTreeView';
 import FieldEditorPanel from '../fields/FieldEditorPanel';
+import FieldSettingsModal from './FieldSettingsModal';
 import SubgridPickerModal from './SubgridPickerModal';
 import RelatedFieldPickerModal from './RelatedFieldPickerModal';
 import RuleEditorPage from '../rules/RuleEditorPage';
@@ -67,6 +69,8 @@ export default function FormDesignerPage({
   const [activeTabId, setActiveTabId] = useState('');
   const [activeSectionId, setActiveSectionId] = useState('');
   const [showNewColumn, setShowNewColumn] = useState(false);
+  const [showFieldSettings, setShowFieldSettings] = useState(false);
+  const [editingColumn, setEditingColumn] = useState<FieldDefinition | null>(null);
   const [showSubgridPicker, setShowSubgridPicker] = useState(false);
   const [showRelatedFieldPicker, setShowRelatedFieldPicker] = useState(false);
   const [formUsageInfo, setFormUsageInfo] = useState<string[]>([]);
@@ -333,6 +337,44 @@ export default function FormDesignerPage({
     setShowNewColumn(false);
   };
 
+  /** "Edit column definition" from the field settings modal. */
+  const handleOpenColumnEditor = (fieldDefinitionId: string) => {
+    const field = fields.find((f) => f.field_definition_id === fieldDefinitionId);
+    if (!field) {
+      showError('Column not found. Try reloading the form.');
+      return;
+    }
+    setShowFieldSettings(false);
+    setEditingColumn(field);
+  };
+
+  const handleUpdateColumn = async (formData: FieldFormData, choices: ChoiceOption[]) => {
+    if (!editingColumn) return;
+    const saved = await updateField(editingColumn.field_definition_id, formData, choices);
+    const refreshed = await fetchFieldsForEntity(entityId);
+    setFields(refreshed);
+
+    // The canvas renders from the layout snapshot, so a renamed/retyped column would
+    // keep showing its old label until reload unless we push it into every control
+    // bound to this field.
+    for (const t of store.layout.tabs) {
+      for (const s of t.sections) {
+        for (const c of s.controls) {
+          if (c.field_definition_id === saved.field_definition_id) {
+            store.updateControl(t.id, s.id, c.id, {
+              field_display_name: saved.display_name,
+              field_logical_name: saved.logical_name,
+              field_type_name: saved.field_type?.name ?? null,
+            });
+          }
+        }
+      }
+    }
+
+    showSuccess(`Column "${saved.display_name}" updated`);
+    setEditingColumn(null);
+  };
+
   const handleAddSubgrid = (config: SubgridConfig, label: string) => {
     if (!activeTabId || !activeSectionId) return;
     store.addControl(activeTabId, activeSectionId, {
@@ -447,6 +489,7 @@ export default function FormDesignerPage({
             setActiveTabId(tabId);
             setActiveSectionId(sectionId);
           }}
+          onControlActivate={() => setShowFieldSettings(true)}
         />
 
         {/* Properties panel */}
@@ -512,6 +555,15 @@ export default function FormDesignerPage({
       )}
 
       {/* New Column panel — slides in from right, reuses FieldEditorPanel */}
+      {showFieldSettings && (
+        <FieldSettingsModal
+          store={store}
+          lookupEntityMap={lookupEntityMap}
+          onEditColumn={handleOpenColumnEditor}
+          onClose={() => setShowFieldSettings(false)}
+        />
+      )}
+
       {showNewColumn && (
         <FieldEditorPanel
           entityId={entityId}
@@ -519,6 +571,17 @@ export default function FormDesignerPage({
           entities={entities}
           onSave={handleCreateColumn}
           onClose={() => setShowNewColumn(false)}
+        />
+      )}
+
+      {editingColumn && (
+        <FieldEditorPanel
+          entityId={entityId}
+          field={editingColumn}
+          fieldTypes={fieldTypes}
+          entities={entities}
+          onSave={handleUpdateColumn}
+          onClose={() => setEditingColumn(null)}
         />
       )}
 

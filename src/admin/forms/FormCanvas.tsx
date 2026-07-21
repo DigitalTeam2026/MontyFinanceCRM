@@ -63,9 +63,11 @@ interface DropTarget {
 interface FormCanvasProps {
   store: DesignerStore;
   onActiveSectionChange: (tabId: string, sectionId: string) => void;
+  /** Fired when a control card is clicked, after selection has moved to it. */
+  onControlActivate?: () => void;
 }
 
-export default function FormCanvas({ store, onActiveSectionChange }: FormCanvasProps) {
+export default function FormCanvas({ store, onActiveSectionChange, onControlActivate }: FormCanvasProps) {
   const {
     layout, selection, setSelection,
     addSection,
@@ -103,6 +105,7 @@ export default function FormCanvas({ store, onActiveSectionChange }: FormCanvasP
 
   const selectControl = (tab: DesignerTab, section: DesignerSection, control: DesignerControl) => {
     setSelection({ type: 'control', tabId: tab.id, sectionId: section.id, controlId: control.id });
+    onControlActivate?.();
   };
 
   // ── Drag: control card ─────────────────────────────────────────────────────

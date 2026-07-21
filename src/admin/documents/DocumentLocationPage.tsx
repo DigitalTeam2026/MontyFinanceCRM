@@ -1,6 +1,6 @@
 import FilterSelect from '../../app/components/FilterSelect';
 import { useState, useEffect, useCallback } from 'react';
-import { FolderCog, Plus, Check, X, CreditCard as Edit2, Trash2, ToggleLeft, ToggleRight, FolderOpen, Plug, KeyRound, Loader2 } from 'lucide-react';
+import { FolderCog, Plus, Check, X, CreditCard as Edit2, Trash2, ToggleLeft, ToggleRight, FolderOpen, Plug, KeyRound, Loader2, Wrench, AlertTriangle, RefreshCw } from 'lucide-react';
 import SearchableSelect from '../../app/components/SearchableSelect';
 import { useToast } from '../../app/context/ToastContext';
 import { fetchEntities } from '../../services/entityService';
@@ -13,6 +13,14 @@ import {
   deleteStorageSecret,
   testStorageConnection,
 } from '../../services/documentLocationService';
+import {
+  fetchProvisionFailures,
+  repairFailedQueue,
+  repairEntitySweep,
+  repairAllEntitiesSweep,
+  type ProvisionFailure,
+  type RepairSummary,
+} from '../../services/documentProvisionRepairService';
 import type { DocumentLocationConfig, StorageType, StorageCredentials } from '../../types/documentLocation';
 import { STORAGE_TYPES } from '../../types/documentLocation';
 import type { EntityDefinition } from '../../types/entity';
@@ -76,6 +84,21 @@ export default function DocumentLocationPage() {
   const [testing, setTesting] = useState<string | null>(null);
   const [editRow, setEditRow] = useState<EditRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DocumentLocationConfig | null>(null);
+  const [failures, setFailures] = useState<ProvisionFailure[]>([]);
+  // Which repair is running: 'queue', 'all', or an entity logical name.
+  const [repairing, setRepairing] = useState<string | null>(null);
+  const [repairProgress, setRepairProgress] = useState('');
+  const [lastRepair, setLastRepair] = useState<RepairSummary | null>(null);
+
+  const loadFailures = useCallback(async () => {
+    // The table only exists after the repair migration — degrade quietly so the
+    // rest of the page still works on an un-migrated database.
+    try {
+      setFailures(await fetchProvisionFailures());
+    } catch {
+      setFailures([]);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -83,6 +106,7 @@ export default function DocumentLocationPage() {
       const [cfg, ents] = await Promise.all([fetchDocumentLocations(), fetchEntities()]);
       setConfigs(cfg);
       setEntities(ents);
+      await loadFailures();
       const credentialed = cfg.filter((c) => CREDENTIALED.includes(c.storage_type));
       const flags = await Promise.all(
         credentialed.map(async (c) => [c.entity_logical_name, await hasStorageSecret(c.entity_logical_name).catch(() => false)] as const)
@@ -182,6 +206,53 @@ export default function DocumentLocationPage() {
     }
   };
 
+  /**
+   * Report a finished repair run. "Repaired" is the number that mattered: the
+   * folders that were genuinely missing and now exist.
+   */
+  const reportRepair = (summary: RepairSummary) => {
+    setLastRepair(summary);
+    if (summary.failed > 0) {
+      showError(
+        `Repaired ${summary.repaired}, but ${summary.failed} still failed. ${summary.errors[0] ?? ''}`
+      );
+    } else if (summary.repaired > 0) {
+      showSuccess(`Created ${summary.repaired} missing folder${summary.repaired === 1 ? '' : 's'}.`);
+    } else {
+      showSuccess(`All ${summary.alreadyPresent} record folders were already in place.`);
+    }
+  };
+
+  const runRepair = async (key: string, fn: () => Promise<RepairSummary>) => {
+    setRepairing(key);
+    setRepairProgress('');
+    setLastRepair(null);
+    try {
+      reportRepair(await fn());
+      await loadFailures();
+    } catch (e: unknown) {
+      showError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRepairing(null);
+      setRepairProgress('');
+    }
+  };
+
+  const handleRetryQueue = () =>
+    runRepair('queue', () =>
+      repairFailedQueue((done, total) => setRepairProgress(`${done} / ${total} queued records`))
+    );
+
+  const handleSweepAll = () =>
+    runRepair('all', () =>
+      repairAllEntitiesSweep((entity, done) => setRepairProgress(`${entity}: ${done} records checked`))
+    );
+
+  const handleSweepEntity = (c: DocumentLocationConfig) =>
+    runRepair(c.entity_logical_name, () =>
+      repairEntitySweep(c.entity_logical_name, (done) => setRepairProgress(`${done} records checked`))
+    );
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setSaving(true);
@@ -262,7 +333,7 @@ export default function DocumentLocationPage() {
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3 w-32">Type</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3">Root Location / URL</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3 w-24">Status</th>
-                <th className="px-5 py-3 w-36"></th>
+                <th className="px-5 py-3 w-44"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -273,8 +344,10 @@ export default function DocumentLocationPage() {
                   credentialed={CREDENTIALED.includes(c.storage_type)}
                   secretSaved={!!secretsPresent[c.entity_logical_name]}
                   testing={testing === c.entity_logical_name}
-                  disabled={saving || !!editRow}
+                  repairing={repairing === c.entity_logical_name}
+                  disabled={saving || !!editRow || !!repairing}
                   onEdit={() => startEdit(c)}
+                  onRepair={() => handleSweepEntity(c)}
                   onTest={() => handleTest(c)}
                   onToggleActive={() => handleToggleActive(c)}
                   onDelete={() => setDeleteTarget(c)}
@@ -289,6 +362,17 @@ export default function DocumentLocationPage() {
             </div>
           )}
         </div>
+
+        <RepairPanel
+          failures={failures}
+          configs={configs}
+          repairing={repairing}
+          progress={repairProgress}
+          summary={lastRepair}
+          onRetryQueue={handleRetryQueue}
+          onSweepAll={handleSweepAll}
+          onRefresh={loadFailures}
+        />
 
         <p className="text-xs text-gray-400 leading-relaxed">
           Local/NAS roots are reached by the file server on the machine it runs on. S3 uses
@@ -315,14 +399,16 @@ interface ConfigRowProps {
   credentialed: boolean;
   secretSaved: boolean;
   testing: boolean;
+  repairing: boolean;
   disabled: boolean;
   onEdit: () => void;
+  onRepair: () => void;
   onTest: () => void;
   onToggleActive: () => void;
   onDelete: () => void;
 }
 
-function ConfigRow({ config: c, credentialed, secretSaved, testing, disabled, onEdit, onTest, onToggleActive, onDelete }: ConfigRowProps) {
+function ConfigRow({ config: c, credentialed, secretSaved, testing, repairing, disabled, onEdit, onRepair, onTest, onToggleActive, onDelete }: ConfigRowProps) {
   return (
     <tr className={`group transition-colors ${c.is_active ? 'hover:bg-gray-50' : 'bg-gray-50/60 opacity-60'}`}>
       <td className="px-5 py-3">
@@ -351,6 +437,9 @@ function ConfigRow({ config: c, credentialed, secretSaved, testing, disabled, on
           <button onClick={onTest} disabled={disabled || testing} title="Test connection" className="p-1.5 rounded hover:bg-indigo-50 text-gray-400 hover:text-indigo-500 transition-colors disabled:opacity-40">
             {testing ? <Loader2 size={13} className="animate-spin" /> : <Plug size={13} />}
           </button>
+          <button onClick={onRepair} disabled={disabled || repairing || !c.is_active} title="Repair folders — create any missing record folders for this entity" className="p-1.5 rounded hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-colors disabled:opacity-40">
+            {repairing ? <Loader2 size={13} className="animate-spin" /> : <Wrench size={13} />}
+          </button>
           <button onClick={onEdit} disabled={disabled} title="Edit" className="p-1.5 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-500 transition-colors disabled:opacity-40">
             <Edit2 size={13} />
           </button>
@@ -363,6 +452,135 @@ function ConfigRow({ config: c, credentialed, secretSaved, testing, disabled, on
         </div>
       </td>
     </tr>
+  );
+}
+
+interface RepairPanelProps {
+  failures: ProvisionFailure[];
+  configs: DocumentLocationConfig[];
+  repairing: string | null;
+  progress: string;
+  summary: RepairSummary | null;
+  onRetryQueue: () => void;
+  onSweepAll: () => void;
+  onRefresh: () => void;
+}
+
+/**
+ * Folder repair. A record's storage folder is created by the file server the
+ * moment the record is saved — if that call fails (file server down, entity not
+ * configured yet), the record has no folder. Failed attempts are queued here and
+ * can be re-run; the full scan additionally checks every existing record, which
+ * covers records created before this queue existed.
+ */
+function RepairPanel({ failures, configs, repairing, progress, summary, onRetryQueue, onSweepAll, onRefresh }: RepairPanelProps) {
+  const busy = !!repairing;
+  const activeCount = configs.filter((c) => c.is_active).length;
+  const displayName = (logical: string) =>
+    configs.find((c) => c.entity_logical_name === logical)?.entity_display_name || logical;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <Wrench size={15} className="text-gray-400" />
+          <span className="text-sm font-semibold text-gray-800">Folder Repair</span>
+          {failures.length > 0 && (
+            <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+              {failures.length} failed
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onRefresh}
+            disabled={busy}
+            title="Refresh"
+            className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-40"
+          >
+            <RefreshCw size={13} />
+          </button>
+          <button
+            onClick={onRetryQueue}
+            disabled={busy || failures.length === 0}
+            className="flex items-center gap-1.5 text-xs font-medium text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-40"
+          >
+            {repairing === 'queue' ? <Loader2 size={13} className="animate-spin" /> : <Wrench size={13} />}
+            Retry failed{failures.length > 0 ? ` (${failures.length})` : ''}
+          </button>
+          <button
+            onClick={onSweepAll}
+            disabled={busy || activeCount === 0}
+            className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-40"
+          >
+            {repairing === 'all' ? <Loader2 size={13} className="animate-spin" /> : <FolderCog size={13} />}
+            Scan all records
+          </button>
+        </div>
+      </div>
+
+      <div className="px-5 py-3 text-xs text-gray-500 leading-relaxed border-b border-gray-50">
+        Records whose folder could not be created — usually because the file server was offline when
+        the record was saved — are listed here. <span className="font-medium text-gray-700">Retry failed</span> re-runs
+        just those. <span className="font-medium text-gray-700">Scan all records</span> checks every record of every
+        active entity and creates whatever is missing, including records saved before this queue existed.
+        Folders are rebuilt under the record's own creation date, and records that already have a folder are left untouched.
+      </div>
+
+      {busy && (
+        <div className="px-5 py-3 flex items-center gap-2 text-xs text-blue-700 bg-blue-50/60 border-b border-blue-100">
+          <Loader2 size={13} className="animate-spin" />
+          {progress || 'Working…'}
+        </div>
+      )}
+
+      {summary && !busy && (
+        <div className="px-5 py-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs border-b border-gray-50">
+          <span className="text-green-700 font-medium">{summary.repaired} folder(s) created</span>
+          <span className="text-gray-500">{summary.alreadyPresent} already present</span>
+          {summary.failed > 0 && <span className="text-red-600 font-medium">{summary.failed} still failing</span>}
+          {summary.errors.map((e) => (
+            <span key={e} className="w-full text-red-500 font-mono text-[11px] break-all">{e}</span>
+          ))}
+        </div>
+      )}
+
+      {failures.length === 0 ? (
+        <div className="py-8 text-center text-sm text-gray-400">
+          <Check size={16} className="inline mr-1.5 text-green-500" />
+          No failed folder creations.
+        </div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-100">
+              <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-2.5 w-44">Entity</th>
+              <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2.5">Record</th>
+              <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2.5">Reason</th>
+              <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2.5 w-20">Tries</th>
+              <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-2.5 w-40">Last failed</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {failures.map((f) => (
+              <tr key={f.document_provision_failure_id} className="hover:bg-gray-50 transition-colors">
+                <td className="px-5 py-2.5 text-gray-800">{displayName(f.entity_logical_name)}</td>
+                <td className="px-3 py-2.5">
+                  <div className="text-gray-700">{f.record_label || '—'}</div>
+                  <div className="text-[11px] text-gray-400 font-mono break-all">{f.record_id}</div>
+                </td>
+                <td className="px-3 py-2.5 text-xs text-red-500 break-words">
+                  <AlertTriangle size={11} className="inline mr-1 -mt-0.5" />
+                  {f.last_error ?? 'Unknown error'}
+                </td>
+                <td className="px-3 py-2.5 text-gray-500">{f.attempts}</td>
+                <td className="px-5 py-2.5 text-xs text-gray-500">{new Date(f.last_failed_at).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 

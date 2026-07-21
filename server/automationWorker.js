@@ -1523,7 +1523,9 @@ async function processJob(pool, job, opts = {}) {
       error: null,
     });
     await pool.query(
-      "update automation_rule set last_run_at = now() where automation_rule_id = $1",
+      // A clean run clears the error badge — error_count reflects the LAST run,
+      // not the lifetime total, otherwise the banner sticks forever.
+      "update automation_rule set error_count = 0, last_run_at = now() where automation_rule_id = $1",
       [job.rule_id]
     );
   } catch (err) {

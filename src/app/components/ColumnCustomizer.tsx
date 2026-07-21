@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { ListColumn } from '../services/listService';
 import { fetchFieldsForEntity } from '../../services/fieldService';
+import type { FieldDefinition } from '../../types/field';
 import { fetchRelationshipsForEntity } from '../../services/relationshipService';
 import type { RelationshipDefinitionWithEntities } from '../../types/relationship';
 import { fetchLookupFieldOptions } from '../services/lookupLabel';
@@ -54,6 +55,27 @@ interface AvailableField {
   physical_column_name?: string;
   lookup_table?: string;
   lookup_label_field?: string;
+  /** Carried through to ColumnState so choice columns resolve codes → labels in the grid */
+  option_set_name?: string;
+  inline_choices?: { value: string; label: string; color?: string; icon?: string }[];
+}
+
+/** Shape a field_definition row into the picker's AvailableField (shared by the
+ *  current-entity and related-entity loaders so both carry identical metadata). */
+function toAvailableField(f: FieldDefinition): AvailableField {
+  const le = (f as unknown as Record<string, unknown>).lookup_entity as { physical_table_name?: string; primary_field_name?: string } | null;
+  const lookupTable = le?.physical_table_name;
+  return {
+    field_definition_id: f.field_definition_id,
+    logical_name: f.logical_name,
+    display_name: f.display_name,
+    field_type_name: (f.field_type as { name?: string } | null)?.name ?? undefined,
+    physical_column_name: f.physical_column_name,
+    lookup_table: lookupTable,
+    lookup_label_field: lookupTable === 'crm_user' ? 'email' : le?.primary_field_name,
+    option_set_name: (f as unknown as Record<string, unknown>).option_set_id as string | undefined,
+    inline_choices: ((f.config_json as Record<string, unknown> | null)?.choices as AvailableField['inline_choices']) ?? undefined,
+  };
 }
 
 interface ColumnCustomizerProps {
@@ -129,22 +151,7 @@ export default function ColumnCustomizer({
     if (tab !== 'add' || !entityDefinitionId || currentFields.length > 0) return;
     setLoadingCurrent(true);
     fetchFieldsForEntity(entityDefinitionId)
-      .then((fields) =>
-        setCurrentFields(fields.map((f) => {
-          const le = (f as unknown as Record<string, unknown>).lookup_entity as { physical_table_name?: string; primary_field_name?: string } | null;
-          const lookupTable = le?.physical_table_name;
-          const lookupLabel = lookupTable === 'crm_user' ? 'email' : le?.primary_field_name;
-          return {
-            field_definition_id: f.field_definition_id,
-            logical_name: f.logical_name,
-            display_name: f.display_name,
-            field_type_name: (f.field_type as { name?: string } | null)?.name ?? undefined,
-            physical_column_name: f.physical_column_name,
-            lookup_table: lookupTable,
-            lookup_label_field: lookupLabel,
-          };
-        }))
-      )
+      .then((fields) => setCurrentFields(fields.map(toAvailableField)))
       .catch(() => {})
       .finally(() => setLoadingCurrent(false));
   }, [tab, entityDefinitionId, currentFields.length]);
@@ -170,22 +177,7 @@ export default function ColumnCustomizer({
     if (!selectedRelationship) { setRelatedFields([]); return; }
     setLoadingRelFields(true);
     fetchFieldsForEntity(selectedRelationship.target_entity_id)
-      .then((fields) =>
-        setRelatedFields(fields.map((f) => {
-          const le = (f as unknown as Record<string, unknown>).lookup_entity as { physical_table_name?: string; primary_field_name?: string } | null;
-          const lookupTable = le?.physical_table_name;
-          const lookupLabel = lookupTable === 'crm_user' ? 'email' : le?.primary_field_name;
-          return {
-            field_definition_id: f.field_definition_id,
-            logical_name: f.logical_name,
-            display_name: f.display_name,
-            field_type_name: (f.field_type as { name?: string } | null)?.name ?? undefined,
-            physical_column_name: f.physical_column_name,
-            lookup_table: lookupTable,
-            lookup_label_field: lookupLabel,
-          };
-        }))
-      )
+      .then((fields) => setRelatedFields(fields.map(toAvailableField)))
       .catch(() => {})
       .finally(() => setLoadingRelFields(false));
   }, [selectedRelationship]);
@@ -301,6 +293,10 @@ export default function ColumnCustomizer({
           field_physical_column: field.physical_column_name,
           lookup_table: field.lookup_table,
           lookup_label_field: field.lookup_label_field,
+          // Without these a choice/multi-choice column added here renders the raw
+          // stored code (1/2/3) — resolveGridValues has no label map to apply.
+          option_set_name: field.option_set_name,
+          inline_choices: field.inline_choices,
           labelOverride: undefined,
           width: null,
         },

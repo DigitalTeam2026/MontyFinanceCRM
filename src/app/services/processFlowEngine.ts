@@ -472,6 +472,35 @@ export function buildStageEntityContext(pf: LoadedProcessFlow): Map<string, stri
   for (const stage of pf.terminalStages) {
     ctx.set(stage.stage_key, current);
   }
+
+  // A condition is a ROUTER, not a stage the record ever sits on, so it belongs to the entity it
+  // branches INTO — not to whatever happens to precede it in display_order. A condition placed at
+  // an entity handoff (last lead stage, then the condition, then the opp-side arms) would otherwise
+  // inherit the lead, and filterLoadedFlowForEntity would drop it from the opp-side bar while
+  // KEEPING both its arms. resolveRuntimePath then sees no one pointing at the YES arm, promotes it
+  // to trunk, and renders it unconditionally alongside the arm a later condition selects — the
+  // duplicate "Legal Documents / Agreement / Final Stage" bar. Re-point conditions at their branch.
+  const byId = new Map(pf.activeStages.map((s) => [s.process_stage_id, s]));
+  const entityOfBranch = (stage: ProcessStage, seen: Set<string>): string | null => {
+    if (seen.has(stage.process_stage_id)) return null; // cycle guard
+    seen.add(stage.process_stage_id);
+    for (const targetId of [stage.branch_yes_stage_id, stage.branch_no_stage_id]) {
+      const target = targetId ? byId.get(targetId) : undefined;
+      if (!target) continue;
+      // Chained conditions: keep descending until a real stage is reached.
+      const resolved = target.component_type === 'condition'
+        ? entityOfBranch(target, seen)
+        : (ctx.get(target.stage_key) ?? null);
+      if (resolved) return resolved;
+    }
+    return null;
+  };
+  for (const stage of pf.activeStages) {
+    if (stage.component_type !== 'condition') continue;
+    const branchEntity = entityOfBranch(stage, new Set());
+    if (branchEntity) ctx.set(stage.stage_key, branchEntity);
+  }
+
   return ctx;
 }
 

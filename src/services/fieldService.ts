@@ -50,6 +50,26 @@ export async function fetchFieldsForEntity(entityId: string): Promise<FieldDefin
   return data as FieldDefinition[];
 }
 
+/**
+ * How many column-secured (is_secured) fields each entity has, keyed by
+ * entity_definition_id. Entities with none are absent from the map.
+ * Used by the column-security editor so it only offers securable columns.
+ */
+export async function fetchSecuredFieldCountsByEntity(): Promise<Record<string, number>> {
+  const { data, error } = await supabase
+    .from('field_definition')
+    .select('entity_definition_id')
+    .eq('is_secured', true)
+    .eq('is_active', true)
+    .is('deleted_at', null);
+  if (error) throw error;
+  const counts: Record<string, number> = {};
+  for (const row of (data ?? []) as { entity_definition_id: string }[]) {
+    counts[row.entity_definition_id] = (counts[row.entity_definition_id] ?? 0) + 1;
+  }
+  return counts;
+}
+
 // ── Column reconciliation ──────────────────────────────────────────────────────
 // CRM metadata (field_definition) is the source of truth, but physical tables can
 // drift ahead of it (e.g. a migration adds a column without a field_definition).

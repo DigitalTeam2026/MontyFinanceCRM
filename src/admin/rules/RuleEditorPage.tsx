@@ -2,7 +2,7 @@ import FilterSelect from '../../app/components/FilterSelect';
 import { useEffect, useState } from 'react';
 import { useToast } from '../../app/context/ToastContext';
 import {
-  ArrowLeft, Save, RefreshCw, Zap, Settings, Activity, CheckCircle2, Globe, FileText, FlaskConical, Database, GitBranch, Milestone, LayoutGrid } from 'lucide-react';
+  ArrowLeft, Save, RefreshCw, Zap, Settings, Activity, CheckCircle2, Globe, FileText, FlaskConical, Database, GitBranch, Milestone, LayoutGrid, Tag, Plus } from 'lucide-react';
 import type { BusinessRule, RuleTrigger, RuleActionSet, RuleScope, RuleConditionGroup, RuleCondition, RuleConditionBlock, RuleAction, BusinessRuleCategory } from '../../types/businessRule';
 import { validateProcessFlowCondition, getRuleConditionBlocks } from '../../types/businessRule';
 import type { FieldDefinition } from '../../types/field';
@@ -240,6 +240,7 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
     const payload = {
       name: rule.name,
       description: rule.description,
+      category_id: rule.category_id ?? null,
       scope: rule.scope,
       target_form_id: rule.scope === 'specific_form' ? rule.target_form_id : null,
       target_process_flow_id: (rule.scope === 'specific_bpf' || rule.scope === 'specific_bpf_stage') ? rule.target_process_flow_id : null,
@@ -374,6 +375,11 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
           <div className="mt-auto px-3 py-3 border-t border-slate-100 space-y-1.5">
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Summary</p>
             {entityName && <SummaryRow label="Entity" value={entityName} active />}
+            <SummaryRow
+              label="Category"
+              value={categories.find((c) => c.business_rule_category_id === rule.category_id)?.name ?? 'Uncategorized'}
+              active={!!rule.category_id}
+            />
             <SummaryRow label="Trigger" value={trigger.trigger_on === 'onLoad' ? 'On Load' : trigger.trigger_on === 'onChange' ? 'On Change' : 'Always'} />
             <SummaryRow
               label="Scope"
@@ -419,7 +425,12 @@ export default function RuleEditorPage({ rule: initRule, entityId, entityName, o
             />
           )}
           {activeTab === 'settings' && (
-            <RuleSettingsPanel rule={rule} onChange={(r) => { setRule(r); markDirty(); }} />
+            <RuleSettingsPanel
+              rule={rule}
+              categories={categories}
+              onCreateCategory={handleCreateCategory}
+              onChange={(r) => { setRule(r); markDirty(); }}
+            />
           )}
           {activeTab === 'preview' && (
             <div>
@@ -700,19 +711,97 @@ function TriggerPanel({
 
 function RuleSettingsPanel({
   rule,
+  categories,
+  onCreateCategory,
   onChange,
 }: {
   rule: BusinessRule;
+  categories: BusinessRuleCategory[];
+  onCreateCategory: (name: string) => Promise<BusinessRuleCategory | null>;
   onChange: (r: BusinessRule) => void;
 }) {
+  const [addingCat, setAddingCat] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [savingCat, setSavingCat] = useState(false);
+  const selectedCat = categories.find((c) => c.business_rule_category_id === rule.category_id);
+
+  const handleAddCategory = async () => {
+    if (!newCatName.trim() || savingCat) return;
+    setSavingCat(true);
+    const cat = await onCreateCategory(newCatName);
+    setSavingCat(false);
+    if (cat) {
+      onChange({ ...rule, category_id: cat.business_rule_category_id });
+      setNewCatName('');
+      setAddingCat(false);
+    }
+  };
+
   return (
     <div>
       <SectionHeading
         title="Settings"
-        subtitle="Configure rule priority, description, and active status."
+        subtitle="Configure rule category, priority, description, and active status."
         icon={<Settings size={14} />}
       />
       <div className="space-y-5 max-w-lg">
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            Category <span className="normal-case font-normal text-slate-400">(optional)</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <FilterSelect
+                value={rule.category_id ?? ''}
+                onChange={(e) => onChange({ ...rule, category_id: e.target.value || null })}
+                className="w-full appearance-none pl-8 pr-8 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700"
+              >
+                <option value="">Uncategorized</option>
+                {categories.map((c) => (
+                  <option key={c.business_rule_category_id} value={c.business_rule_category_id}>{c.name}</option>
+                ))}
+              </FilterSelect>
+              <Tag
+                size={13}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                style={{ color: selectedCat?.color ?? '#94a3b8' }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setAddingCat((v) => !v)}
+              className="flex items-center gap-1 px-2.5 py-2.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors shrink-0"
+              title="Create a new category"
+            >
+              <Plus size={13} /> New
+            </button>
+          </div>
+          {addingCat && (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="text"
+                value={newCatName}
+                onChange={(e) => setNewCatName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleAddCategory(); } }}
+                placeholder="New category name…"
+                autoFocus
+                className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300"
+              />
+              <button
+                type="button"
+                onClick={() => void handleAddCategory()}
+                disabled={!newCatName.trim() || savingCat}
+                className="px-3 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl transition-colors shrink-0"
+              >
+                {savingCat ? 'Adding…' : 'Add'}
+              </button>
+            </div>
+          )}
+          <p className="mt-2 text-[10px] text-slate-400">
+            Group related rules together — categories are shared across all entities.
+          </p>
+        </div>
+
         <div>
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
             Description

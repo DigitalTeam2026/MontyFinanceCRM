@@ -31,6 +31,9 @@ import { safeSegment } from './providers/util.mjs';
 const API_URL = (process.env.API_URL ?? 'http://localhost:3001').replace(/\/$/, '');
 const PORT = Number(process.env.PORT ?? 4000);
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB ?? 100);
+// Cap on /provision/batch — each record costs one access-check round trip to the
+// API, so the repair sweep pages rather than sending an entity's whole table.
+const PROVISION_BATCH_MAX = Number(process.env.PROVISION_BATCH_MAX ?? 200);
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173')
   .split(',')
   .map((s) => s.trim())
@@ -260,19 +263,59 @@ app.patch('/file', handler(async (req, res) => {
 
 // Provision a record's storage location (create <root>/<recordId>/ if missing).
 // Called when a record is created so its folder exists before any upload.
-// Body or query: { entity, recordId }. Returns { relativePath, absolutePath, created }.
+// Body or query: { entity, recordId, on? }. `on` is an optional ISO date that
+// overrides the day folder (repair runs pass the record's created_at).
+// Returns { relativePath, absolutePath, created }.
 app.post('/provision', express.json(), handler(async (req, res) => {
   const token = getToken(req);
   if (!token) throw new HttpError(401, 'Missing authorization token.');
   const entity = safeSegment(req.body?.entity ?? req.query.entity);
   if (!entity) throw new HttpError(400, 'Missing or invalid entity.');
   const recordId = req.body?.recordId ?? req.query.recordId;
+  const on = req.body?.on ?? req.query.on ?? null;
 
   const ctx = await resolveStorage(token, entity);
   await assertRecordAccess(token, entity, safeSegment(recordId));
 
-  const result = await ctx.provider.ensureRecordFolder({ root: ctx.root, recordId, creds: ctx.creds });
+  const result = await ctx.provider.ensureRecordFolder({ root: ctx.root, recordId, on, creds: ctx.creds });
   res.json({ ...result, storageType: ctx.storageType });
+}));
+
+// Batch provision — used by the Document Location "Repair folders" sweep to fix
+// records whose folder was never created (file server offline at create time,
+// no Document Location configured yet, records predating the feature…).
+// Body: { entity, records: [{ recordId, on }] }. Resolves the entity's storage
+// once, then ensures each record's folder. Never throws for a single record: a
+// failing record comes back as { ok: false, error } so one inaccessible record
+// can't abort the whole sweep. `created` distinguishes repaired-now from
+// already-present, so the admin sees what actually changed.
+app.post('/provision/batch', express.json({ limit: '2mb' }), handler(async (req, res) => {
+  const token = getToken(req);
+  if (!token) throw new HttpError(401, 'Missing authorization token.');
+  const entity = safeSegment(req.body?.entity);
+  if (!entity) throw new HttpError(400, 'Missing or invalid entity.');
+  const records = Array.isArray(req.body?.records) ? req.body.records : null;
+  if (!records) throw new HttpError(400, 'Missing records array.');
+  if (records.length > PROVISION_BATCH_MAX) {
+    throw new HttpError(400, `Too many records in one batch (max ${PROVISION_BATCH_MAX}).`);
+  }
+
+  const ctx = await resolveStorage(token, entity);
+
+  const results = [];
+  for (const rec of records) {
+    const recordId = rec?.recordId;
+    try {
+      await assertRecordAccess(token, entity, safeSegment(recordId));
+      const r = await ctx.provider.ensureRecordFolder({
+        root: ctx.root, recordId, on: rec?.on ?? null, creds: ctx.creds,
+      });
+      results.push({ recordId, ok: true, created: r.created, relativePath: r.relativePath });
+    } catch (e) {
+      results.push({ recordId, ok: false, error: e?.message ?? 'Provision failed.' });
+    }
+  }
+  res.json({ storageType: ctx.storageType, results });
 }));
 
 // Test connection for an entity's saved storage config (?entity=). Admin-driven.

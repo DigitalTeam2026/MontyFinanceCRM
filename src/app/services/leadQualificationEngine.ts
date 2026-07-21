@@ -1,4 +1,6 @@
 import { supabase } from '../../lib/supabase';
+import { provisionRecordStorage } from '../../services/documentService';
+import { logProvisionFailure } from '../../services/documentProvisionRepairService';
 import type { LeadQualificationRule, LeadQualificationFieldMapping, CreationMode, RequalificationBehavior } from '../../types/leadQualification';
 import type { RecordData } from './recordService';
 import { getDefaultStatusForState } from './recordService';
@@ -299,9 +301,11 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
   if (processFlow) {
     const ctx = buildStageEntityContext(processFlow);
     const primaryEntityId = processFlow.flow.entity_definition_id;
-    // Find the first stage that belongs to a different entity (the opp side)
+    // Find the first stage that belongs to a different entity (the opp side). Conditions are
+    // routers the record never sits on, so skip them — a condition at the handoff would otherwise
+    // become the new opportunity's starting stage.
     const firstOppStage = processFlow.activeStages.find(
-      (s) => ctx.get(s.stage_key) !== primaryEntityId,
+      (s) => ctx.get(s.stage_key) !== primaryEntityId && s.component_type !== 'condition',
     );
     if (firstOppStage) {
       oppFlowId = processFlow.flow.process_flow_id;
@@ -425,6 +429,20 @@ export async function executeQualifyLead(opts: QualifyLeadOptions): Promise<Qual
         .single();
       if (error) throw new Error(`Failed to create Opportunity: ${error.message}`);
       opportunityId = data.opportunity_id as string;
+
+      // Qualify inserts the opportunity directly rather than going through
+      // saveRecord, so it has to provision the storage folder itself — otherwise
+      // every qualified opportunity ends up with no folder. Best-effort, exactly
+      // as in saveRecord: a failure is queued for Admin Studio → Document
+      // Location ("Repair folders") and must never fail the qualification.
+      provisionRecordStorage('opportunity', opportunityId).catch((provErr) =>
+        logProvisionFailure(
+          'opportunity',
+          opportunityId as string,
+          provErr,
+          (oppPhys['topic'] as string) ?? null
+        ).catch(() => {})
+      );
 
       // Carry the lead's timeline (notes, appointments, emails, attachments) onto the
       // brand-new opportunity so they surface in its timeline too. Best-effort: a copy

@@ -257,7 +257,7 @@ function SectionProperties({
 
 // ─── Control Properties ───────────────────────────────────────────────────────
 
-function ControlProperties({
+export function ControlProperties({
   store, tab, section, control, lookupEntityMap,
 }: {
   store: DesignerStore;
