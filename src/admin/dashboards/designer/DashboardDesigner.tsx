@@ -27,6 +27,7 @@ import FilterSummaryBar from '../../../app/components/dashboard/FilterSummaryBar
 import PropertiesPanel from './PropertiesPanel';
 import { useAppThemeConfig } from '../visuals/useAppThemeConfig';
 import { useToast, toFriendlyError } from '../../../app/context/ToastContext';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 const COLS = 24;
 const ROW_H = 26;
@@ -68,6 +69,10 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
   const [showPageSettings, setShowPageSettings] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [confirmExit, setConfirmExit] = useState(false);
+  // Inline page-tab rename (double-click a tab) — replaces the native prompt().
+  const [renamingPageId, setRenamingPageId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
 
   const history = useRef<DashboardDefinition[]>([]);
   const future = useRef<DashboardDefinition[]>([]);
@@ -263,6 +268,12 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
   };
   const renamePage = (id: string, name: string) =>
     commit({ ...def, pages: def.pages.map((p) => p.dashboard_page_id === id ? { ...p, name, display_name: name } : p) });
+  const commitRename = () => {
+    const id = renamingPageId;
+    const next = renameDraft.trim();
+    setRenamingPageId(null);
+    if (id && next) renamePage(id, next);
+  };
   const deletePage = (id: string) => {
     if (pages.length <= 1) return;
     const remaining = def.pages.filter((p) => p.dashboard_page_id !== id);
@@ -300,7 +311,7 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
     catch (e) { showError(toFriendlyError(e)); }
     setSaving(false);
   };
-  const exit = () => { if (dirty && !window.confirm('Discard unsaved changes?')) return; onExit(); };
+  const exit = () => { if (dirty) { setConfirmExit(true); return; } onExit(); };
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-slate-900 text-slate-200">
@@ -423,8 +434,21 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
               <div key={p.dashboard_page_id}
                 className={`group flex items-center gap-1 px-2.5 py-1 rounded text-[11px] cursor-pointer ${p.dashboard_page_id === pageId ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-700/50'}`}
                 onClick={() => { setPageId(p.dashboard_page_id); setSelectedId(null); }}
-                onDoubleClick={() => { const n = window.prompt('Page name', p.name); if (n) renamePage(p.dashboard_page_id, n); }}>
-                {p.name}
+                onDoubleClick={() => { setRenamingPageId(p.dashboard_page_id); setRenameDraft(p.name); }}>
+                {renamingPageId === p.dashboard_page_id ? (
+                  <input
+                    autoFocus
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onBlur={commitRename}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename();
+                      if (e.key === 'Escape') setRenamingPageId(null);
+                    }}
+                    className="w-24 bg-slate-900 text-white text-[11px] px-1 py-0.5 rounded border border-slate-600 outline-none focus:border-blue-500"
+                  />
+                ) : p.name}
                 {pages.length > 1 && (
                   <button onClick={(e) => { e.stopPropagation(); deletePage(p.dashboard_page_id); }} className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400"><Trash2 size={11} /></button>
                 )}
@@ -460,6 +484,18 @@ export default function DashboardDesigner({ dashboardId, onExit }: Props) {
       {showGlobals && (
         <GlobalFiltersPanel def={def} entities={entities}
           onChange={(next) => commit(next)} onClose={() => setShowGlobals(false)} />
+      )}
+
+      {confirmExit && (
+        <ConfirmDialog
+          title="Discard unsaved changes?"
+          message="This dashboard has changes that have not been saved. Leaving now discards them."
+          confirmLabel="Discard & leave"
+          cancelLabel="Keep editing"
+          destructive
+          onCancel={() => setConfirmExit(false)}
+          onConfirm={() => { setConfirmExit(false); onExit(); }}
+        />
       )}
     </div>
   );

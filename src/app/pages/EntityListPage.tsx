@@ -34,6 +34,7 @@ import ViewSelector from '../components/ViewSelector';
 import SaveViewModal from '../components/SaveViewModal';
 import ShareViewModal from '../components/ShareViewModal';
 import ShareRecordModal from '../components/ShareRecordModal';
+import ConfirmDialog from '../../admin/components/ConfirmDialog';
 import BulkActionsBar from '../components/BulkActionsBar';
 import { usePermissions } from '../context/PermissionContext';
 import { useToast, toFriendlyError } from '../context/ToastContext';
@@ -92,6 +93,8 @@ interface EntityListPageProps {
   onSearchChange?: (value: string) => void;
   onNewRecord?: () => void;
   onOpenRecord?: (id: string, label?: string) => void;
+  /** Opens a record on ANOTHER entity — used by clickable lookup cells. */
+  onOpenLookupRecord?: (entitySlug: string, id: string) => void;
   userId?: string;
   initialFilters?: ActiveFilter[];
   filterContextLabel?: string;
@@ -119,7 +122,7 @@ function columnSnapshot(cols: ColumnState[]): string {
   );
 }
 
-export default function EntityListPage({ entity, search, onSearchChange, onNewRecord, onOpenRecord, userId, initialFilters, filterContextLabel, parentFilter, onClearParentFilter, initialViewId, onActiveViewChange, creationBlocked, creationBlockedMessage }: EntityListPageProps) {
+export default function EntityListPage({ entity, search, onSearchChange, onNewRecord, onOpenRecord, onOpenLookupRecord, userId, initialFilters, filterContextLabel, parentFilter, onClearParentFilter, initialViewId, onActiveViewChange, creationBlocked, creationBlockedMessage }: EntityListPageProps) {
   const { getEntityPrivilege, isActionAllowed, accessContext, permissions, ready: permissionsReady } = usePermissions();
   const { showError, showSuccess } = useToast();
   const entityName = ENTITY_LOGICAL_NAME[entity] ?? entity;
@@ -195,6 +198,8 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
   const [activeView, setActiveView] = useState<ViewDefinition | null>(null);
   const [savedColumnSnapshot, setSavedColumnSnapshot] = useState<string>('');
   const [savingViewColumns, setSavingViewColumns] = useState(false);
+  // A view switch held back until the user says what to do with unsaved column changes.
+  const [pendingViewSwitch, setPendingViewSwitch] = useState<{ view: ViewDefinition | null; fromName: string } | null>(null);
   const [showSaveViewModal, setShowSaveViewModal] = useState(false);
   const [shareTarget, setShareTarget] = useState<ViewDefinition | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -445,14 +450,9 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
     }
   }, [showSuccess, showError]);
 
-  /** Switch to a view — prompts to save unsaved column changes first */
-  const handleViewChange = useCallback(async (view: ViewDefinition | null) => {
-    if (columnsModifiedRef.current) {
-      const save = window.confirm(
-        `You have unsaved column changes in "${activeViewRef.current?.name}".\n\nOK to save then switch, Cancel to discard and switch.`
-      );
-      if (save) await handleSaveViewColumns();
-    }
+  /** Switch to a view, optionally saving the current view's column changes first */
+  const applyViewChange = useCallback(async (view: ViewDefinition | null, save: boolean) => {
+    if (save) await handleSaveViewColumns();
     setActiveView(view);
     onActiveViewChange?.(view?.view_id ?? null);
     setSavedColumnSnapshot('');
@@ -466,6 +466,15 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
     }
     await applyView(view);
   }, [entity, applyView, handleSaveViewColumns, onActiveViewChange]);
+
+  /** Switch to a view — asks (in-app) what to do with unsaved column changes first */
+  const handleViewChange = useCallback(async (view: ViewDefinition | null) => {
+    if (columnsModifiedRef.current) {
+      setPendingViewSwitch({ view, fromName: activeViewRef.current?.name ?? 'this view' });
+      return;
+    }
+    await applyViewChange(view, false);
+  }, [applyViewChange]);
 
   /** Called once on initial load for the resolved view — no unsaved-changes check */
   const handleDefaultViewLoaded = useCallback(async (view: ViewDefinition) => {
@@ -618,7 +627,7 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
     }
 
     // Display path is shared with the dashboard drill-down so cells look identical.
-    return renderListCell(row, col, { onOpenRecord, isRedesign });
+    return renderListCell(row, col, { onOpenRecord, onOpenLookupRecord, isRedesign });
   };
 
   if (!permissionsReady) {
@@ -1255,6 +1264,28 @@ export default function EntityListPage({ entity, search, onSearchChange, onNewRe
             // ViewSelector will reload automatically on next open
           }}
           onClose={() => setShowSaveViewModal(false)}
+        />
+      )}
+
+      {pendingViewSwitch && (
+        <ConfirmDialog
+          title="Unsaved column changes"
+          message={`You have unsaved column changes in "${pendingViewSwitch.fromName}". Save them before switching, or discard them and switch anyway.`}
+          confirmLabel="Save & switch"
+          secondaryLabel="Discard & switch"
+          cancelLabel="Stay here"
+          loading={savingViewColumns}
+          onCancel={() => setPendingViewSwitch(null)}
+          onSecondary={() => {
+            const target = pendingViewSwitch.view;
+            setPendingViewSwitch(null);
+            void applyViewChange(target, false);
+          }}
+          onConfirm={() => {
+            const target = pendingViewSwitch.view;
+            setPendingViewSwitch(null);
+            void applyViewChange(target, true);
+          }}
         />
       )}
 

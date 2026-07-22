@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-07-21T18:57:00.352Z",
+  "projectRoot": "C:\\Monty Finance CRM\\MontyFinanceCRM",
+  "structure": {
+    "hasPackageJson": true,
+    "hasTsConfig": true,
+    "hasClaudeConfig": true,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1784660220353
+}

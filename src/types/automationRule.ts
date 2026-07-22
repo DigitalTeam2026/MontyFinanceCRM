@@ -25,7 +25,7 @@ export type AutomationOperator =
 
 export type AutomationActionType =
   | 'send_email' | 'update_field' | 'generate_document' | 'list_rows' | 'get_row'
-  | 'export_view_email' | 'related_export_email'
+  | 'export_view_email' | 'related_export_email' | 'send_documents_email'
   | 'create_related_record' | 'update_related_record' | 'condition' | 'switch';
 
 /**
@@ -207,6 +207,49 @@ export interface RelatedExportEmailConfig {
   skip_if_empty?: boolean;
 }
 
+/** How a document's file name is matched when the action filters attachments. */
+export type DocumentNameOperator =
+  | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'equals' | 'extension';
+
+/**
+ * Send documents by email — attach the files stored against a record (the rows
+ * behind its Documents tab) and email them. Either every file, or only the ones
+ * whose name matches. The source can be the trigger record or any other record
+ * reached by a token (e.g. the Lead behind this Opportunity).
+ */
+export interface SendDocumentsEmailConfig {
+  source: 'record' | 'other' | 'folder'; // 'record' = the record that triggered the flow
+  source_entity?: string;            // when source === 'other': the entity holding the documents
+  source_record_id?: string;         // when source === 'other': its id — static or a {{token}}
+
+  /**
+   * when source === 'folder': a path typed by the author, e.g.
+   * `E:\Opportunities\2026\07\17\{{record.raw.opportunity_id}}`. Tokens are
+   * resolved at run time. The path MUST resolve inside one of the configured
+   * Document Location roots — the worker rejects anything outside them, so a
+   * flow can never be pointed at arbitrary server files.
+   */
+  folder_path?: string;
+  include_subfolders?: boolean;      // when source === 'folder': recurse into child folders
+
+  selection: 'all' | 'filter';       // all attachments, or filter by file name
+  name_operator?: DocumentNameOperator;
+  name_value?: string;               // pattern(s), split on ; or , (any-of); may contain {{tokens}}
+
+  max_files?: number;                // cap on attachments (default 10)
+  max_total_mb?: number;             // total attachment budget in MB (default 10)
+
+  to?: string;                       // static + {{token}} address string (split on ; ,)
+  cc?: string;
+  to_user_ids?: string[];            // explicit crm_user ids → resolved to emails
+  send_to_owner?: boolean;           // also email the trigger record's owner
+  subject?: string;                  // template ({{documents.*}} tokens available)
+  body?: string;                     // HTML template
+  email_account_id?: string | null;  // sender mailbox (null = default account)
+  skip_if_empty?: boolean;           // no matching files → skip instead of sending
+  list_files_in_body?: boolean;      // append a bullet list of the attached file names
+}
+
 /** One field assignment when writing to a related table. */
 export interface FieldMapping {
   target_field: string;              // logical field on the target (child) entity
@@ -252,6 +295,7 @@ export type AutomationActionConfig =
   | GetRowConfig
   | ExportViewEmailConfig
   | RelatedExportEmailConfig
+  | SendDocumentsEmailConfig
   | CreateRelatedRecordConfig
   | UpdateRelatedRecordConfig
   | ConditionConfig

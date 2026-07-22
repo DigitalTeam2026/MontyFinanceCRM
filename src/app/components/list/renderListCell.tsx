@@ -8,6 +8,8 @@ import type { ReactNode } from 'react';
 import type { ListRow } from '../../services/listService';
 import type { ColumnState } from '../ColumnCustomizer';
 import StatusBadge from '../StatusBadge';
+import { getLookupTarget } from '../../services/gridResolver';
+import { buildRecordUrl } from '../../../App';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const AVATAR_COLORS = ['#2b6cb0', '#0d9488', '#b45309', '#7c3aed', '#dc2626', '#059669'];
@@ -27,13 +29,16 @@ export function formatCurrency(val: unknown, currencyCode?: string | null): stri
 export interface RenderListCellOptions {
   /** Invoked when a link/name cell is clicked. */
   onOpenRecord?: (id: string, label?: string) => void;
+  /** Invoked when a lookup cell is clicked — opens the REFERENCED record, which
+   *  belongs to another entity (e.g. Originating Lead → the lead). */
+  onOpenLookupRecord?: (entitySlug: string, id: string) => void;
   /** Dynamics-style redesign chips (always true in the app today). */
   isRedesign?: boolean;
 }
 
 /** Render a single grid cell's display value for `row[col.key]`. */
 export function renderListCell(row: ListRow, col: ColumnState, opts: RenderListCellOptions = {}): ReactNode {
-  const { onOpenRecord, isRedesign = true } = opts;
+  const { onOpenRecord, onOpenLookupRecord, isRedesign = true } = opts;
   const colKey = col.key;
   const colType = col.type;
   const val = row[colKey];
@@ -162,6 +167,27 @@ export function renderListCell(row: ListRow, col: ColumnState, opts: RenderListC
   }
 
   if (colType === 'lookup') {
+    // A resolved lookup carries the referenced record's id + entity slug, so the
+    // label opens that record (ctrl/cmd/shift-click keeps the native new-tab).
+    // stopPropagation keeps the row's own open-this-record click from firing.
+    const target = onOpenLookupRecord ? getLookupTarget(row, colKey) : null;
+    if (target) {
+      return (
+        <a
+          href={buildRecordUrl(target.entitySlug, target.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+            e.preventDefault();
+            onOpenLookupRecord?.(target.entitySlug, target.id);
+          }}
+          className="text-[var(--link)] hover:underline text-[12px]"
+          title={`Open ${strVal}`}
+        >
+          {strVal}
+        </a>
+      );
+    }
     return <span className="text-[var(--ink-600)] text-[12px]">{strVal}</span>;
   }
 

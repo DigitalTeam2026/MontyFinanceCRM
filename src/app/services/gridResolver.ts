@@ -7,6 +7,26 @@ import {
   resolveNestedLabel, fetchNestedLabelMap,
 } from './lookupLabel';
 import type { NestedLabelSpec } from './lookupLabel';
+import { resolveEntitySlugForTable, resetEntitySlugCache } from './entitySlug';
+
+// Resolving a lookup writes the LABEL over the column's own key — which is
+// usually the FK column itself, destroying the target id. These sidecar keys
+// preserve the referenced record's id and entity slug on the row so the grid can
+// render the cell as a link to it (see renderListCell / getLookupTarget).
+const LOOKUP_TARGET_ID_PREFIX = '__lk_id__';
+const LOOKUP_TARGET_SLUG_PREFIX = '__lk_slug__';
+
+/** The record a resolved lookup cell points at, or null when it can't be opened. */
+export function getLookupTarget(
+  row: Record<string, unknown>,
+  colKey: string,
+): { entitySlug: string; id: string } | null {
+  const id = row[`${LOOKUP_TARGET_ID_PREFIX}${colKey}`];
+  const entitySlug = row[`${LOOKUP_TARGET_SLUG_PREFIX}${colKey}`];
+  if (typeof id !== 'string' || !id) return null;
+  if (typeof entitySlug !== 'string' || !entitySlug) return null;
+  return { entitySlug, id };
+}
 
 export interface LookupSpec {
   colKey: string;
@@ -124,6 +144,7 @@ let optionSetTableExists: boolean | null = null;
 export function resetGridOptionSetCache(): void {
   optionSetCache.clear();
   lookupPkCache.clear();
+  resetEntitySlugCache();
 }
 
 async function resolveOptionSetLabels(optionSetId: string): Promise<Record<string, string>> {
@@ -254,8 +275,11 @@ export async function resolveGridValues(
     const fkValues = [...new Set(
       rows.map((r) => r[spec.fkColumn]).filter((v) => v != null) as string[]
     )];
-    const map = await batchResolveLookup(spec, fkValues);
-    return { spec, map };
+    const [map, entitySlug] = await Promise.all([
+      batchResolveLookup(spec, fkValues),
+      resolveEntitySlugForTable(spec.lookupTable),
+    ]);
+    return { spec, map, entitySlug };
   });
 
   const optionSetPromises = optionSetSpecs.map(async (spec) => {
@@ -268,9 +292,9 @@ export async function resolveGridValues(
     Promise.all(optionSetPromises),
   ]);
 
-  const lookupMaps = new Map<string, { fkColumn: string; map: Record<string, string> }>();
-  for (const { spec, map } of lookupResults) {
-    lookupMaps.set(spec.colKey, { fkColumn: spec.fkColumn, map });
+  const lookupMaps = new Map<string, { fkColumn: string; map: Record<string, string>; entitySlug: string | null }>();
+  for (const { spec, map, entitySlug } of lookupResults) {
+    lookupMaps.set(spec.colKey, { fkColumn: spec.fkColumn, map, entitySlug });
   }
 
   const optionMaps = new Map<string, { physicalColumn: string; labelMap: Record<string, string> }>();
@@ -291,10 +315,15 @@ export async function resolveGridValues(
   return rows.map((row) => {
     const patched: Record<string, unknown> = {};
 
-    for (const [colKey, { fkColumn, map }] of lookupMaps) {
+    for (const [colKey, { fkColumn, map, entitySlug }] of lookupMaps) {
       const fkVal = row[fkColumn];
-      if (fkVal && typeof fkVal === 'string' && map[fkVal]) {
-        patched[colKey] = map[fkVal];
+      if (!fkVal || typeof fkVal !== 'string') continue;
+      if (map[fkVal]) patched[colKey] = map[fkVal];
+      // Keep the target id/slug even when the label didn't resolve — the cell
+      // renders as a dash either way, and the sidecar keys stay consistent.
+      if (entitySlug) {
+        patched[`${LOOKUP_TARGET_ID_PREFIX}${colKey}`] = fkVal;
+        patched[`${LOOKUP_TARGET_SLUG_PREFIX}${colKey}`] = entitySlug;
       }
     }
 

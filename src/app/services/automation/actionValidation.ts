@@ -4,7 +4,8 @@
 
 import type {
   AutomationActionType, AutomationRuleAction, SendEmailConfig, UpdateFieldConfig, ListRowsConfig, GetRowConfig,
-  ExportViewEmailConfig, RelatedExportEmailConfig, CreateRelatedRecordConfig, UpdateRelatedRecordConfig, SwitchConfig,
+  ExportViewEmailConfig, RelatedExportEmailConfig, SendDocumentsEmailConfig, CreateRelatedRecordConfig,
+  UpdateRelatedRecordConfig, SwitchConfig,
 } from '../../../types/automationRule';
 
 export function validateActionConfig(
@@ -26,6 +27,8 @@ export function validateActionConfig(
       return validateExportViewEmail(config as unknown as ExportViewEmailConfig);
     case 'related_export_email':
       return validateRelatedExportEmail(config as unknown as RelatedExportEmailConfig);
+    case 'send_documents_email':
+      return validateSendDocumentsEmail(config as unknown as SendDocumentsEmailConfig);
     case 'create_related_record':
       return validateCreateRelated(config as unknown as CreateRelatedRecordConfig);
     case 'update_related_record':
@@ -97,6 +100,33 @@ function validateRelatedExportEmail(c: RelatedExportEmailConfig): string[] {
   const childCount = (Array.isArray(c.sources) ? c.sources : []).filter((s) => s.kind === 'child').length;
   if (childCount > 1) errs.push('Only one child list (row-expanding source) is supported.');
   if (!hasRecipient(c)) errs.push('At least one recipient (address, user, or token) is required.');
+  return errs;
+}
+
+function validateSendDocumentsEmail(c: SendDocumentsEmailConfig): string[] {
+  const errs: string[] = [];
+  if (c.source === 'other') {
+    if (!c.source_entity) errs.push('Pick the entity whose documents you want to attach.');
+    if (!c.source_record_id || !String(c.source_record_id).trim()) {
+      errs.push('The record id to read documents from is required (pick a token or type an id).');
+    }
+  }
+  if (c.source === 'folder' && !(c.folder_path && String(c.folder_path).trim())) {
+    errs.push('Type the folder path to take the files from.');
+  }
+  if (c.selection === 'filter' && !(c.name_value && String(c.name_value).trim())) {
+    errs.push('Filtering by name needs something to match on.');
+  }
+  if (!hasRecipient(c) && !c.send_to_owner) {
+    errs.push('At least one recipient (address, user, owner, or token) is required.');
+  }
+  if (!c.subject || !String(c.subject).trim()) errs.push('Subject is required.');
+  if (c.max_files != null && (Number(c.max_files) < 1 || Number(c.max_files) > 50)) {
+    errs.push('Max files must be between 1 and 50.');
+  }
+  if (c.max_total_mb != null && Number(c.max_total_mb) <= 0) {
+    errs.push('The total size limit must be greater than 0 MB.');
+  }
   return errs;
 }
 

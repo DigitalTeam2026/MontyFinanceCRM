@@ -527,6 +527,177 @@ async function sendExportEmail(ctx, { headers, rows, name, extra = {} }) {
   };
 }
 
+// ── stored documents (crm_document) → email attachments ──────────────────────
+// The record's Documents tab is crm_document rows + bytes under the entity's
+// configured storage root. The worker runs headless (no user session), so it
+// reads the bytes itself instead of going through the file server's HTTP API.
+// Only filesystem-backed storage (local / NAS) can be read this way; S3 and
+// SharePoint entities keep their credentials in the vault the file server reads,
+// so those fail loudly rather than sending a half-empty email.
+
+const FS_STORAGE_TYPES = new Set(["local", "nas"]);
+
+/** Split a stored relative_path into safe segments (no traversal, no separators). */
+function safeRelSegments(relativePath) {
+  const parts = String(relativePath || "")
+    .split(/[\\/]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return null;
+  if (parts.some((p) => p === "." || p === "..")) return null;
+  return parts;
+}
+
+const docConfigCache = new Map(); // entity_logical_name -> config row (or null)
+async function getDocumentConfig(pool, entityLogical) {
+  if (docConfigCache.has(entityLogical)) return docConfigCache.get(entityLogical);
+  let row = null;
+  try {
+    const r = await pool.query(
+      `select entity_logical_name, root_location, storage_type, is_active
+         from document_location_config where entity_logical_name = $1 limit 1`,
+      [entityLogical]
+    );
+    row = r.rows[0] || null;
+  } catch {
+    row = null; // table missing — treated as "not configured"
+  }
+  docConfigCache.set(entityLogical, row);
+  return row;
+}
+
+/**
+ * Match a file name against the action's name filter. `patterns` is the resolved
+ * name_value split on ; or , — ANY of them matching wins (case-insensitive).
+ * 'not_contains' inverts: the name must contain NONE of them.
+ */
+function fileNameMatches(fileName, operator, patterns) {
+  const name = String(fileName || "").toLowerCase();
+  const list = patterns.map((p) => String(p).trim().toLowerCase()).filter(Boolean);
+  if (list.length === 0) return true; // nothing to filter on -> keep the file
+  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : "";
+  switch (operator) {
+    case "not_contains": return !list.some((p) => name.includes(p));
+    case "starts_with":  return list.some((p) => name.startsWith(p));
+    case "ends_with":    return list.some((p) => name.endsWith(p));
+    case "equals":       return list.some((p) => name === p);
+    case "extension":    return list.some((p) => ext === p.replace(/^\./, ""));
+    case "contains":
+    default:             return list.some((p) => name.includes(p));
+  }
+}
+
+/** Read one document's bytes off the entity's storage root. Throws on any miss. */
+async function readDocumentBytes(config, doc) {
+  const storageType = doc.storage_type || config.storage_type || "local";
+  if (!FS_STORAGE_TYPES.has(storageType)) {
+    throw new Error(
+      `storage type "${storageType}" cannot be attached from a flow (only local/NAS storage is readable by the automation worker)`
+    );
+  }
+  const root = config.root_location;
+  if (!root) throw new Error("no root location configured for this entity");
+
+  const segs = safeRelSegments(doc.relative_path) ||
+    safeRelSegments(`${doc.record_id}/${doc.file_name}`); // legacy <recordId>/<file>
+  if (!segs) throw new Error("invalid stored path");
+
+  const rootResolved = path.resolve(root);
+  const full = path.resolve(rootResolved, ...segs);
+  if (!full.startsWith(rootResolved + path.sep)) {
+    throw new Error("stored path escapes the configured root");
+  }
+  return await fs.promises.readFile(full);
+}
+
+function humanSize(bytes) {
+  const b = Number(bytes) || 0;
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ── manual folder source ─────────────────────────────────────────────────────
+// A flow may name a folder outright (e.g. E:\Opportunities\2026\07\17\<id>,
+// usually built from tokens) instead of going through crm_document — handy for
+// files dropped on the share by another system, which were never registered in
+// the CRM. The path is NOT free-form: it must resolve inside one of the
+// configured Document Location roots, so an author can't point a flow at
+// C:\ or the server's .env and mail it out.
+
+const CONTENT_TYPES = {
+  pdf: "application/pdf",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xls: "application/vnd.ms-excel",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  doc: "application/msword",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  csv: "text/csv", txt: "text/plain", html: "text/html", xml: "application/xml",
+  json: "application/json", zip: "application/zip",
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+  bmp: "image/bmp", tif: "image/tiff", tiff: "image/tiff", svg: "image/svg+xml",
+};
+function guessContentType(fileName) {
+  const ext = String(fileName).includes(".") ? String(fileName).split(".").pop().toLowerCase() : "";
+  return CONTENT_TYPES[ext] || "application/octet-stream";
+}
+
+/** The filesystem-backed Document Location roots a manual path may live under. */
+async function activeStorageRoots(pool) {
+  try {
+    const r = await pool.query(
+      "select root_location, storage_type from document_location_config where is_active = true"
+    );
+    return r.rows
+      .filter((x) => x.root_location && FS_STORAGE_TYPES.has(x.storage_type || "local"))
+      .map((x) => path.resolve(x.root_location));
+  } catch {
+    return [];
+  }
+}
+
+/** Resolve + confine a manually entered folder path. Throws if it escapes every root. */
+async function resolveManualFolder(pool, input) {
+  const roots = await activeStorageRoots(pool);
+  if (roots.length === 0) {
+    throw new Error("no local/NAS Document Location is configured, so a manual folder path can't be validated");
+  }
+  const full = path.resolve(String(input).trim().replace(/[/\\]+$/, ""));
+  const inside = roots.some((root) => full === root || full.startsWith(root + path.sep));
+  if (!inside) {
+    throw new Error(
+      `folder "${input}" is outside every configured Document Location root (${roots.join(", ")})`
+    );
+  }
+  return full;
+}
+
+/**
+ * Files directly in `dir` (optionally recursing). Returns absolute paths, or
+ * null when the folder doesn't exist — a token-built path can legitimately point
+ * at a folder that was never created, which is "nothing to attach", not an error.
+ */
+async function listFolderFiles(dir, recurse, depth = 0) {
+  if (depth > 5) return [];
+  let entries;
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  } catch (e) {
+    if (e.code === "ENOENT") return depth === 0 ? null : [];
+    throw e;
+  }
+  const out = [];
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      if (recurse) out.push(...(await listFolderFiles(full, true, depth + 1)));
+    } else if (e.isFile()) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
 const ACTIONS = {
   async send_email(ctx) {
     const config = ctx.action.config || {};
@@ -833,6 +1004,187 @@ const ACTIONS = {
       headers: built.headers, rows: built.rows, name: c.report_name || "Related report",
       extra: { report: c.report_name || "Related report" },
     });
+  },
+
+  // Attach files and email them. Source is either a record's registered documents
+  // (its Documents tab = crm_document rows) — the trigger record or any other
+  // record addressed by a token — or a folder path named outright by the flow
+  // (confined to the configured Document Location roots). Either every file, or
+  // only the ones whose name matches.
+  async send_documents_email(ctx) {
+    const c = ctx.action.config || {};
+
+    // 1. Where do the files come from? Either a record's registered documents
+    //    (crm_document) or a folder named outright by the flow.
+    const isFolder = c.source === "folder";
+    let entityLogical = null;
+    let recordId = null;
+    let folder = null;
+    let candidates = []; // { file_name, content_type, read() }
+
+    if (isFolder) {
+      const raw = String(resolveValue(c.folder_path, ctx) ?? "").trim();
+      if (!raw) return { __skipped: true, reason: "no folder path" };
+      folder = await resolveManualFolder(ctx.pool, raw);
+      const files = await listFolderFiles(folder, !!c.include_subfolders);
+      if (files === null) {
+        return { __skipped: true, reason: `folder not found: ${folder}`, folder };
+      }
+      candidates = files.map((full) => ({
+        file_name: path.basename(full),
+        content_type: guessContentType(full),
+        read: () => fs.promises.readFile(full),
+      }));
+    } else {
+      entityLogical = ctx.job.record_table;
+      recordId = ctx.job.record_id;
+      if (c.source === "other") {
+        entityLogical = c.source_entity;
+        recordId = resolveValue(c.source_record_id, ctx);
+        if (!entityLogical) throw new Error("send_documents_email: source entity is required");
+      }
+      recordId = recordId == null ? "" : String(recordId).trim();
+      if (!recordId) {
+        return { __skipped: true, reason: "no source record id", entity: entityLogical || null };
+      }
+
+      // The registered documents for that record (newest first).
+      const docs = (
+        await ctx.pool.query(
+          `select document_id, entity_logical_name, record_id, file_name, relative_path,
+                  absolute_path, content_type, byte_size, storage_type, uploaded_at
+             from crm_document
+            where entity_logical_name = $1 and record_id::text = $2::text
+            order by uploaded_at desc`,
+          [entityLogical, recordId]
+        )
+      ).rows;
+      const config = await getDocumentConfig(ctx.pool, entityLogical);
+      if (docs.length > 0 && !config) {
+        throw new Error(`send_documents_email: no document location configured for "${entityLogical}"`);
+      }
+      candidates = docs.map((d) => ({
+        file_name: d.file_name,
+        content_type: d.content_type,
+        read: () => readDocumentBytes(config, d),
+      }));
+    }
+    const found = candidates; // everything discovered, before the name filter
+
+    // 2. Name filter ("all" attaches everything).
+    let matched = candidates;
+    let filterSummary = "all files";
+    if (c.selection === "filter") {
+      const op = c.name_operator || "contains";
+      const patterns = String(resolveValue(c.name_value, ctx) ?? "")
+        .split(/[;,]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      matched = candidates.filter((d) => fileNameMatches(d.file_name, op, patterns));
+      filterSummary = `${op} ${patterns.join(" / ") || "(nothing)"}`;
+    }
+
+    // 3. Read the bytes, honouring the attachment budget. Files that don't fit,
+    //    or that can't be read, are reported instead of failing the whole flow.
+    const maxFiles = Math.min(Math.max(1, Number(c.max_files) || 10), 50);
+    // Any positive size budget is honoured as configured (a fractional MB is a
+    // valid "keep it tiny" choice); only a missing/invalid value falls back.
+    const mb = Number(c.max_total_mb);
+    const maxTotalBytes = (Number.isFinite(mb) && mb > 0 ? mb : 10) * 1024 * 1024;
+
+    const attachments = [];
+    const attached = [];
+    const skippedFiles = [];
+    let totalBytes = 0;
+    for (const doc of matched) {
+      if (attachments.length >= maxFiles) {
+        skippedFiles.push({ file: doc.file_name, reason: `over the ${maxFiles}-file limit` });
+        continue;
+      }
+      try {
+        const buffer = await doc.read();
+        if (totalBytes + buffer.length > maxTotalBytes) {
+          skippedFiles.push({ file: doc.file_name, reason: `over the ${maxTotalBytes / (1024 * 1024)} MB total size limit` });
+          continue;
+        }
+        totalBytes += buffer.length;
+        attachments.push({
+          filename: doc.file_name,
+          contentBytes: buffer.toString("base64"),
+          contentType: doc.content_type || "application/octet-stream",
+        });
+        attached.push({ file: doc.file_name, size: buffer.length });
+      } catch (e) {
+        skippedFiles.push({ file: doc.file_name, reason: e.message });
+      }
+    }
+
+    // 4. Nothing to attach -> skip (visible in the run history) unless the author
+    //    explicitly wants the mail sent anyway. The reason distinguishes "nothing
+    //    there" / "filter matched nothing" / "matched but unreadable" — the last
+    //    one is a storage problem, not a flow problem.
+    const where = isFolder ? { folder } : { entity: entityLogical, record_id: recordId };
+    if (attachments.length === 0 && c.skip_if_empty !== false) {
+      const reason =
+        found.length === 0
+          ? (isFolder ? "the folder has no files" : "the record has no documents")
+          : matched.length === 0 ? "no document matched the filter"
+          : `${matched.length} document${matched.length === 1 ? "" : "s"} matched but none could be attached (see skipped files)`;
+      return {
+        __skipped: true,
+        reason,
+        ...where,
+        documents_found: found.length, matched: matched.length,
+        filter: filterSummary,
+        skipped_files: skippedFiles,
+      };
+    }
+
+    // 5. Recipients + sender, same model as send_email.
+    const userEmails = await resolveUserEmails(ctx.pool, c.to_user_ids);
+    const owner = c.send_to_owner ? await resolveOwnerEmail(ctx.pool, ctx.job, ctx.after) : [];
+    const to = dedupeEmails([...resolveEmailList(c.to, ctx), ...userEmails, ...owner]);
+    const cc = dedupeEmails(resolveEmailList(c.cc, ctx));
+    if (to.length === 0 && cc.length === 0) {
+      return { __skipped: true, reason: "no recipients", to: [], cc: [], attached };
+    }
+
+    // {{documents.*}} tokens for the subject/body.
+    ctx.documents = {
+      count: attachments.length,
+      names: attached.map((a) => a.file).join(", "),
+      size: humanSize(totalBytes),
+    };
+
+    const account = await resolveSenderAccount(ctx.pool, c.email_account_id);
+    const subject = resolveTokens(
+      c.subject || "Documents — {{documents.count}} attached",
+      ctx, false
+    );
+    let html = resolveTokens(
+      c.body || "<p>Please find the attached document(s).</p>",
+      ctx, true
+    );
+    if (c.list_files_in_body && attached.length) {
+      html += `<ul>${attached
+        .map((a) => `<li>${escapeHtml(a.file)} (${escapeHtml(humanSize(a.size))})</li>`)
+        .join("")}</ul>`;
+    }
+
+    const result = await sendEmail({ to, cc, subject, html, account, attachments });
+    return {
+      transport: result.transport,
+      message_id: result.messageId,
+      from: result.from || account?.from_address || null,
+      to, cc, subject,
+      ...where,
+      documents_found: found.length,
+      filter: filterSummary,
+      attachment_count: attachments.length,
+      total_bytes: totalBytes,
+      attached: attached.map((a) => a.file),
+      skipped_files: skippedFiles,
+    };
   },
 
   // Insert a row into a child table X (linked to the trigger record via a lookup on

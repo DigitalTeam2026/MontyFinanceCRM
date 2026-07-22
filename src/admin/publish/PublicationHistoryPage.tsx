@@ -2,12 +2,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { RotateCcw, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { getHistory, rollbackTo, type PublicationRecord } from './publicationService';
 import { moduleLabel } from './customizationRegistry';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { useToast, toFriendlyError } from '../../app/context/ToastContext';
 
 export default function PublicationHistoryPage() {
+  const { showSuccess, showError } = useToast();
   const [rows, setRows] = useState<PublicationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rollbackTarget, setRollbackTarget] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -24,13 +28,16 @@ export default function PublicationHistoryPage() {
   useEffect(() => { void load(); }, [load]);
 
   const handleRollback = async (version: number) => {
-    if (!window.confirm(`Roll back to version ${version}? This creates a NEW published version with that configuration. History is preserved.`)) return;
+    setRollbackTarget(null);
     setBusy(version);
     try {
       await rollbackTo(version);
       await load();
+      showSuccess(`Rolled back to version ${version}.`);
     } catch (e) {
-      setError((e as Error).message);
+      const msg = toFriendlyError(e, `Unable to roll back to version ${version}.`);
+      setError(msg);
+      showError(msg);
     } finally {
       setBusy(null);
     }
@@ -84,7 +91,7 @@ export default function PublicationHistoryPage() {
                     <td className="px-3 py-2 text-right">
                       {r.customization_version !== latest && !failed && (
                         <button
-                          onClick={() => handleRollback(r.customization_version)}
+                          onClick={() => setRollbackTarget(r.customization_version)}
                           disabled={busy != null}
                           className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40"
                         >
@@ -99,6 +106,16 @@ export default function PublicationHistoryPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {rollbackTarget != null && (
+        <ConfirmDialog
+          title={`Roll back to version ${rollbackTarget}?`}
+          message="This creates a NEW published version with that configuration. History is preserved."
+          confirmLabel="Roll back"
+          onCancel={() => setRollbackTarget(null)}
+          onConfirm={() => void handleRollback(rollbackTarget)}
+        />
       )}
     </div>
   );

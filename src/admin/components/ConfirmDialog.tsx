@@ -12,11 +12,15 @@ interface ConfirmDialogProps {
   destructive?: boolean;
   /** Disables the buttons and shows a pending label while the action runs. */
   loading?: boolean;
+  /** Optional third choice (e.g. "Discard & continue") shown between Cancel and Confirm. */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
 }
 
 export default function ConfirmDialog({
   title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel',
   onConfirm, onCancel, danger = false, destructive = false, loading = false,
+  secondaryLabel, onSecondary,
 }: ConfirmDialogProps) {
   const isDanger = danger || destructive;
   return (
@@ -39,6 +43,11 @@ export default function ConfirmDialog({
           <button onClick={onCancel} disabled={loading} className="px-3 py-1.5 text-[12px] text-slate-600 border border-slate-300 rounded hover:bg-white transition-colors disabled:opacity-50">
             {cancelLabel}
           </button>
+          {secondaryLabel && onSecondary && (
+            <button onClick={onSecondary} disabled={loading} className="px-3 py-1.5 text-[12px] font-medium text-slate-700 border border-slate-300 rounded bg-white hover:bg-slate-100 transition-colors disabled:opacity-50">
+              {secondaryLabel}
+            </button>
+          )}
           <button onClick={onConfirm} disabled={loading}
             className={`px-3 py-1.5 text-[12px] font-medium text-white rounded transition-colors disabled:opacity-60 ${isDanger ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
             {loading ? 'Working…' : confirmLabel}

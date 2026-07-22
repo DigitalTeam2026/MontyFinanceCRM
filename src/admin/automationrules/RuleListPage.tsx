@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Search, Zap, ToggleLeft, ToggleRight, AlertTriangle, Clock, CalendarClock,
-  Mail, PencilLine, FileSpreadsheet, ListChecks, ArrowRight, MoreVertical,
+  Mail, PencilLine, FileSpreadsheet, ListChecks, ArrowRight, MoreVertical, Paperclip,
   Sparkles, Loader2, CheckCircle2, ChevronDown, ChevronRight, FolderOpen, Tags, Trash2, Check,
 } from 'lucide-react';
 import type { AutomationRule, AutomationActionType, AutomationCategory } from '../../types/automationRule';
@@ -21,6 +21,7 @@ import {
 import { triggerSummary, scheduleSummary, actionLabel, timeAgo, RUN_AFTER_META } from './ruleSummary';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Combobox from '../components/Combobox';
+import { useToast, toFriendlyError } from '../../app/context/ToastContext';
 
 type StatusFilter = 'any' | 'on' | 'off' | 'errors';
 
@@ -93,6 +94,7 @@ const ACTION_ICON: Record<AutomationActionType, { icon: typeof Mail; cls: string
   list_rows: { icon: ListChecks, cls: 'text-sky-600' },
   export_view_email: { icon: FileSpreadsheet, cls: 'text-emerald-600' },
   related_export_email: { icon: FileSpreadsheet, cls: 'text-teal-600' },
+  send_documents_email: { icon: Paperclip, cls: 'text-amber-600' },
   create_related_record: { icon: Plus, cls: 'text-indigo-600' },
   update_related_record: { icon: PencilLine, cls: 'text-indigo-600' },
 };
@@ -125,6 +127,7 @@ const input = 'w-full px-2.5 py-1.5 text-[13px] border border-slate-300 rounded 
 const CATEGORY_COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#0d9488', '#4f46e5'];
 
 export default function RuleListPage({ onOpen }: Props) {
+  const { showError } = useToast();
   const [rules, setRules] = useState<AutomationRule[]>([]);
   const [entities, setEntities] = useState<EntityDefinition[]>([]);
   const [categories, setCategories] = useState<AutomationCategory[]>([]);
@@ -316,7 +319,7 @@ export default function RuleListPage({ onOpen }: Props) {
       await load();
     } catch (e) {
       console.error('cloneRule failed:', e);
-      alert('Could not duplicate this rule.');
+      showError(toFriendlyError(e, 'Could not duplicate this rule.'));
     } finally {
       setCloningId(null);
     }

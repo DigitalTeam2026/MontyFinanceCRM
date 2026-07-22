@@ -44,6 +44,7 @@ const ACTION_LABEL: Record<AutomationActionType, string> = {
   generate_document: 'Generate document',
   export_view_email: 'Export view & email',
   related_export_email: 'Related export & email',
+  send_documents_email: 'Send documents by email',
   create_related_record: 'Create related record',
   update_related_record: 'Update related record',
   condition: 'Condition',

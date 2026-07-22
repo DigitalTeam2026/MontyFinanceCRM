@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, useCallback, createContext, useContext, type ReactNode } from 'react';
-import { ArrowLeft, Save, Plus, Trash2, Mail, PencilLine, FileSpreadsheet, ListChecks, KeyRound, Braces, ToggleLeft, ToggleRight, CheckCircle2, XCircle, MinusCircle, Zap, ChevronDown, Loader2, ArrowDown, Clock, CalendarClock, RotateCw, Eye, X, Filter, Check, GitBranch, GripVertical, Copy, Split, Maximize2, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, Mail, PencilLine, FileSpreadsheet, ListChecks, KeyRound, Braces, ToggleLeft, ToggleRight, CheckCircle2, XCircle, MinusCircle, Zap, ChevronDown, Loader2, ArrowDown, Clock, CalendarClock, RotateCw, Eye, X, Filter, Check, GitBranch, GripVertical, Copy, Split, Maximize2, ChevronUp, Paperclip } from 'lucide-react';
 import type {
   AutomationRule, AutomationRuleAction, AutomationOperator, AutomationTriggerEvent,
   AutomationActionType, AutomationBranch, AutomationCondition, SendEmailConfig, UpdateFieldConfig,
   GenerateDocumentConfig, ListRowsConfig, ListRowsFilter, ListRowsOperator, GetRowConfig, AutomationRunHistoryRow,
   AutomationRunAfter, AutomationActionRunCondition, ConditionConfig, SwitchConfig, SwitchCase, AutomationJobActionLog, ScheduleConfig, ScheduleFrequency, ExportViewEmailConfig,
   RelatedExportEmailConfig, RelatedExportSource, RelatedExportColumn,
+  SendDocumentsEmailConfig, DocumentNameOperator,
   FieldMapping, CreateRelatedRecordConfig, UpdateRelatedRecordConfig, RelatedMatchMode,
 } from '../../types/automationRule';
 import type { ViewDefinition } from '../../types/view';
@@ -19,12 +20,14 @@ import {
   type ChoiceOption, type RelatedSourceOptions,
 } from '../../services/automationRuleService';
 import { fetchViewsForEntityLogical } from '../../services/viewService';
+import { fetchDocumentLocations } from '../../services/documentLocationService';
 import { invalidateRuleCache } from '../../app/services/automation/dispatch';
 import { fetchEmailAccountOptions, type EmailAccountOption } from '../../services/automationEmailAccountService';
 import { validateActionConfig, validateRuleTokens } from '../../app/services/automation/actionValidation';
 import { operatorLabel, actionLabel, triggerSummary, scheduleSummary, RUN_AFTER_META, timeAgo } from './ruleSummary';
 import ConditionValueInput from '../../app/components/ConditionValueInput';
 import Combobox, { type ComboOption } from '../components/Combobox';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 export type EditorTab = 'trigger' | 'actions' | 'history';
 
@@ -939,6 +942,7 @@ const DEFAULT_CONFIG: Record<AutomationActionType, Record<string, unknown>> = {
   generate_document: { format: 'xlsx', filename: 'export', scope: 'record', columns: [] },
   export_view_email: { view_id: '', format: 'xlsx', to: '', cc: '', subject: '', body: '', filename: '', skip_if_empty: false },
   related_export_email: { report_name: '', sources: [{ id: 'record', kind: 'record', label: 'This record', entity_logical: '' }], columns: [], format: 'xlsx', to: '', cc: '', subject: '', body: '', filename: '', skip_if_empty: false },
+  send_documents_email: { source: 'record', folder_path: '', include_subfolders: false, selection: 'all', name_operator: 'contains', name_value: '', max_files: 10, max_total_mb: 10, to: '', cc: '', send_to_owner: false, subject: '', body: '', skip_if_empty: true, list_files_in_body: true },
   create_related_record: { target_entity: '', match_field: '', match_mode: 'record_id', dedupe: true, dedupe_match: [], mappings: [] },
   update_related_record: { target_entity: '', match_field: '', match_mode: 'record_id', match_first: false, mappings: [] },
   condition: { left: '', operator: 'equals', right: '' },
@@ -1174,6 +1178,7 @@ function ActionsTab({
     }
     if (a.action_type === 'export_view_email') return <ExportViewEmailActionCard action={a} tableLogicalName={rule.table_logical_name} onChange={onChange} />;
     if (a.action_type === 'related_export_email') return <RelatedExportEmailActionCard action={a} tableLogicalName={rule.table_logical_name} onChange={onChange} />;
+    if (a.action_type === 'send_documents_email') return <SendDocumentsEmailActionCard action={a} fields={fields} steps={steps} tableLogicalName={rule.table_logical_name} onChange={onChange} />;
     if (a.action_type === 'create_related_record' || a.action_type === 'update_related_record') return <RelatedWriteActionCard action={a} triggerFields={fields} tableLogicalName={rule.table_logical_name} onChange={onChange} />;
     if (a.action_type === 'list_rows') return <ListRowsActionCard action={a} recordFields={fields} steps={steps} onChange={onChange} />;
     if (a.action_type === 'get_row') return <GetRowActionCard action={a} recordFields={fields} steps={steps} onChange={onChange} />;
@@ -1375,6 +1380,7 @@ function actionTypeIcon(t: AutomationActionType) {
     : t === 'list_rows' ? ListChecks
     : t === 'condition' ? GitBranch
     : t === 'switch' ? Split
+    : t === 'send_documents_email' ? Paperclip
     : (t === 'generate_document' || t === 'export_view_email' || t === 'related_export_email') ? FileSpreadsheet
     : (t === 'create_related_record' || t === 'update_related_record') ? PencilLine
     : Zap;
@@ -1430,7 +1436,7 @@ function AddStepButton({
 
   const addableTypes: AutomationActionType[] = isSchedule
     ? ['export_view_email', 'send_email', 'list_rows', 'get_row', 'condition', 'switch']
-    : ['get_row', 'list_rows', 'send_email', 'update_field', 'create_related_record', 'update_related_record', 'related_export_email', 'generate_document', 'export_view_email', 'condition', 'switch'];
+    : ['get_row', 'list_rows', 'send_email', 'send_documents_email', 'update_field', 'create_related_record', 'update_related_record', 'related_export_email', 'generate_document', 'export_view_email', 'condition', 'switch'];
 
   return (
     <div className="relative inline-flex" ref={ref}>
@@ -1558,6 +1564,8 @@ function SwitchActionCard({
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tokenOpen, setTokenOpen] = useState(false);
+  // Pending case removal awaiting confirmation (only when the case has nested steps).
+  const [caseToRemove, setCaseToRemove] = useState<{ key: string; actions: AutomationRuleAction[] } | null>(null);
 
   // Resolve the On field's type when it's a plain trigger-record column token
   // ({{record.<logical>}}). Only then can the case inputs be type-aware; anything
@@ -1591,7 +1599,11 @@ function SwitchActionCard({
     const branchActions = (await fetchActions(action.rule_id)).filter(
       (a) => (a.parent_action_id ?? null) === action.automation_rule_action_id && a.branch === key,
     );
-    if (branchActions.length && !window.confirm(`Delete this case and its ${branchActions.length} step${branchActions.length === 1 ? '' : 's'}?`)) return;
+    // Dropping nested steps is destructive — confirm in-app before deleting.
+    if (branchActions.length) { setCaseToRemove({ key, actions: branchActions }); return; }
+    await doRemoveCase(key, branchActions);
+  };
+  const doRemoveCase = async (key: string, branchActions: AutomationRuleAction[]) => {
     for (const a of branchActions) await deleteAction(a.automation_rule_action_id);
     const next = cases.filter((c) => c.key !== key);
     setCases(next);
@@ -1669,6 +1681,22 @@ function SwitchActionCard({
           <Plus size={14} /> Add case
         </button>
       </div>
+
+      {caseToRemove && (
+        <ConfirmDialog
+          title="Delete case"
+          message={`This case has ${caseToRemove.actions.length} step${caseToRemove.actions.length === 1 ? '' : 's'}. Deleting the case also deletes ${caseToRemove.actions.length === 1 ? 'it' : 'them'}.`}
+          confirmLabel="Delete"
+          destructive
+          loading={busy}
+          onCancel={() => setCaseToRemove(null)}
+          onConfirm={() => {
+            const target = caseToRemove;
+            setCaseToRemove(null);
+            void doRemoveCase(target.key, target.actions);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -2185,6 +2213,297 @@ function SendEmailActionCard({
         </ul>
       )}
     </div>
+  );
+}
+
+// Attach the files stored on a record (its Documents tab) and email them.
+// Source = the trigger record, or any other record addressed by a token — so a
+// flow on Opportunity can send the related Lead's documents.
+const DOC_NAME_OPERATORS: { value: DocumentNameOperator; label: string; hint: string }[] = [
+  { value: 'contains',     label: 'Name contains',         hint: 'contract' },
+  { value: 'not_contains', label: 'Name does not contain', hint: 'draft' },
+  { value: 'starts_with',  label: 'Name starts with',      hint: 'ID-' },
+  { value: 'ends_with',    label: 'Name ends with',        hint: '-signed.pdf' },
+  { value: 'equals',       label: 'Name is exactly',       hint: 'passport.pdf' },
+  { value: 'extension',    label: 'File type is',          hint: 'pdf; docx' },
+];
+
+function SendDocumentsEmailActionCard({
+  action, fields, steps, tableLogicalName, onChange,
+}: {
+  action: AutomationRuleAction; fields: FieldDefinition[]; steps: EarlierStep[];
+  tableLogicalName: string; onChange: () => void;
+}) {
+  const cfg = action.config as unknown as SendDocumentsEmailConfig;
+  const [local, setLocal] = useState<SendDocumentsEmailConfig>({
+    source: cfg.source ?? 'record',
+    source_entity: cfg.source_entity ?? '',
+    source_record_id: cfg.source_record_id ?? '',
+    folder_path: cfg.folder_path ?? '',
+    include_subfolders: cfg.include_subfolders ?? false,
+    selection: cfg.selection ?? 'all',
+    name_operator: cfg.name_operator ?? 'contains',
+    name_value: cfg.name_value ?? '',
+    max_files: cfg.max_files ?? 10,
+    max_total_mb: cfg.max_total_mb ?? 10,
+    to: cfg.to ?? '', cc: cfg.cc ?? '', send_to_owner: cfg.send_to_owner ?? false,
+    subject: cfg.subject ?? '', body: cfg.body ?? '',
+    email_account_id: cfg.email_account_id ?? null,
+    skip_if_empty: cfg.skip_if_empty ?? true,
+    list_files_in_body: cfg.list_files_in_body ?? true,
+  });
+  const [dirty, setDirty] = useState(false);
+  const [errs, setErrs] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<EmailAccountOption[]>([]);
+  const [entities, setEntities] = useState<EntityDefinition[]>([]);
+  const [roots, setRoots] = useState<string[]>([]);
+  useEffect(() => { void fetchEmailAccountOptions().then((a) => setAccounts(a.filter((x) => x.enabled))).catch(() => {}); }, []);
+  useEffect(() => { void fetchEntities().then(setEntities).catch(() => setEntities([])); }, []);
+  // The roots a manual folder path may live under — the server enforces this too.
+  useEffect(() => {
+    void fetchDocumentLocations()
+      .then((l) => setRoots(l.filter((x) => x.is_active && x.root_location).map((x) => x.root_location)))
+      .catch(() => setRoots([]));
+  }, []);
+  const docRootHint = roots.length ? roots.join(', ') : 'none configured yet';
+
+  const set = (p: Partial<SendDocumentsEmailConfig>) => { setLocal((l) => ({ ...l, ...p })); setDirty(true); };
+
+  const recordIdRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const toRef = useRef<HTMLInputElement>(null);
+  const ccRef = useRef<HTMLInputElement>(null);
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const insertToken = (
+    ref: React.RefObject<HTMLInputElement | HTMLTextAreaElement>,
+    field: 'source_record_id' | 'folder_path' | 'name_value' | 'to' | 'cc' | 'subject' | 'body',
+    token: string,
+  ) => {
+    const { value, caret } = spliceAtCursor(ref.current, String(local[field] ?? ''), token);
+    set({ [field]: value } as Partial<SendDocumentsEmailConfig>);
+    requestAnimationFrame(() => { const el = ref.current; if (el) { el.focus(); el.setSelectionRange(caret, caret); } });
+  };
+
+  const save = async () => {
+    const problems = validateActionConfig('send_documents_email', local as unknown as Record<string, unknown>);
+    setErrs(problems);
+    if (problems.length) return;
+    await updateAction(action.automation_rule_action_id, { config: local });
+    setDirty(false); onChange();
+  };
+  const remove = async () => { await deleteAction(action.automation_rule_action_id); onChange(); };
+
+  const entityOptions: ComboOption[] = [...entities]
+    .sort((a, b) => a.display_name.localeCompare(b.display_name))
+    .map((e) => ({ value: e.logical_name, label: e.display_name, hint: e.logical_name }));
+  const opMeta = DOC_NAME_OPERATORS.find((o) => o.value === (local.name_operator ?? 'contains'))!;
+
+  return (
+    <div className={card}>
+      <div className="mb-3 flex items-center gap-2">
+        <Paperclip size={15} className="text-amber-600" />
+        <span className="text-[13px] font-semibold text-slate-700">Send documents by email</span>
+        <div className="flex-1" />
+        {dirty && <button onClick={save} className={btnPrimary}><Save size={14} /> Save action</button>}
+        <button onClick={remove} className="p-1 text-slate-400 hover:text-red-600"><Trash2 size={15} /></button>
+      </div>
+
+      {/* ── which record's documents ─────────────────────────────────────── */}
+      <label className={lbl}>Documents of</label>
+      <select className={input} value={local.source} onChange={(e) => set({ source: e.target.value as 'record' | 'other' | 'folder' })}>
+        <option value="record">The record that triggered this flow ({tableLogicalName})</option>
+        <option value="other">Another record (pick the entity + its id)</option>
+        <option value="folder">A folder on the server (type the path)</option>
+      </select>
+      {local.source === 'folder' && (
+        <div className="mt-2">
+          <label className={lbl}>Folder path</label>
+          <div className="relative">
+            <input ref={folderRef} className={`${input} pr-8 font-mono`} value={local.folder_path ?? ''}
+              onChange={(e) => set({ folder_path: e.target.value })}
+              placeholder={'E:\\Opportunities\\2026\\07\\17\\41a2dd69-e2e5-4717-9cda-f9e82390ebdf'} />
+            <span className="absolute inset-y-0 right-1 flex items-center">
+              <TokenMenu recordFields={fields} steps={steps} onPick={(t) => insertToken(folderRef, 'folder_path', t)} />
+            </span>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Takes every file in that folder — the files do not have to be registered on a record.
+            Tokens work, e.g. <span className="font-mono">{'E:\\Opportunities\\2026\\07\\17\\{{record.raw.opportunity_id}}'}</span>.
+            The path must sit inside a configured Document Location root (currently {docRootHint}).
+          </p>
+          <label className="mt-2 flex items-center gap-2 text-[12px] text-slate-600">
+            <input type="checkbox" checked={!!local.include_subfolders} onChange={(e) => set({ include_subfolders: e.target.checked })} />
+            Include subfolders
+          </label>
+        </div>
+      )}
+      {local.source === 'other' && (
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <div>
+            <label className={lbl}>Entity</label>
+            <Combobox
+              options={entityOptions}
+              value={local.source_entity ?? ''}
+              onChange={(v) => set({ source_entity: v })}
+              placeholder="Select an entity…"
+              searchPlaceholder="Search entities…"
+            />
+          </div>
+          <div>
+            <label className={lbl}>Record id</label>
+            <div className="relative">
+              <input ref={recordIdRef} className={`${input} pr-8`} value={local.source_record_id ?? ''}
+                onChange={(e) => set({ source_record_id: e.target.value })}
+                placeholder="{{record.raw.lead_id}}" />
+              <span className="absolute inset-y-0 right-1 flex items-center">
+                <TokenMenu recordFields={fields} steps={steps} onPick={(t) => insertToken(recordIdRef, 'source_record_id', t)} />
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">Use an <strong>· id</strong> token (the stored GUID), not the display name.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── which files ───────────────────────────────────────────────────── */}
+      <label className={`${lbl} mt-3`}>Which files</label>
+      <select className={input} value={local.selection} onChange={(e) => set({ selection: e.target.value as 'all' | 'filter' })}>
+        <option value="all">{local.source === 'folder' ? 'All files in the folder' : 'All documents on the record'}</option>
+        <option value="filter">Only files matching a name filter</option>
+      </select>
+
+      {/* Filter + limits share one 2-column grid so the fields line up edge to
+          edge; the token button sits inside the field's own row, not beside it,
+          so an input with a picker is exactly as wide as one without. */}
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+        {local.selection === 'filter' && (
+          <>
+            <div>
+              <label className={lbl}>Match</label>
+              <select className={input} value={local.name_operator ?? 'contains'}
+                onChange={(e) => set({ name_operator: e.target.value as DocumentNameOperator })}>
+                {DOC_NAME_OPERATORS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={lbl}>Value(s) — separate with ; or , for any-of</label>
+              <div className="relative">
+                <input ref={nameRef} className={`${input} pr-8`} value={local.name_value ?? ''}
+                  onChange={(e) => set({ name_value: e.target.value })} placeholder={opMeta.hint} />
+                <span className="absolute inset-y-0 right-1 flex items-center">
+                  <TokenMenu recordFields={fields} steps={steps} onPick={(t) => insertToken(nameRef, 'name_value', t)} />
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">Case-insensitive. Tokens are allowed, e.g. <span className="font-mono">{'{{record.name}}'}</span>.</p>
+            </div>
+          </>
+        )}
+        <div>
+          <label className={lbl}>Max files</label>
+          <input type="number" min={1} max={50} className={input} value={local.max_files ?? 10}
+            onChange={(e) => set({ max_files: Number(e.target.value) })} />
+        </div>
+        <div>
+          <label className={lbl}>Max total size (MB)</label>
+          <input type="number" min={1} className={input} value={local.max_total_mb ?? 10}
+            onChange={(e) => set({ max_total_mb: Number(e.target.value) })} />
+        </div>
+        <p className="col-span-2 text-[11px] text-slate-400">
+          Microsoft 365 rejects messages over ~4 MB of inline attachments — anything over the budget is left out and listed in the run history.
+        </p>
+      </div>
+
+      {/* ── the email ─────────────────────────────────────────────────────── */}
+      <label className={`${lbl} mt-3`}>Send from</label>
+      <select className={input} value={local.email_account_id ?? ''} onChange={(e) => set({ email_account_id: e.target.value || null })}>
+        <option value="">{`Default account${accounts.find((a) => a.is_default) ? ` (${accounts.find((a) => a.is_default)!.from_address})` : ''}`}</option>
+        {accounts.map((a) => <option key={a.account_id} value={a.account_id}>{a.name} — {a.from_address}</option>)}
+      </select>
+
+      <label className={`${lbl} mt-3`}>To — addresses and/or tokens (split on ; ,)</label>
+      <div className="flex items-center gap-1">
+        <input ref={toRef} className={input} value={local.to ?? ''} onChange={(e) => set({ to: e.target.value })}
+          placeholder="compliance@co.com; {{steps.owner.first(email)}}" />
+        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => insertToken(toRef, 'to', t)} />
+      </div>
+
+      <label className={`${lbl} mt-3`}>Cc</label>
+      <div className="flex items-center gap-1">
+        <input ref={ccRef} className={input} value={local.cc ?? ''} onChange={(e) => set({ cc: e.target.value })} placeholder="manager@co.com" />
+        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => insertToken(ccRef, 'cc', t)} />
+      </div>
+
+      <label className="mt-3 flex items-center gap-2 text-[12px] text-slate-600">
+        <input type="checkbox" checked={!!local.send_to_owner} onChange={(e) => set({ send_to_owner: e.target.checked })} />
+        Send to the owner of the record that triggered this rule
+      </label>
+
+      <label className={`${lbl} mt-3`}>Subject</label>
+      <div className="flex items-center gap-1">
+        <input ref={subjectRef} className={input} value={local.subject ?? ''} onChange={(e) => set({ subject: e.target.value })}
+          placeholder="Compliance approved — {{documents.count}} document(s)" />
+        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => insertToken(subjectRef, 'subject', t)} />
+        <DocumentTokenMenu onPick={(t) => insertToken(subjectRef, 'subject', t)} />
+      </div>
+
+      <div className="flex items-center justify-between">
+        <label className={`${lbl} mt-3`}>Body (HTML; values are escaped)</label>
+        <div className="flex items-center gap-1.5">
+          <ExpandBodyButton value={local.body ?? ''} onChange={(v) => set({ body: v })} />
+          <HtmlPreviewButton html={local.body ?? ''} />
+        </div>
+      </div>
+      <div className="flex items-start gap-1">
+        <textarea ref={bodyRef} className={`${input} font-mono`} rows={4} value={local.body ?? ''}
+          onChange={(e) => set({ body: e.target.value })}
+          placeholder="<p>Attached: {{documents.names}} ({{documents.size}}).</p>" />
+        <TokenMenu recordFields={fields} steps={steps} onPick={(t) => insertToken(bodyRef, 'body', t)} />
+        <DocumentTokenMenu onPick={(t) => insertToken(bodyRef, 'body', t)} />
+      </div>
+
+      <label className="mt-3 flex items-center gap-2 text-[12px] text-slate-600">
+        <input type="checkbox" checked={!!local.list_files_in_body} onChange={(e) => set({ list_files_in_body: e.target.checked })} />
+        List the attached file names at the end of the body
+      </label>
+      <label className="mt-1.5 flex items-center gap-2 text-[12px] text-slate-600">
+        <input type="checkbox" checked={local.skip_if_empty !== false} onChange={(e) => set({ skip_if_empty: e.target.checked })} />
+        Don't send when no document matches (skip the step instead)
+      </label>
+
+      <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+        Attachments come from the record's <strong>Documents</strong> tab, or from a folder you name above.
+        Either way the files must sit under a Document Location configured on local/NAS storage — S3 /
+        SharePoint locations can't be read by the automation worker.
+      </p>
+
+      {errs.length > 0 && (
+        <ul className="mt-2 list-inside list-disc text-[12px] text-red-600">{errs.map((e) => <li key={e}>{e}</li>)}</ul>
+      )}
+    </div>
+  );
+}
+
+// The {{documents.*}} tokens the send_documents_email action publishes once it
+// knows what it attached (count / names / total size).
+function DocumentTokenMenu({ onPick }: { onPick: (t: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const tokens = [
+    { label: 'documents.count', value: '{{documents.count}}' },
+    { label: 'documents.names', value: '{{documents.names}}' },
+    { label: 'documents.size', value: '{{documents.size}}' },
+  ];
+  return (
+    <span className="relative inline-block">
+      <button type="button" title="Insert an attachment token" onClick={() => setOpen((v) => !v)} className="p-1 text-slate-400 hover:text-amber-600"><Paperclip size={14} /></button>
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+          {tokens.map((t) => (
+            <button key={t.value} type="button" onClick={() => { onPick(t.value); setOpen(false); }} className="block w-full px-3 py-1 text-left font-mono text-[12px] text-slate-700 hover:bg-slate-50">{t.label}</button>
+          ))}
+        </div>
+      )}
+    </span>
   );
 }
 
@@ -2975,6 +3294,17 @@ function stepOutputSummary(l: AutomationJobActionLog): string | null {
     const parts: string[] = [];
     if (out.row_count != null) parts.push(`${out.row_count} row${out.row_count === 1 ? '' : 's'}`);
     if (out.filename) parts.push(String(out.filename));
+    if (out.transport) parts.push(String(out.transport));
+    return parts.length ? parts.join(' · ') : null;
+  }
+  if (l.action_type === 'send_documents_email') {
+    const parts: string[] = [];
+    if (out.attachment_count != null) parts.push(`${out.attachment_count} file${out.attachment_count === 1 ? '' : 's'}`);
+    if (Array.isArray(out.attached) && out.attached.length) {
+      const names = out.attached as string[];
+      parts.push(`${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3}` : ''}`);
+    }
+    if (Array.isArray(out.skipped_files) && out.skipped_files.length) parts.push(`${out.skipped_files.length} left out`);
     if (out.transport) parts.push(String(out.transport));
     return parts.length ? parts.join(' · ') : null;
   }

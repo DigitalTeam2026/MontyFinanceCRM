@@ -25,7 +25,7 @@ import GlobalSearch from './components/GlobalSearch';
 import { fetchCreationControlRules, isCreationBlocked } from './services/lifecycleRuleEngine';
 import type { DigitalRule } from '../types/digitalRule';
 import type { ActiveFilter } from './services/listService';
-import { buildCrmHash, replaceHash } from '../lib/appRoute';
+import { buildCrmHash, replaceHash, moduleForEntity } from '../lib/appRoute';
 import type { CrmRouteView } from '../lib/appRoute';
 
 type AppView =
@@ -274,6 +274,16 @@ export default function CrmApp({
     }
   };
 
+  // A clickable lookup cell in a grid points at a record on a DIFFERENT entity,
+  // so switch the active entity (and its module, for sidebar context) before
+  // opening it. The record form is metadata-driven, so any entity slug works.
+  const handleOpenLookupRecord = useCallback((entitySlug: AppEntity, id: string) => {
+    setActiveModule(moduleForEntity(entitySlug));
+    setActiveEntity(entitySlug);
+    setSearch('');
+    setView({ type: 'record', id });
+  }, []);
+
   const entityLogical = ENTITY_LOGICAL_NAME[activeEntity] ?? activeEntity;
   const creationCheck = isCreationBlocked(creationRules, entityLogical);
 
@@ -459,6 +469,7 @@ export default function CrmApp({
               onSearchChange={setSearch}
               onNewRecord={handleNewRecord}
               onOpenRecord={(id, label) => handleOpenRecord(id, label)}
+              onOpenLookupRecord={handleOpenLookupRecord}
               userId={session.user.id}
               initialFilters={view.type === 'filtered-list' ? view.filters : undefined}
               filterContextLabel={view.type === 'filtered-list' ? view.contextLabel : undefined}

@@ -19,6 +19,8 @@
 //   {{steps.<name>.join(<col>, 'sep')}}-> one column joined into a string
 //   {{steps.<name>.rows}}              -> the row collection (HTML table in bodies)
 //   {{export.count}} | {{export.view}} -> scheduled view-export row count / view name
+//   {{documents.count}} | {{documents.names}} | {{documents.size}}
+//                                      -> files attached by send_documents_email
 //
 // Escaping: pass html=true for email bodies (scalars HTML-escaped, .rows -> table);
 // html=false for address fields / values (no escaping — callers validate emails).
@@ -89,6 +91,12 @@ function resolveExpr(expr, ctx, html) {
   // Scheduled view export ({{export.count}} rows, {{export.view}} name).
   if (expr === "export.count") return esc(ctx.export ? ctx.export.count : "");
   if (expr === "export.view") return esc(ctx.export ? ctx.export.view : "");
+
+  // Attached record documents (send_documents_email): how many files went out,
+  // their names, and the total size — set by the action before it renders.
+  if (expr === "documents.count") return esc(ctx.documents ? ctx.documents.count : "");
+  if (expr === "documents.names") return esc(ctx.documents ? ctx.documents.names : "");
+  if (expr === "documents.size") return esc(ctx.documents ? ctx.documents.size : "");
 
   if (expr.startsWith("steps.")) {
     const rest = expr.slice("steps.".length);
